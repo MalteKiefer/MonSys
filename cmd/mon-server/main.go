@@ -16,6 +16,7 @@ import (
 
 	"github.com/pr0ph37/mon/internal/server/alerts"
 	"github.com/pr0ph37/mon/internal/server/api"
+	"github.com/pr0ph37/mon/internal/server/ingestlog"
 	"github.com/pr0ph37/mon/internal/server/liveness"
 	"github.com/pr0ph37/mon/internal/server/probe"
 	"github.com/pr0ph37/mon/internal/server/serverlog"
@@ -143,6 +144,7 @@ func main() {
 
 	s := api.New(st)
 	s.LogBuffer = logBuf
+	s.IngestBuffer = ingestlog.New(envInt("MON_INGEST_BUFFER", 100), envInt("MON_INGEST_MAX_BYTES", 1<<20))
 
 	srv := &http.Server{
 		Addr:              addr,

@@ -48,6 +48,55 @@ components:
         - user
         - invite_sent
       type: object
+    AdminGetIngestOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/AdminGetIngestOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        host_id:
+          type: string
+        hostname:
+          type: string
+        payload: {}
+        size_bytes:
+          format: int64
+          type: integer
+        time:
+          format: date-time
+          type: string
+        truncated:
+          type: boolean
+      required:
+        - time
+        - host_id
+        - size_bytes
+        - truncated
+        - payload
+      type: object
+    AdminListIngestsOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/AdminListIngestsOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        entries:
+          items:
+            $ref: "#/components/schemas/IngestSummary"
+          type:
+            - array
+            - "null"
+      required:
+        - entries
+      type: object
     AdminLogsOutputBody:
       additionalProperties: false
       properties:
@@ -1139,6 +1188,30 @@ components:
       required:
         - accepted
         - server_time
+      type: object
+    IngestSummary:
+      additionalProperties: false
+      properties:
+        host_id:
+          type: string
+        hostname:
+          type: string
+        idx:
+          description: 0-based newest-first; pass to /v1/admin/ingests/{idx}
+          format: int64
+          type: integer
+        size_bytes:
+          description: original payload size; truncated copies will show < SizeBytes when fetched
+          format: int64
+          type: integer
+        time:
+          format: date-time
+          type: string
+      required:
+        - idx
+        - time
+        - host_id
+        - size_bytes
       type: object
     InstalledPackage:
       additionalProperties: false
@@ -2637,6 +2710,72 @@ info:
   version: dev
 openapi: 3.1.0
 paths:
+  /v1/admin/ingests:
+    get:
+      operationId: admin-list-ingests
+      parameters:
+        - description: only entries from this host
+          explode: false
+          in: query
+          name: host_id
+          schema:
+            description: only entries from this host
+            type: string
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            format: int64
+            maximum: 500
+            minimum: 1
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminListIngestsOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List recently captured agent ingest payloads
+      tags:
+        - admin
+  /v1/admin/ingests/{idx}:
+    get:
+      operationId: admin-get-ingest
+      parameters:
+        - in: path
+          name: idx
+          required: true
+          schema:
+            format: int64
+            type: integer
+        - explode: false
+          in: query
+          name: host_id
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminGetIngestOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Fetch a single captured ingest payload as raw JSON
+      tags:
+        - admin
   /v1/admin/logs:
     get:
       operationId: admin-server-logs

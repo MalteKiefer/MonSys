@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
 
+	"github.com/pr0ph37/mon/internal/server/ingestlog"
 	"github.com/pr0ph37/mon/internal/server/notify"
 	"github.com/pr0ph37/mon/internal/server/serverlog"
 	"github.com/pr0ph37/mon/internal/server/spa"
@@ -26,10 +28,11 @@ import (
 )
 
 type Server struct {
-	Store     *store.Store
-	Router    chi.Router
-	API       huma.API
-	LogBuffer *serverlog.Buffer
+	Store        *store.Store
+	Router       chi.Router
+	API          huma.API
+	LogBuffer    *serverlog.Buffer
+	IngestBuffer *ingestlog.Buffer
 }
 
 func New(s *store.Store) *Server {
@@ -543,6 +546,24 @@ func (s *Server) registerRoutes() {
 		Middlewares: adminOnly,
 	}, s.handleAdminServerLogs)
 
+	// Admin: raw agent ingests
+	huma.Register(s.API, huma.Operation{
+		OperationID: "admin-list-ingests",
+		Method:      http.MethodGet,
+		Path:        "/v1/admin/ingests",
+		Summary:     "List recently captured agent ingest payloads",
+		Tags:        []string{"admin"},
+		Middlewares: adminOnly,
+	}, s.handleAdminListIngests)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "admin-get-ingest",
+		Method:      http.MethodGet,
+		Path:        "/v1/admin/ingests/{idx}",
+		Summary:     "Fetch a single captured ingest payload as raw JSON",
+		Tags:        []string{"admin"},
+		Middlewares: adminOnly,
+	}, s.handleAdminGetIngest)
+
 	// Admin: password policy
 	huma.Register(s.API, huma.Operation{
 		OperationID: "admin-get-password-policy",
@@ -653,6 +674,19 @@ func (s *Server) handleIngest(ctx context.Context, in *ingestInput) (*ingestOutp
 			"err", err,
 			"snapshot_at", b.SnapshotAt)
 		return nil, huma.Error500InternalServerError("ingest persist failed", err)
+	}
+
+	// Stash the canonical re-marshal in the ingest ring so admins can see
+	// exactly what the agent uploaded. Re-encoding is fine — the parsed
+	// struct is the authoritative shape after huma validation.
+	if s.IngestBuffer != nil {
+		if raw, err := json.Marshal(b); err == nil {
+			hostname := ""
+			if b.Inventory != nil {
+				hostname = b.Inventory.Hostname
+			}
+			s.IngestBuffer.Append(hostID, hostname, raw)
+		}
 	}
 
 	// Log a summary, not the payload itself: full dpkg listings are huge and
@@ -2225,6 +2259,79 @@ func (s *Server) handleAdminServerLogs(ctx context.Context, in *adminLogsInput) 
 	out.Body.Offset = in.Offset
 	out.Body.Entries = page
 	out.Body.Seq = seq
+	return out, nil
+}
+
+// --- Admin: raw ingest payloads -------------------------------------------
+
+type adminListIngestsInput struct {
+	HostID string `query:"host_id" doc:"only entries from this host"`
+	Limit  int    `query:"limit"   minimum:"1" maximum:"500"`
+}
+
+type adminListIngestsOutput struct {
+	Body struct {
+		Entries []ingestSummary `json:"entries"`
+	}
+}
+
+type ingestSummary struct {
+	Idx       int       `json:"idx"        doc:"0-based newest-first; pass to /v1/admin/ingests/{idx}"`
+	Time      time.Time `json:"time"`
+	HostID    string    `json:"host_id"`
+	Hostname  string    `json:"hostname,omitempty"`
+	SizeBytes int       `json:"size_bytes" doc:"original payload size; truncated copies will show < SizeBytes when fetched"`
+}
+
+func (s *Server) handleAdminListIngests(ctx context.Context, in *adminListIngestsInput) (*adminListIngestsOutput, error) {
+	if s.IngestBuffer == nil {
+		return nil, huma.Error503ServiceUnavailable("ingest buffer not initialized")
+	}
+	limit := in.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	entries := s.IngestBuffer.Snapshot(in.HostID, limit)
+	out := &adminListIngestsOutput{}
+	for i, e := range entries {
+		out.Body.Entries = append(out.Body.Entries, ingestSummary{
+			Idx: i, Time: e.Time, HostID: e.HostID, Hostname: e.Hostname, SizeBytes: e.SizeBytes,
+		})
+	}
+	return out, nil
+}
+
+type adminGetIngestInput struct {
+	Idx    int    `path:"idx"`
+	HostID string `query:"host_id"`
+}
+
+type adminGetIngestOutput struct {
+	Body struct {
+		Time      time.Time       `json:"time"`
+		HostID    string          `json:"host_id"`
+		Hostname  string          `json:"hostname,omitempty"`
+		SizeBytes int             `json:"size_bytes"`
+		Truncated bool            `json:"truncated"`
+		Payload   json.RawMessage `json:"payload"`
+	}
+}
+
+func (s *Server) handleAdminGetIngest(ctx context.Context, in *adminGetIngestInput) (*adminGetIngestOutput, error) {
+	if s.IngestBuffer == nil {
+		return nil, huma.Error503ServiceUnavailable("ingest buffer not initialized")
+	}
+	e, ok := s.IngestBuffer.Get(in.HostID, in.Idx)
+	if !ok {
+		return nil, huma.Error404NotFound("ingest entry not found")
+	}
+	out := &adminGetIngestOutput{}
+	out.Body.Time = e.Time
+	out.Body.HostID = e.HostID
+	out.Body.Hostname = e.Hostname
+	out.Body.SizeBytes = e.SizeBytes
+	out.Body.Truncated = len(e.Payload) < e.SizeBytes
+	out.Body.Payload = json.RawMessage(e.Payload)
 	return out, nil
 }
 

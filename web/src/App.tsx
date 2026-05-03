@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, Bell, ChevronDown, FileText, LayoutDashboard, LogOut, Network, Package, Radio, Server, Settings, ShieldCheck, UserCog, Users } from "lucide-react";
+import { Activity, Bell, ChevronDown, FileJson, FileText, LayoutDashboard, LogOut, Network, Package, Radio, Server, Settings, ShieldCheck, UserCog, Users } from "lucide-react";
 import { Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 
 import { AdminGroups } from "./pages/AdminGroups";
+import { AdminIngests } from "./pages/AdminIngests";
 import { AdminLogs } from "./pages/AdminLogs";
 import { AdminMonitors } from "./pages/AdminMonitors";
 import { AdminNotifications } from "./pages/AdminNotifications";
@@ -66,6 +67,7 @@ export function App() {
           <Route path="/admin/monitors" element={<Navigate to="/monitors" replace />} />
           <Route path="/admin/groups" element={<AdminGroups />} />
           <Route path="/admin/logs" element={<AdminLogs />} />
+          <Route path="/admin/ingests" element={<AdminIngests />} />
           <Route path="/admin/users" element={<AdminUsers />} />
           <Route path="/admin/security" element={<AdminSecurity />} />
           <Route path="/login" element={<Navigate to="/" replace />} />
@@ -134,6 +136,7 @@ const ADMIN_ITEMS = [
   { to: "/admin/groups", label: "Groups", icon: Network },
   { to: "/admin/users", label: "Users", icon: Users },
   { to: "/admin/logs", label: "Server logs", icon: FileText },
+  { to: "/admin/ingests", label: "Agent ingests", icon: FileJson },
   { to: "/admin/security", label: "Security", icon: ShieldCheck },
 ];
 

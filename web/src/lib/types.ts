@@ -367,6 +367,23 @@ export type GlobalPackageRow = {
   installed_at?: string;
 };
 
+export type IngestSummary = {
+  idx: number;
+  time: string;
+  host_id: string;
+  hostname?: string;
+  size_bytes: number;
+};
+
+export type IngestPayload = {
+  time: string;
+  host_id: string;
+  hostname?: string;
+  size_bytes: number;
+  truncated: boolean;
+  payload: unknown;
+};
+
 export type ServerLogEntry = {
   time: string;
   level: "DEBUG" | "INFO" | "WARN" | "ERROR";
