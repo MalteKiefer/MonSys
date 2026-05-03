@@ -1,5 +1,97 @@
 components:
   schemas:
+    AdminCreateUserRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/AdminCreateUserRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        email:
+          format: email
+          type: string
+        password:
+          description: if empty, an invite/reset token is issued and (if SMTP configured) emailed
+          type: string
+        role:
+          enum:
+            - admin
+            - user
+          type: string
+        send_invite:
+          type: boolean
+      required:
+        - email
+        - role
+      type: object
+    AdminCreateUserResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/AdminCreateUserResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        invite_sent:
+          type: boolean
+        reset_url:
+          description: manual link if invite email was not delivered
+          type: string
+        user:
+          $ref: "#/components/schemas/AdminUserSummary"
+      required:
+        - user
+        - invite_sent
+      type: object
+    AdminResetPasswordResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/AdminResetPasswordResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        invite_sent:
+          type: boolean
+        reset_url:
+          type: string
+      required:
+        - invite_sent
+      type: object
+    AdminUserSummary:
+      additionalProperties: false
+      properties:
+        created_at:
+          format: date-time
+          type: string
+        disabled_at:
+          format: date-time
+          type: string
+        email:
+          type: string
+        id:
+          type: string
+        last_login_at:
+          format: date-time
+          type: string
+        role:
+          type: string
+        totp_active:
+          type: boolean
+      required:
+        - id
+        - email
+        - role
+        - created_at
+        - totp_active
+      type: object
     AgentRegisterRequest:
       additionalProperties: false
       properties:
@@ -154,6 +246,61 @@ components:
       required:
         - alerts
       type: object
+    ChangeEmailRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/ChangeEmailRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        current_password:
+          type: string
+        new_email:
+          format: email
+          type: string
+      required:
+        - current_password
+        - new_email
+      type: object
+    ChangePasswordRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/ChangePasswordRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        current_password:
+          type: string
+        new_password:
+          type: string
+      required:
+        - current_password
+        - new_password
+      type: object
+    ConsumeResetTokenRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/ConsumeResetTokenRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        new_password:
+          type: string
+        token:
+          type: string
+      required:
+        - token
+        - new_password
+      type: object
     CrowdsecDecision:
       additionalProperties: false
       properties:
@@ -194,10 +341,13 @@ components:
         role:
           description: admin or user
           type: string
+        totp_active:
+          type: boolean
       required:
         - id
         - email
         - role
+        - totp_active
       type: object
     DiskInfo:
       additionalProperties: false
@@ -766,6 +916,25 @@ components:
       required:
         - rules
       type: object
+    ListUsersOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/ListUsersOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        users:
+          items:
+            $ref: "#/components/schemas/AdminUserSummary"
+          type:
+            - array
+            - "null"
+      required:
+        - users
+      type: object
     LoginEvent:
       additionalProperties: false
       properties:
@@ -820,18 +989,22 @@ components:
           format: uri
           readOnly: true
           type: string
+        challenge_token:
+          type: string
         expires_at:
           description: Session expiry (UTC)
           format: date-time
           type: string
+        needs_totp:
+          description: true → call /v1/auth/2fa/challenge with challenge_token + code
+          type: boolean
         token:
           description: "Session token; pass as Authorization: Bearer …"
           type: string
         user:
           $ref: "#/components/schemas/CurrentUser"
       required:
-        - token
-        - expires_at
+        - needs_totp
         - user
       type: object
     Monitor:
@@ -1319,6 +1492,42 @@ components:
         - security_updates
         - metadata_age_seconds
       type: object
+    PasswordPolicy:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/PasswordPolicy.json
+          format: uri
+          readOnly: true
+          type: string
+        max_age_days:
+          description: 0 disables age check
+          format: int64
+          minimum: 0
+          type: integer
+        min_length:
+          format: int64
+          maximum: 128
+          minimum: 4
+          type: integer
+        require_digit:
+          type: boolean
+        require_lower:
+          type: boolean
+        require_symbol:
+          type: boolean
+        require_upper:
+          type: boolean
+      required:
+        - min_length
+        - require_upper
+        - require_lower
+        - require_digit
+        - require_symbol
+        - max_age_days
+      type: object
     PendingUpdate:
       additionalProperties: false
       properties:
@@ -1472,6 +1681,90 @@ components:
         - swap_used_bytes
         - uptime_sec
       type: object
+    TOTPChallengeRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/TOTPChallengeRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        challenge_token:
+          type: string
+        code:
+          type: string
+      required:
+        - challenge_token
+        - code
+      type: object
+    TOTPDisableRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/TOTPDisableRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        password:
+          description: confirm by current password
+          type: string
+      required:
+        - password
+      type: object
+    TOTPSetupResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/TOTPSetupResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        backup_codes:
+          description: single-use recovery codes; show once
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        otpauth_url:
+          description: otpauth://totp/... uri compatible with most authenticators
+          type: string
+        qr_png_base64:
+          description: PNG QR code rendering of otpauth_url
+          type: string
+        secret_b32:
+          description: raw TOTP secret in base32 — also encoded in otpauth_url + qr
+          type: string
+      required:
+        - secret_b32
+        - otpauth_url
+        - qr_png_base64
+        - backup_codes
+      type: object
+    TOTPVerifyRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/TOTPVerifyRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        code:
+          description: current 6-digit TOTP, or a backup code
+          maxLength: 10
+          minLength: 6
+          type: string
+      required:
+        - code
+      type: object
     UserInfo:
       additionalProperties: false
       properties:
@@ -1611,6 +1904,227 @@ info:
   version: dev
 openapi: 3.1.0
 paths:
+  /v1/admin/security/password-policy:
+    get:
+      operationId: admin-get-password-policy
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasswordPolicy"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get the active password policy
+      tags:
+        - admin
+    put:
+      operationId: admin-set-password-policy
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordPolicy"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasswordPolicy"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Replace the password policy
+      tags:
+        - admin
+  /v1/admin/users:
+    get:
+      operationId: admin-list-users
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListUsersOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List all users
+      tags:
+        - admin
+    post:
+      operationId: admin-create-user
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminCreateUserRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminCreateUserResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Create a user (optionally with an emailed invite)
+      tags:
+        - admin
+  /v1/admin/users/{id}:
+    delete:
+      operationId: admin-delete-user
+      parameters:
+        - description: host UUID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: host UUID
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Delete a user
+      tags:
+        - admin
+  /v1/admin/users/{id}/lock:
+    post:
+      operationId: admin-lock-user
+      parameters:
+        - description: host UUID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: host UUID
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Lock (disable) a user
+      tags:
+        - admin
+  /v1/admin/users/{id}/reset-2fa:
+    post:
+      operationId: admin-reset-2fa
+      parameters:
+        - description: host UUID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: host UUID
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Disable a user's TOTP (forces re-enrollment)
+      tags:
+        - admin
+  /v1/admin/users/{id}/reset-password:
+    post:
+      operationId: admin-reset-password
+      parameters:
+        - description: host UUID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: host UUID
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminResetPasswordResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Issue a password-reset token (and optionally email it)
+      tags:
+        - admin
+  /v1/admin/users/{id}/unlock:
+    post:
+      operationId: admin-unlock-user
+      parameters:
+        - description: host UUID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: host UUID
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Unlock a user
+      tags:
+        - admin
   /v1/agents/register:
     post:
       description: "Trade a one-time bootstrap token (Authorization: Bearer …) for a per-host agent_key."
@@ -1651,6 +2165,175 @@ paths:
       summary: Register a new agent
       tags:
         - agents
+  /v1/auth/2fa/challenge:
+    post:
+      operationId: auth-2fa-challenge
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TOTPChallengeRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Complete login with a TOTP code
+      tags:
+        - auth
+  /v1/auth/2fa/disable:
+    post:
+      operationId: auth-2fa-disable
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TOTPDisableRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Disable own TOTP (requires password)
+      tags:
+        - auth
+  /v1/auth/2fa/setup:
+    post:
+      operationId: auth-2fa-setup
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TOTPSetupResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Begin TOTP setup; returns secret + QR + backup codes
+      tags:
+        - auth
+  /v1/auth/2fa/verify:
+    post:
+      operationId: auth-2fa-verify
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TOTPVerifyRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Verify a TOTP code; activates pending TOTP if first-time
+      tags:
+        - auth
+  /v1/auth/change-email:
+    post:
+      operationId: auth-change-email
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangeEmailRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Change own email
+      tags:
+        - auth
+  /v1/auth/change-password:
+    post:
+      operationId: auth-change-password
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangePasswordRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Change own password
+      tags:
+        - auth
+  /v1/auth/consume-reset:
+    post:
+      operationId: auth-consume-reset
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConsumeResetTokenRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Set a new password via an admin-issued reset/invite token
+      tags:
+        - auth
   /v1/auth/login:
     post:
       operationId: auth-login

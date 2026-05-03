@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"strings"
@@ -291,6 +293,145 @@ func (s *Server) registerRoutes() {
 		Tags:        []string{"notifications"},
 		Middlewares: protected,
 	}, s.handleAlertHistory)
+
+	// 2FA challenge after password login (unauthenticated; protected by the
+	// short-lived challenge token).
+	huma.Register(s.API, huma.Operation{
+		OperationID: "auth-2fa-challenge",
+		Method:      http.MethodPost,
+		Path:        "/v1/auth/2fa/challenge",
+		Summary:     "Complete login with a TOTP code",
+		Tags:        []string{"auth"},
+	}, s.handleTOTPChallenge)
+
+	// Self-service profile (require user)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "auth-change-password",
+		Method:      http.MethodPost,
+		Path:        "/v1/auth/change-password",
+		Summary:     "Change own password",
+		Tags:        []string{"auth"},
+		Middlewares: protected,
+	}, s.handleChangePassword)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "auth-change-email",
+		Method:      http.MethodPost,
+		Path:        "/v1/auth/change-email",
+		Summary:     "Change own email",
+		Tags:        []string{"auth"},
+		Middlewares: protected,
+	}, s.handleChangeEmail)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "auth-2fa-setup",
+		Method:      http.MethodPost,
+		Path:        "/v1/auth/2fa/setup",
+		Summary:     "Begin TOTP setup; returns secret + QR + backup codes",
+		Tags:        []string{"auth"},
+		Middlewares: protected,
+	}, s.handleTOTPSetup)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "auth-2fa-verify",
+		Method:      http.MethodPost,
+		Path:        "/v1/auth/2fa/verify",
+		Summary:     "Verify a TOTP code; activates pending TOTP if first-time",
+		Tags:        []string{"auth"},
+		Middlewares: protected,
+	}, s.handleTOTPVerify)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "auth-2fa-disable",
+		Method:      http.MethodPost,
+		Path:        "/v1/auth/2fa/disable",
+		Summary:     "Disable own TOTP (requires password)",
+		Tags:        []string{"auth"},
+		Middlewares: protected,
+	}, s.handleTOTPDisable)
+
+	// Public reset endpoint — consumed via the link emailed by an admin
+	// invite. The token in the body is the only credential required.
+	huma.Register(s.API, huma.Operation{
+		OperationID: "auth-consume-reset",
+		Method:      http.MethodPost,
+		Path:        "/v1/auth/consume-reset",
+		Summary:     "Set a new password via an admin-issued reset/invite token",
+		Tags:        []string{"auth"},
+	}, s.handleConsumeReset)
+
+	// Admin: user management
+	adminOnly := huma.Middlewares{s.requireUser, s.requireAdmin}
+	huma.Register(s.API, huma.Operation{
+		OperationID: "admin-list-users",
+		Method:      http.MethodGet,
+		Path:        "/v1/admin/users",
+		Summary:     "List all users",
+		Tags:        []string{"admin"},
+		Middlewares: adminOnly,
+	}, s.handleListUsers)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "admin-create-user",
+		Method:      http.MethodPost,
+		Path:        "/v1/admin/users",
+		Summary:     "Create a user (optionally with an emailed invite)",
+		Tags:        []string{"admin"},
+		Middlewares: adminOnly,
+	}, s.handleAdminCreateUser)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "admin-delete-user",
+		Method:      http.MethodDelete,
+		Path:        "/v1/admin/users/{id}",
+		Summary:     "Delete a user",
+		Tags:        []string{"admin"},
+		Middlewares: adminOnly,
+	}, s.handleAdminDeleteUser)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "admin-lock-user",
+		Method:      http.MethodPost,
+		Path:        "/v1/admin/users/{id}/lock",
+		Summary:     "Lock (disable) a user",
+		Tags:        []string{"admin"},
+		Middlewares: adminOnly,
+	}, s.handleAdminLockUser)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "admin-unlock-user",
+		Method:      http.MethodPost,
+		Path:        "/v1/admin/users/{id}/unlock",
+		Summary:     "Unlock a user",
+		Tags:        []string{"admin"},
+		Middlewares: adminOnly,
+	}, s.handleAdminUnlockUser)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "admin-reset-password",
+		Method:      http.MethodPost,
+		Path:        "/v1/admin/users/{id}/reset-password",
+		Summary:     "Issue a password-reset token (and optionally email it)",
+		Tags:        []string{"admin"},
+		Middlewares: adminOnly,
+	}, s.handleAdminResetPassword)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "admin-reset-2fa",
+		Method:      http.MethodPost,
+		Path:        "/v1/admin/users/{id}/reset-2fa",
+		Summary:     "Disable a user's TOTP (forces re-enrollment)",
+		Tags:        []string{"admin"},
+		Middlewares: adminOnly,
+	}, s.handleAdminReset2FA)
+
+	// Admin: password policy
+	huma.Register(s.API, huma.Operation{
+		OperationID: "admin-get-password-policy",
+		Method:      http.MethodGet,
+		Path:        "/v1/admin/security/password-policy",
+		Summary:     "Get the active password policy",
+		Tags:        []string{"admin"},
+		Middlewares: adminOnly,
+	}, s.handleGetPasswordPolicy)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "admin-set-password-policy",
+		Method:      http.MethodPut,
+		Path:        "/v1/admin/security/password-policy",
+		Summary:     "Replace the password policy",
+		Tags:        []string{"admin"},
+		Middlewares: adminOnly,
+	}, s.handleSetPasswordPolicy)
 
 	// SPA mount: anything not claimed by /v1, /healthz, /readyz, /docs is
 	// served from the embedded React build. Registered last so huma's API
@@ -900,6 +1041,24 @@ func (s *Server) handleLogin(ctx context.Context, in *loginInput) (*loginOutput,
 		}
 		return nil, huma.Error500InternalServerError("login failed", err)
 	}
+
+	// 2FA gate: if the user has TOTP enabled, defer the session issue until
+	// they pass /v1/auth/2fa/challenge with a fresh code.
+	if u.TOTPActive {
+		challenge, err := s.Store.CreateActionToken(ctx, u.ID, "login_2fa", 5*time.Minute, nil, "")
+		if err != nil {
+			return nil, huma.Error500InternalServerError("challenge create failed", err)
+		}
+		out := &loginOutput{}
+		out.Body.NeedsTOTP = true
+		out.Body.ChallengeToken = challenge
+		out.Body.ExpiresAt = time.Now().Add(5 * time.Minute).UTC()
+		out.Body.User = apitypes.CurrentUser{
+			ID: u.ID.String(), Email: u.Email, Role: u.Role, TOTPActive: true,
+		}
+		return out, nil
+	}
+
 	token, err := s.Store.IssueSession(ctx, u, "", "", 0)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("session create failed", err)
@@ -908,8 +1067,156 @@ func (s *Server) handleLogin(ctx context.Context, in *loginInput) (*loginOutput,
 	out.Body.Token = token
 	out.Body.ExpiresAt = time.Now().Add(12 * time.Hour).UTC()
 	out.Body.User = apitypes.CurrentUser{
-		ID: u.ID.String(), Email: u.Email, Role: u.Role,
+		ID: u.ID.String(), Email: u.Email, Role: u.Role, TOTPActive: u.TOTPActive,
 	}
+	return out, nil
+}
+
+// --- 2FA challenge after password login ------------------------------------
+
+type totpChallengeInput struct {
+	Body apitypes.TOTPChallengeRequest
+}
+type totpChallengeOutput struct {
+	Body apitypes.LoginResponse
+}
+
+func (s *Server) handleTOTPChallenge(ctx context.Context, in *totpChallengeInput) (*totpChallengeOutput, error) {
+	if s.Store == nil {
+		return nil, huma.Error503ServiceUnavailable("server has no store configured")
+	}
+	if in.Body.ChallengeToken == "" || in.Body.Code == "" {
+		return nil, huma.Error400BadRequest("challenge_token and code required")
+	}
+	userID, _, err := s.Store.ConsumeActionToken(ctx, in.Body.ChallengeToken, "login_2fa")
+	if err != nil {
+		return nil, huma.Error401Unauthorized("invalid or expired challenge")
+	}
+	if err := s.Store.VerifyTOTP(ctx, userID, in.Body.Code); err != nil {
+		return nil, huma.Error401Unauthorized("invalid TOTP code")
+	}
+	u, err := s.Store.GetUser(ctx, userID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("user lookup failed", err)
+	}
+	token, err := s.Store.IssueSession(ctx, u, "", "", 0)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("session create failed", err)
+	}
+	out := &totpChallengeOutput{}
+	out.Body.Token = token
+	out.Body.ExpiresAt = time.Now().Add(12 * time.Hour).UTC()
+	out.Body.User = apitypes.CurrentUser{
+		ID: u.ID.String(), Email: u.Email, Role: u.Role, TOTPActive: true,
+	}
+	return out, nil
+}
+
+// --- Self-service profile --------------------------------------------------
+
+type changePasswordInput struct {
+	Body apitypes.ChangePasswordRequest
+}
+
+func (s *Server) handleChangePassword(ctx context.Context, in *changePasswordInput) (*emptyOutput, error) {
+	u, ok := userFromContext(ctx)
+	if !ok {
+		return nil, huma.Error401Unauthorized("no session")
+	}
+	if in.Body.NewPassword == "" || in.Body.CurrentPassword == "" {
+		return nil, huma.Error400BadRequest("current_password and new_password required")
+	}
+	if err := s.Store.CheckPassword(ctx, in.Body.NewPassword); err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	if err := s.Store.ChangePassword(ctx, u.ID, in.Body.CurrentPassword, in.Body.NewPassword); err != nil {
+		if errors.Is(err, store.ErrPasswordMismatch) {
+			return nil, huma.Error401Unauthorized("current password is wrong")
+		}
+		return nil, huma.Error500InternalServerError("change password failed", err)
+	}
+	out := &emptyOutput{}
+	out.Body.OK = true
+	return out, nil
+}
+
+type changeEmailInput struct {
+	Body apitypes.ChangeEmailRequest
+}
+
+func (s *Server) handleChangeEmail(ctx context.Context, in *changeEmailInput) (*emptyOutput, error) {
+	u, ok := userFromContext(ctx)
+	if !ok {
+		return nil, huma.Error401Unauthorized("no session")
+	}
+	if err := s.Store.ChangeEmail(ctx, u.ID, in.Body.CurrentPassword, in.Body.NewEmail); err != nil {
+		if errors.Is(err, store.ErrPasswordMismatch) {
+			return nil, huma.Error401Unauthorized("current password is wrong")
+		}
+		if errors.Is(err, store.ErrUserExists) {
+			return nil, huma.Error409Conflict("email already in use")
+		}
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	out := &emptyOutput{}
+	out.Body.OK = true
+	return out, nil
+}
+
+// --- 2FA self-management --------------------------------------------------
+
+type totpSetupOutput struct {
+	Body apitypes.TOTPSetupResponse
+}
+
+func (s *Server) handleTOTPSetup(ctx context.Context, _ *struct{}) (*totpSetupOutput, error) {
+	u, ok := userFromContext(ctx)
+	if !ok {
+		return nil, huma.Error401Unauthorized("no session")
+	}
+	resp, err := s.Store.StartTOTPSetup(ctx, u)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("totp setup failed", err)
+	}
+	return &totpSetupOutput{Body: resp}, nil
+}
+
+type totpVerifyInput struct {
+	Body apitypes.TOTPVerifyRequest
+}
+
+func (s *Server) handleTOTPVerify(ctx context.Context, in *totpVerifyInput) (*emptyOutput, error) {
+	u, ok := userFromContext(ctx)
+	if !ok {
+		return nil, huma.Error401Unauthorized("no session")
+	}
+	if err := s.Store.VerifyTOTP(ctx, u.ID, in.Body.Code); err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	out := &emptyOutput{}
+	out.Body.OK = true
+	return out, nil
+}
+
+type totpDisableInput struct {
+	Body apitypes.TOTPDisableRequest
+}
+
+func (s *Server) handleTOTPDisable(ctx context.Context, in *totpDisableInput) (*emptyOutput, error) {
+	u, ok := userFromContext(ctx)
+	if !ok {
+		return nil, huma.Error401Unauthorized("no session")
+	}
+	// Verify the password first — we never want a session-hijacked attacker
+	// to be able to remove a user's second factor.
+	if _, err := s.Store.AuthenticateUser(ctx, u.Email, in.Body.Password); err != nil {
+		return nil, huma.Error401Unauthorized("invalid password")
+	}
+	if err := s.Store.DisableTOTP(ctx, u.ID); err != nil {
+		return nil, huma.Error500InternalServerError("disable failed", err)
+	}
+	out := &emptyOutput{}
+	out.Body.OK = true
 	return out, nil
 }
 
@@ -939,8 +1246,17 @@ func (s *Server) handleMe(ctx context.Context, _ *emptyInput) (*meOutput, error)
 	if !ok {
 		return nil, huma.Error401Unauthorized("no session")
 	}
+	// Re-fetch so TOTPActive reflects the latest state (the cached User in
+	// context is from session validation, where it was filled at login).
+	full, err := s.Store.GetUser(ctx, u.ID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("user fetch failed", err)
+	}
 	return &meOutput{Body: apitypes.CurrentUser{
-		ID: u.ID.String(), Email: u.Email, Role: u.Role,
+		ID:         full.ID.String(),
+		Email:      full.Email,
+		Role:       full.Role,
+		TOTPActive: full.TOTPActive,
 	}}, nil
 }
 
@@ -952,6 +1268,22 @@ const (
 	ctxKeyUser ctxKey = iota
 	ctxKeyToken
 )
+
+// requireAdmin chains after requireUser and rejects non-admin callers.
+// huma middlewares run in registration order, so callers stack them as
+// `huma.Middlewares{s.requireUser, s.requireAdmin}`.
+func (s *Server) requireAdmin(c huma.Context, next func(huma.Context)) {
+	u, ok := c.Context().Value(ctxKeyUser).(store.User)
+	if !ok {
+		_ = huma.WriteErr(s.API, c, http.StatusUnauthorized, "no session")
+		return
+	}
+	if u.Role != "admin" {
+		_ = huma.WriteErr(s.API, c, http.StatusForbidden, "admin role required")
+		return
+	}
+	next(c)
+}
 
 // requireUser is a huma middleware: verifies session token, stashes user on
 // the context, denies with 401 otherwise.
@@ -986,4 +1318,284 @@ func userFromContext(ctx context.Context) (store.User, bool) {
 func tokenFromContext(ctx context.Context) (string, bool) {
 	t, ok := ctx.Value(ctxKeyToken).(string)
 	return t, ok
+}
+
+// --- Reset / invite consume (public) ---------------------------------------
+
+type consumeResetInput struct {
+	Body apitypes.ConsumeResetTokenRequest
+}
+
+func (s *Server) handleConsumeReset(ctx context.Context, in *consumeResetInput) (*emptyOutput, error) {
+	if in.Body.Token == "" || in.Body.NewPassword == "" {
+		return nil, huma.Error400BadRequest("token and new_password required")
+	}
+	if err := s.Store.CheckPassword(ctx, in.Body.NewPassword); err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	// Try the password_reset and invite kinds; both produce a settable
+	// password.
+	userID, _, err := s.Store.ConsumeActionToken(ctx, in.Body.Token, "")
+	if err != nil {
+		return nil, huma.Error401Unauthorized("token invalid or expired")
+	}
+	if err := s.Store.SetPasswordByAdmin(ctx, userID, in.Body.NewPassword); err != nil {
+		return nil, huma.Error500InternalServerError("set password failed", err)
+	}
+	out := &emptyOutput{}
+	out.Body.OK = true
+	return out, nil
+}
+
+// --- Admin: user management -----------------------------------------------
+
+type listUsersOutput struct {
+	Body struct {
+		Users []apitypes.AdminUserSummary `json:"users"`
+	}
+}
+
+func (s *Server) handleListUsers(ctx context.Context, _ *struct{}) (*listUsersOutput, error) {
+	us, err := s.Store.ListUsers(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("list failed", err)
+	}
+	out := &listUsersOutput{}
+	for _, u := range us {
+		out.Body.Users = append(out.Body.Users, apitypes.AdminUserSummary{
+			ID:          u.ID.String(),
+			Email:       u.Email,
+			Role:        u.Role,
+			CreatedAt:   u.CreatedAt,
+			DisabledAt:  u.DisabledAt,
+			TOTPActive:  u.TOTPActive,
+			LastLoginAt: u.LastLoginAt,
+		})
+	}
+	return out, nil
+}
+
+type adminCreateUserInput struct {
+	Body apitypes.AdminCreateUserRequest
+}
+type adminCreateUserOutput struct {
+	Body apitypes.AdminCreateUserResponse
+}
+
+func (s *Server) handleAdminCreateUser(ctx context.Context, in *adminCreateUserInput) (*adminCreateUserOutput, error) {
+	if in.Body.Email == "" {
+		return nil, huma.Error400BadRequest("email required")
+	}
+	role := in.Body.Role
+	if role == "" {
+		role = "user"
+	}
+
+	out := &adminCreateUserOutput{}
+
+	if in.Body.Password != "" {
+		if err := s.Store.CheckPassword(ctx, in.Body.Password); err != nil {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
+		u, err := s.Store.CreateUser(ctx, in.Body.Email, in.Body.Password, role)
+		if err != nil {
+			if errors.Is(err, store.ErrUserExists) {
+				return nil, huma.Error409Conflict("user already exists")
+			}
+			return nil, huma.Error400BadRequest(err.Error())
+		}
+		out.Body.User = apitypes.AdminUserSummary{
+			ID: u.ID.String(), Email: u.Email, Role: u.Role, CreatedAt: u.CreatedAt,
+		}
+		return out, nil
+	}
+
+	// Invite path: create with a random placeholder password the user can
+	// never know, then issue an invite token.
+	tmp, err := randomPlaceholder()
+	if err != nil {
+		return nil, huma.Error500InternalServerError("invite failed", err)
+	}
+	u, err := s.Store.CreateUser(ctx, in.Body.Email, tmp, role)
+	if err != nil {
+		if errors.Is(err, store.ErrUserExists) {
+			return nil, huma.Error409Conflict("user already exists")
+		}
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+
+	actor, _ := userFromContext(ctx)
+	tok, err := s.Store.CreateActionToken(ctx, u.ID, "invite", 7*24*time.Hour, nil, actor.Email)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("invite token failed", err)
+	}
+	out.Body.User = apitypes.AdminUserSummary{
+		ID: u.ID.String(), Email: u.Email, Role: u.Role, CreatedAt: u.CreatedAt,
+	}
+	out.Body.ResetURL = inviteURL(tok)
+
+	if in.Body.SendInvite {
+		// Optional best-effort email via SMTP channel of name "system".
+		// If absent, the admin still gets a copy-paste URL.
+		if err := s.sendInviteMail(ctx, u.Email, out.Body.ResetURL); err == nil {
+			out.Body.InviteSent = true
+		}
+	}
+	return out, nil
+}
+
+// inviteURL builds the URL that will land on the SPA's /reset page. The SPA
+// is responsible for rendering a "set your password" form and posting the
+// token + new password to /v1/auth/consume-reset.
+func inviteURL(token string) string { return "/reset?token=" + token }
+
+func randomPlaceholder() (string, error) {
+	b := make([]byte, 24)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return "x!" + base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+// sendInviteMail looks for an SMTP channel named "system" and dispatches a
+// simple body. Failure is non-fatal — the admin still has the URL in the
+// response.
+func (s *Server) sendInviteMail(ctx context.Context, recipient, url string) error {
+	channels, err := s.Store.ListChannels(ctx)
+	if err != nil {
+		return err
+	}
+	for _, c := range channels {
+		if c.Type == "smtp" && c.Name == "system" && c.Enabled {
+			id, err := uuid.Parse(c.ID)
+			if err != nil {
+				return err
+			}
+			return s.Store.SendChannel(ctx, id, notify.Message{
+				Subject:  "Welcome to mon",
+				Body:     "An admin invited you to mon. Open this link to set your password:\n\n" + url,
+				Severity: "info",
+			})
+		}
+	}
+	return errors.New("no SMTP channel named 'system' configured")
+}
+
+func (s *Server) handleAdminDeleteUser(ctx context.Context, in *hostIDInput) (*emptyOutput, error) {
+	id, err := uuid.Parse(in.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid id")
+	}
+	caller, _ := userFromContext(ctx)
+	if caller.ID == id {
+		return nil, huma.Error400BadRequest("cannot delete yourself")
+	}
+	if err := s.Store.DeleteUser(ctx, id); err != nil {
+		if errors.Is(err, store.ErrUserNotFound) {
+			return nil, huma.Error404NotFound("user not found")
+		}
+		return nil, huma.Error500InternalServerError("delete failed", err)
+	}
+	out := &emptyOutput{}
+	out.Body.OK = true
+	return out, nil
+}
+
+func (s *Server) handleAdminLockUser(ctx context.Context, in *hostIDInput) (*emptyOutput, error) {
+	id, err := uuid.Parse(in.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid id")
+	}
+	caller, _ := userFromContext(ctx)
+	if caller.ID == id {
+		return nil, huma.Error400BadRequest("cannot lock yourself")
+	}
+	if err := s.Store.SetUserDisabled(ctx, id, true); err != nil {
+		return nil, huma.Error500InternalServerError("lock failed", err)
+	}
+	out := &emptyOutput{}
+	out.Body.OK = true
+	return out, nil
+}
+
+func (s *Server) handleAdminUnlockUser(ctx context.Context, in *hostIDInput) (*emptyOutput, error) {
+	id, err := uuid.Parse(in.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid id")
+	}
+	if err := s.Store.SetUserDisabled(ctx, id, false); err != nil {
+		return nil, huma.Error500InternalServerError("unlock failed", err)
+	}
+	out := &emptyOutput{}
+	out.Body.OK = true
+	return out, nil
+}
+
+type adminResetPwOutput struct {
+	Body apitypes.AdminResetPasswordResponse
+}
+
+func (s *Server) handleAdminResetPassword(ctx context.Context, in *hostIDInput) (*adminResetPwOutput, error) {
+	id, err := uuid.Parse(in.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid id")
+	}
+	u, err := s.Store.GetUser(ctx, id)
+	if err != nil {
+		if errors.Is(err, store.ErrUserNotFound) {
+			return nil, huma.Error404NotFound("user not found")
+		}
+		return nil, huma.Error500InternalServerError("user fetch failed", err)
+	}
+	actor, _ := userFromContext(ctx)
+	tok, err := s.Store.CreateActionToken(ctx, id, "password_reset", 24*time.Hour, nil, actor.Email)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("reset token failed", err)
+	}
+	out := &adminResetPwOutput{}
+	out.Body.ResetURL = inviteURL(tok)
+	if err := s.sendInviteMail(ctx, u.Email, out.Body.ResetURL); err == nil {
+		out.Body.InviteSent = true
+	}
+	return out, nil
+}
+
+func (s *Server) handleAdminReset2FA(ctx context.Context, in *hostIDInput) (*emptyOutput, error) {
+	id, err := uuid.Parse(in.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid id")
+	}
+	if err := s.Store.DisableTOTP(ctx, id); err != nil {
+		return nil, huma.Error500InternalServerError("reset 2fa failed", err)
+	}
+	out := &emptyOutput{}
+	out.Body.OK = true
+	return out, nil
+}
+
+// --- Admin: password policy ------------------------------------------------
+
+type passwordPolicyOutput struct {
+	Body apitypes.PasswordPolicy
+}
+
+func (s *Server) handleGetPasswordPolicy(ctx context.Context, _ *struct{}) (*passwordPolicyOutput, error) {
+	p, err := s.Store.GetPasswordPolicy(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("get policy failed", err)
+	}
+	return &passwordPolicyOutput{Body: p}, nil
+}
+
+type setPolicyInput struct {
+	Body apitypes.PasswordPolicy
+}
+
+func (s *Server) handleSetPasswordPolicy(ctx context.Context, in *setPolicyInput) (*passwordPolicyOutput, error) {
+	actor, _ := userFromContext(ctx)
+	if err := s.Store.SetPasswordPolicy(ctx, in.Body, actor.Email); err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	p, _ := s.Store.GetPasswordPolicy(ctx)
+	return &passwordPolicyOutput{Body: p}, nil
 }

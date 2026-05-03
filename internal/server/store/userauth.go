@@ -29,11 +29,12 @@ var (
 // User mirrors the `users` row a session-aware caller actually needs. We
 // deliberately don't expose password_hash here.
 type User struct {
-	ID        uuid.UUID
-	Email     string
-	Role      string
-	CreatedAt time.Time
-	Disabled  bool
+	ID         uuid.UUID
+	Email      string
+	Role       string
+	CreatedAt  time.Time
+	Disabled   bool
+	TOTPActive bool
 }
 
 // CreateUser inserts a new user with bcrypt-hashed password. role is "admin"
@@ -69,17 +70,23 @@ func (s *Store) CreateUser(ctx context.Context, email, password, role string) (U
 	return u, nil
 }
 
-// AuthenticateUser verifies email+password and returns the user.
+// AuthenticateUser verifies email+password and returns the user. The
+// returned User has TOTPActive populated so callers can decide whether to
+// continue with the 2FA challenge step.
 func (s *Store) AuthenticateUser(ctx context.Context, email, password string) (User, error) {
 	var (
 		u            User
 		passwordHash string
 		disabledAt   *time.Time
+		totpEnabled  *time.Time
 	)
 	err := s.Pool.QueryRow(ctx, `
-		SELECT id, email, role, password_hash, created_at, disabled_at
-		FROM users WHERE lower(email) = lower($1)`,
-		email).Scan(&u.ID, &u.Email, &u.Role, &passwordHash, &u.CreatedAt, &disabledAt)
+		SELECT u.id, u.email, u.role, u.password_hash, u.created_at, u.disabled_at,
+		       t.enabled_at
+		FROM users u
+		LEFT JOIN user_totp t ON t.user_id = u.id
+		WHERE lower(u.email) = lower($1)`,
+		email).Scan(&u.ID, &u.Email, &u.Role, &passwordHash, &u.CreatedAt, &disabledAt, &totpEnabled)
 	if errors.Is(err, pgx.ErrNoRows) {
 		// Run a dummy compare anyway so the error path takes the same
 		// time as the success path. Mitigates user enumeration via timing.
@@ -98,7 +105,190 @@ func (s *Store) AuthenticateUser(ctx context.Context, email, password string) (U
 	if err := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(password)); err != nil {
 		return User{}, ErrPasswordMismatch
 	}
+	u.TOTPActive = totpEnabled != nil
 	return u, nil
+}
+
+// GetUser fetches a user record by id.
+func (s *Store) GetUser(ctx context.Context, id uuid.UUID) (User, error) {
+	var (
+		u           User
+		disabledAt  *time.Time
+		totpEnabled *time.Time
+	)
+	err := s.Pool.QueryRow(ctx, `
+		SELECT u.id, u.email, u.role, u.created_at, u.disabled_at, t.enabled_at
+		FROM users u
+		LEFT JOIN user_totp t ON t.user_id = u.id
+		WHERE u.id = $1`, id,
+	).Scan(&u.ID, &u.Email, &u.Role, &u.CreatedAt, &disabledAt, &totpEnabled)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return User{}, ErrUserNotFound
+	}
+	if err != nil {
+		return User{}, err
+	}
+	u.Disabled = disabledAt != nil
+	u.TOTPActive = totpEnabled != nil
+	return u, nil
+}
+
+// ChangePassword verifies the current password and writes a new bcrypt hash.
+// Returns ErrPasswordMismatch if the current password is wrong. The new
+// password is policy-checked by the caller (api layer) to keep this layer
+// dumb about UX rules.
+func (s *Store) ChangePassword(ctx context.Context, userID uuid.UUID, currentPassword, newPassword string) error {
+	var hash string
+	err := s.Pool.QueryRow(ctx,
+		`SELECT password_hash FROM users WHERE id = $1`, userID,
+	).Scan(&hash)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrUserNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(currentPassword)); err != nil {
+		return ErrPasswordMismatch
+	}
+	newHash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcryptCost)
+	if err != nil {
+		return err
+	}
+	_, err = s.Pool.Exec(ctx,
+		`UPDATE users SET password_hash = $2 WHERE id = $1`, userID, string(newHash))
+	return err
+}
+
+// ChangeEmail verifies the user's password and updates email. Returns
+// ErrUserExists if the new email is taken.
+func (s *Store) ChangeEmail(ctx context.Context, userID uuid.UUID, password, newEmail string) error {
+	if newEmail == "" {
+		return errors.New("new_email required")
+	}
+	var hash string
+	err := s.Pool.QueryRow(ctx,
+		`SELECT password_hash FROM users WHERE id = $1`, userID,
+	).Scan(&hash)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrUserNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)); err != nil {
+		return ErrPasswordMismatch
+	}
+	_, err = s.Pool.Exec(ctx,
+		`UPDATE users SET email = $2 WHERE id = $1`, userID, newEmail)
+	if err != nil {
+		if pgIsUniqueViolation(err) {
+			return ErrUserExists
+		}
+		return err
+	}
+	return nil
+}
+
+// SetPasswordByAdmin hashes and stores a new password without requiring the
+// current one. Used by admin reset and by ConsumeResetToken.
+func (s *Store) SetPasswordByAdmin(ctx context.Context, userID uuid.UUID, newPassword string) error {
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcryptCost)
+	if err != nil {
+		return err
+	}
+	tag, err := s.Pool.Exec(ctx,
+		`UPDATE users SET password_hash = $2 WHERE id = $1`, userID, string(hash))
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrUserNotFound
+	}
+	return nil
+}
+
+// SetUserDisabled flips the disabled_at field. Used to lock/unlock accounts.
+func (s *Store) SetUserDisabled(ctx context.Context, userID uuid.UUID, disabled bool) error {
+	var query string
+	if disabled {
+		query = `UPDATE users SET disabled_at = COALESCE(disabled_at, now()) WHERE id = $1`
+	} else {
+		query = `UPDATE users SET disabled_at = NULL WHERE id = $1`
+	}
+	tag, err := s.Pool.Exec(ctx, query, userID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrUserNotFound
+	}
+	return nil
+}
+
+// SetUserRole updates a user's role.
+func (s *Store) SetUserRole(ctx context.Context, userID uuid.UUID, role string) error {
+	if role != "admin" && role != "user" {
+		return errors.New("role must be admin or user")
+	}
+	tag, err := s.Pool.Exec(ctx,
+		`UPDATE users SET role = $2 WHERE id = $1`, userID, role)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrUserNotFound
+	}
+	return nil
+}
+
+// DeleteUser removes a user. Sessions and TOTP state cascade.
+func (s *Store) DeleteUser(ctx context.Context, userID uuid.UUID) error {
+	tag, err := s.Pool.Exec(ctx, `DELETE FROM users WHERE id = $1`, userID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrUserNotFound
+	}
+	return nil
+}
+
+// AdminUserSummary mirrors apitypes.AdminUserSummary; the store builds it
+// directly via a join so callers don't have to issue per-user follow-up
+// queries.
+type AdminUserSummary struct {
+	ID          uuid.UUID
+	Email       string
+	Role        string
+	CreatedAt   time.Time
+	DisabledAt  *time.Time
+	TOTPActive  bool
+	LastLoginAt *time.Time
+}
+
+func (s *Store) ListUsers(ctx context.Context) ([]AdminUserSummary, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT u.id, u.email, u.role, u.created_at, u.disabled_at,
+		       t.enabled_at IS NOT NULL,
+		       (SELECT max(last_seen_at) FROM user_sessions WHERE user_id = u.id) AS last_login_at
+		FROM users u
+		LEFT JOIN user_totp t ON t.user_id = u.id
+		ORDER BY u.email`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []AdminUserSummary{}
+	for rows.Next() {
+		var u AdminUserSummary
+		if err := rows.Scan(&u.ID, &u.Email, &u.Role, &u.CreatedAt,
+			&u.DisabledAt, &u.TOTPActive, &u.LastLoginAt); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
 }
 
 // IssueSession creates a new session for u and returns the plaintext token.

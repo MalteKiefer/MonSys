@@ -358,15 +358,102 @@ type LoginRequest struct {
 }
 
 type LoginResponse struct {
-	Token     string    `json:"token"      doc:"Session token; pass as Authorization: Bearer …"`
-	ExpiresAt time.Time `json:"expires_at" doc:"Session expiry (UTC)"`
-	User      CurrentUser `json:"user"`
+	NeedsTOTP      bool      `json:"needs_totp"      doc:"true → call /v1/auth/2fa/challenge with challenge_token + code"`
+	ChallengeToken string    `json:"challenge_token,omitempty"`
+	Token          string    `json:"token,omitempty"           doc:"Session token; pass as Authorization: Bearer …"`
+	ExpiresAt      time.Time `json:"expires_at,omitempty"      doc:"Session expiry (UTC)"`
+	User           CurrentUser `json:"user"`
 }
 
 type CurrentUser struct {
-	ID    string `json:"id"`
-	Email string `json:"email"`
-	Role  string `json:"role"   doc:"admin or user"`
+	ID         string `json:"id"`
+	Email      string `json:"email"`
+	Role       string `json:"role"           doc:"admin or user"`
+	TOTPActive bool   `json:"totp_active"`
+}
+
+// Self-service profile
+
+type ChangePasswordRequest struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}
+
+type ChangeEmailRequest struct {
+	CurrentPassword string `json:"current_password"`
+	NewEmail        string `json:"new_email"        format:"email"`
+}
+
+type TOTPSetupResponse struct {
+	SecretB32   string   `json:"secret_b32"   doc:"raw TOTP secret in base32 — also encoded in otpauth_url + qr"`
+	OTPAuthURL  string   `json:"otpauth_url"  doc:"otpauth://totp/... uri compatible with most authenticators"`
+	QRPNGBase64 string   `json:"qr_png_base64" doc:"PNG QR code rendering of otpauth_url"`
+	BackupCodes []string `json:"backup_codes" doc:"single-use recovery codes; show once"`
+}
+
+type TOTPVerifyRequest struct {
+	Code string `json:"code" minLength:"6" maxLength:"10" doc:"current 6-digit TOTP, or a backup code"`
+}
+
+type TOTPDisableRequest struct {
+	Password string `json:"password" doc:"confirm by current password"`
+}
+
+// Login extension: 2FA challenge
+
+type LoginChallenge struct {
+	NeedsTOTP      bool      `json:"needs_totp"`
+	ChallengeToken string    `json:"challenge_token,omitempty" doc:"intermediate token; pass to /v1/auth/2fa/challenge"`
+	ExpiresAt      time.Time `json:"expires_at,omitempty"`
+}
+
+type TOTPChallengeRequest struct {
+	ChallengeToken string `json:"challenge_token"`
+	Code           string `json:"code"`
+}
+
+// Admin
+
+type AdminUserSummary struct {
+	ID          string     `json:"id"`
+	Email       string     `json:"email"`
+	Role        string     `json:"role"`
+	CreatedAt   time.Time  `json:"created_at"`
+	DisabledAt  *time.Time `json:"disabled_at,omitempty"`
+	TOTPActive  bool       `json:"totp_active"`
+	LastLoginAt *time.Time `json:"last_login_at,omitempty"`
+}
+
+type AdminCreateUserRequest struct {
+	Email      string `json:"email"      format:"email"`
+	Role       string `json:"role"       enum:"admin,user"`
+	Password   string `json:"password,omitempty" doc:"if empty, an invite/reset token is issued and (if SMTP configured) emailed"`
+	SendInvite bool   `json:"send_invite,omitempty"`
+}
+
+type AdminCreateUserResponse struct {
+	User       AdminUserSummary `json:"user"`
+	ResetURL   string           `json:"reset_url,omitempty"   doc:"manual link if invite email was not delivered"`
+	InviteSent bool             `json:"invite_sent"`
+}
+
+type AdminResetPasswordResponse struct {
+	ResetURL    string `json:"reset_url,omitempty"`
+	InviteSent  bool   `json:"invite_sent"`
+}
+
+type PasswordPolicy struct {
+	MinLength      int  `json:"min_length"      minimum:"4" maximum:"128"`
+	RequireUpper   bool `json:"require_upper"`
+	RequireLower   bool `json:"require_lower"`
+	RequireDigit   bool `json:"require_digit"`
+	RequireSymbol  bool `json:"require_symbol"`
+	MaxAgeDays     int  `json:"max_age_days"    minimum:"0" doc:"0 disables age check"`
+}
+
+type ConsumeResetTokenRequest struct {
+	Token       string `json:"token"`
+	NewPassword string `json:"new_password"`
 }
 
 // Public read APIs (used by future UI)
