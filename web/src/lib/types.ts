@@ -91,3 +91,160 @@ export type AdminCreateUserResponse = {
   reset_url?: string;
   invite_sent: boolean;
 };
+
+// Host detail bundles
+
+export type DiskRow = {
+  id: string;
+  device: string;
+  mountpoint: string;
+  fstype: string;
+  size_bytes: number;
+  is_removable: boolean;
+  last_seen_at: string;
+  latest_time?: string;
+  used_bytes: number;
+  free_bytes: number;
+};
+
+export type NicRow = {
+  id: string;
+  name: string;
+  mac: string;
+  speed_mbps: number;
+  last_seen_at: string;
+  latest_time?: string;
+  rx_bytes: number;
+  tx_bytes: number;
+};
+
+export type WorkloadRow = {
+  id: string;
+  kind: string;
+  external_id: string;
+  name: string;
+  image?: string;
+  state: string;
+  labels?: Record<string, string>;
+  last_seen_at: string;
+  latest_time?: string;
+  cpu_usage_pct: number;
+  mem_used_bytes: number;
+};
+
+export type VMRow = {
+  kind: string;
+  external_id: string;
+  name: string;
+  state: string;
+  vcpu: number;
+  mem_bytes: number;
+  autostart: boolean;
+  last_seen_at: string;
+};
+
+export type ObservedUser = {
+  username: string;
+  uid: number;
+  gid: number;
+  shell?: string;
+  home?: string;
+  is_sudoer: boolean;
+  is_system: boolean;
+  last_login_at?: string | null;
+  last_seen_at: string;
+};
+
+export type PackageSummary = {
+  time: string;
+  installed_count: number;
+  updates_count: number;
+  security_updates: number;
+  metadata_age_seconds: number;
+};
+
+export type RepoMetaState = {
+  manager: string;
+  metadata_mtime: string;
+  metadata_age_seconds: number;
+  refreshed_externally: boolean;
+};
+
+export type HostDetail = {
+  host: Host;
+  disks: DiskRow[];
+  nics: NicRow[];
+  workloads: WorkloadRow[];
+  vms: VMRow[];
+  users: ObservedUser[];
+  packages_summary?: PackageSummary;
+  repo_states: RepoMetaState[];
+};
+
+export type FirewallStatus = {
+  engine: string;
+  active: boolean;
+  default_input?: string;
+  default_output?: string;
+  default_forward?: string;
+  rule_count: number;
+  snapshot_excerpt?: string;
+};
+
+export type Fail2banJailInfo = {
+  jail: string;
+  currently_failed: number;
+  total_failed: number;
+  currently_banned: number;
+  total_banned: number;
+  banned_ips?: string[];
+};
+
+export type CrowdsecDecision = {
+  decision_id: string;
+  origin?: string;
+  scope?: string;
+  target?: string;
+  type?: string;
+  reason?: string;
+  until?: string;
+};
+
+export type HostSecurity = {
+  host_id: string;
+  firewalls: FirewallStatus[];
+  fail2ban: Fail2banJailInfo[] | null;
+  crowdsec: CrowdsecDecision[] | null;
+};
+
+export type LoginEvent = {
+  time: string;
+  username?: string;
+  source_ip?: string;
+  method: string;
+  success: boolean;
+  detail?: string;
+};
+
+export type SystemSample = {
+  time: string;
+  cpu_usage_pct: number;
+  cpu_per_core?: number[];
+  load_1: number;
+  load_5: number;
+  load_15: number;
+  ram_used_bytes: number;
+  ram_avail_bytes: number;
+  swap_used_bytes: number;
+  uptime_sec: number;
+};
+
+export type PendingUpdate = {
+  manager: string;
+  name: string;
+  arch?: string;
+  current_version: string;
+  available_version: string;
+  source_repo?: string;
+  is_security: boolean;
+};

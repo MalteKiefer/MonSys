@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 
 import { api } from "../lib/api";
 import { Host } from "../lib/types";
@@ -6,6 +7,7 @@ import { Host } from "../lib/types";
 type HostsResponse = { hosts: Host[] };
 
 export function Hosts() {
+  const navigate = useNavigate();
   const { data, isLoading, error } = useQuery({
     queryKey: ["hosts"],
     queryFn: () => api<HostsResponse>("/v1/hosts"),
@@ -40,7 +42,11 @@ export function Hosts() {
           </thead>
           <tbody className="divide-y divide-zinc-800">
             {hosts.map((h) => (
-              <tr key={h.id} className="hover:bg-zinc-900/60">
+              <tr
+                key={h.id}
+                className="cursor-pointer hover:bg-zinc-900/60"
+                onClick={() => navigate(`/hosts/${h.id}`)}
+              >
                 <td className="px-3 py-2">
                   <StatusPill status={h.status} />
                 </td>

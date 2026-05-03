@@ -4,6 +4,7 @@ import { Link, Navigate, NavLink, Route, Routes } from "react-router-dom";
 
 import { AdminSecurity } from "./pages/AdminSecurity";
 import { AdminUsers } from "./pages/AdminUsers";
+import { HostDetail } from "./pages/HostDetail";
 import { Hosts } from "./pages/Hosts";
 import { Login } from "./pages/Login";
 import { Profile } from "./pages/Profile";
@@ -48,6 +49,7 @@ export function App() {
       <main className="flex-1 overflow-auto">
         <Routes>
           <Route path="/" element={<Hosts />} />
+          <Route path="/hosts/:id" element={<HostDetail />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/admin/users" element={<AdminUsers />} />
           <Route path="/admin/security" element={<AdminSecurity />} />

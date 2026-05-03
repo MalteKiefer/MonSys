@@ -126,6 +126,15 @@ func (s *Server) registerRoutes() {
 	}, s.handleListHosts)
 
 	huma.Register(s.API, huma.Operation{
+		OperationID: "host-detail",
+		Method:      http.MethodGet,
+		Path:        "/v1/hosts/{id}",
+		Summary:     "Single host with current inventory bundles",
+		Tags:        []string{"hosts"},
+		Middlewares: protected,
+	}, s.handleHostDetail)
+
+	huma.Register(s.API, huma.Operation{
 		OperationID: "host-system-metrics",
 		Method:      http.MethodGet,
 		Path:        "/v1/hosts/{id}/metrics/system",
@@ -133,6 +142,24 @@ func (s *Server) registerRoutes() {
 		Tags:        []string{"hosts"},
 		Middlewares: protected,
 	}, s.handleSystemMetrics)
+
+	huma.Register(s.API, huma.Operation{
+		OperationID: "host-packages",
+		Method:      http.MethodGet,
+		Path:        "/v1/hosts/{id}/packages",
+		Summary:     "Installed packages for a host (paginated)",
+		Tags:        []string{"hosts"},
+		Middlewares: protected,
+	}, s.handleHostPackages)
+
+	huma.Register(s.API, huma.Operation{
+		OperationID: "host-package-updates",
+		Method:      http.MethodGet,
+		Path:        "/v1/hosts/{id}/packages/updates",
+		Summary:     "Pending package updates for a host",
+		Tags:        []string{"hosts"},
+		Middlewares: protected,
+	}, s.handleHostPackageUpdates)
 
 	huma.Register(s.API, huma.Operation{
 		OperationID: "host-security",
@@ -540,6 +567,86 @@ type sysMetricsOutput struct {
 		To      time.Time               `json:"to"`
 		Samples []apitypes.SystemSample `json:"samples"`
 	}
+}
+
+// --- Host detail (single host with bundles) --------------------------------
+
+type hostDetailOutput struct {
+	Body apitypes.HostDetail
+}
+
+func (s *Server) handleHostDetail(ctx context.Context, in *hostIDInput) (*hostDetailOutput, error) {
+	if s.Store == nil {
+		return nil, huma.Error503ServiceUnavailable("server has no store configured")
+	}
+	id, err := uuid.Parse(in.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid host id")
+	}
+	d, err := s.Store.GetHostDetail(ctx, id)
+	if err != nil {
+		if errors.Is(err, store.ErrHostNotFound) {
+			return nil, huma.Error404NotFound("host not found")
+		}
+		return nil, huma.Error500InternalServerError("query failed", err)
+	}
+	return &hostDetailOutput{Body: d}, nil
+}
+
+// --- Host packages ---------------------------------------------------------
+
+type hostPackagesInput struct {
+	ID     string `path:"id"`
+	Limit  int    `query:"limit"  doc:"max rows (1..1000); default 200"`
+	Offset int    `query:"offset" doc:"page offset; default 0"`
+}
+type hostPackagesOutput struct {
+	Body struct {
+		Total    int                   `json:"total"`
+		Limit    int                   `json:"limit"`
+		Offset   int                   `json:"offset"`
+		Packages []apitypes.PackageRow `json:"packages"`
+	}
+}
+
+func (s *Server) handleHostPackages(ctx context.Context, in *hostPackagesInput) (*hostPackagesOutput, error) {
+	id, err := uuid.Parse(in.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid host id")
+	}
+	pkgs, total, err := s.Store.ListHostPackages(ctx, id, in.Limit, in.Offset)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("query failed", err)
+	}
+	out := &hostPackagesOutput{}
+	out.Body.Total = total
+	out.Body.Limit = in.Limit
+	if out.Body.Limit <= 0 {
+		out.Body.Limit = 200
+	}
+	out.Body.Offset = in.Offset
+	out.Body.Packages = pkgs
+	return out, nil
+}
+
+type hostPackageUpdatesOutput struct {
+	Body struct {
+		Updates []apitypes.PendingUpdate `json:"updates"`
+	}
+}
+
+func (s *Server) handleHostPackageUpdates(ctx context.Context, in *hostIDInput) (*hostPackageUpdatesOutput, error) {
+	id, err := uuid.Parse(in.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid host id")
+	}
+	ups, err := s.Store.ListHostPackageUpdates(ctx, id)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("query failed", err)
+	}
+	out := &hostPackageUpdatesOutput{}
+	out.Body.Updates = ups
+	return out, nil
 }
 
 // --- Host security snapshot -------------------------------------------------

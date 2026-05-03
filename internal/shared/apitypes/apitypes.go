@@ -458,6 +458,98 @@ type ConsumeResetTokenRequest struct {
 
 // Public read APIs (used by future UI)
 
+// Host detail (single-host view)
+
+type HostDetail struct {
+	Host             Host                 `json:"host"`
+	Disks            []DiskRow            `json:"disks"`
+	Nics             []NicRow             `json:"nics"`
+	Workloads        []WorkloadRow        `json:"workloads"`
+	VMs              []VMRow              `json:"vms"`
+	Users            []ObservedUser       `json:"users"`
+	PackagesSummary  *PackageSummaryRow   `json:"packages_summary,omitempty"`
+	RepoStates       []RepoMetaState      `json:"repo_states"`
+}
+
+type DiskRow struct {
+	ID          string    `json:"id"`
+	Device      string    `json:"device"`
+	Mountpoint  string    `json:"mountpoint"`
+	FSType      string    `json:"fstype"`
+	SizeBytes   int64     `json:"size_bytes"`
+	IsRemovable bool      `json:"is_removable"`
+	LastSeenAt  time.Time `json:"last_seen_at"`
+	// Latest sample (joined; zero values if no metric yet).
+	LatestTime  *time.Time `json:"latest_time,omitempty"`
+	UsedBytes   int64      `json:"used_bytes"`
+	FreeBytes   int64      `json:"free_bytes"`
+}
+
+type NicRow struct {
+	ID         string     `json:"id"`
+	Name       string     `json:"name"`
+	MAC        string     `json:"mac"`
+	SpeedMbps  int        `json:"speed_mbps"`
+	LastSeenAt time.Time  `json:"last_seen_at"`
+	LatestTime *time.Time `json:"latest_time,omitempty"`
+	RxBytes    int64      `json:"rx_bytes"`
+	TxBytes    int64      `json:"tx_bytes"`
+}
+
+type WorkloadRow struct {
+	ID         string            `json:"id"`
+	Kind       string            `json:"kind"`
+	ExternalID string            `json:"external_id"`
+	Name       string            `json:"name"`
+	Image      string            `json:"image,omitempty"`
+	State      string            `json:"state"`
+	Labels     map[string]string `json:"labels,omitempty"`
+	LastSeenAt time.Time         `json:"last_seen_at"`
+	LatestTime *time.Time        `json:"latest_time,omitempty"`
+	CPUUsagePct float64          `json:"cpu_usage_pct"`
+	MemUsedBytes int64            `json:"mem_used_bytes"`
+}
+
+type VMRow struct {
+	Kind       string    `json:"kind"`
+	ExternalID string    `json:"external_id"`
+	Name       string    `json:"name"`
+	State      string    `json:"state"`
+	VCPU       int       `json:"vcpu"`
+	MemBytes   int64     `json:"mem_bytes"`
+	Autostart  bool      `json:"autostart"`
+	LastSeenAt time.Time `json:"last_seen_at"`
+}
+
+type ObservedUser struct {
+	Username    string     `json:"username"`
+	UID         int        `json:"uid"`
+	GID         int        `json:"gid"`
+	Shell       string     `json:"shell,omitempty"`
+	Home        string     `json:"home,omitempty"`
+	IsSudoer    bool       `json:"is_sudoer"`
+	IsSystem    bool       `json:"is_system"`
+	LastLoginAt *time.Time `json:"last_login_at,omitempty"`
+	LastSeenAt  time.Time  `json:"last_seen_at"`
+}
+
+type PackageSummaryRow struct {
+	Time            time.Time `json:"time"`
+	InstalledCount  int       `json:"installed_count"`
+	UpdatesCount    int       `json:"updates_count"`
+	SecurityUpdates int       `json:"security_updates"`
+	MetadataAgeSec  int64     `json:"metadata_age_seconds"`
+}
+
+type PackageRow struct {
+	Manager     string     `json:"manager"`
+	Name        string     `json:"name"`
+	Version     string     `json:"version"`
+	Arch        string     `json:"arch,omitempty"`
+	SourceRepo  string     `json:"source_repo,omitempty"`
+	InstalledAt *time.Time `json:"installed_at,omitempty"`
+}
+
 type Host struct {
 	ID            string            `json:"id"`
 	Hostname      string            `json:"hostname"`
