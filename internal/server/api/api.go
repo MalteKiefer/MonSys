@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
 
+	"github.com/pr0ph37/mon/internal/server/notify"
 	"github.com/pr0ph37/mon/internal/server/store"
 	"github.com/pr0ph37/mon/internal/shared/apitypes"
 	"github.com/pr0ph37/mon/internal/shared/version"
@@ -147,6 +148,56 @@ func (s *Server) registerRoutes() {
 		Tags:        []string{"security"},
 		Middlewares: protected,
 	}, s.handleHostLogins)
+
+	// Notification channel CRUD
+	huma.Register(s.API, huma.Operation{
+		OperationID: "list-channels",
+		Method:      http.MethodGet,
+		Path:        "/v1/notifications/channels",
+		Summary:     "List notification channels",
+		Tags:        []string{"notifications"},
+		Middlewares: protected,
+	}, s.handleListChannels)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "create-channel",
+		Method:      http.MethodPost,
+		Path:        "/v1/notifications/channels",
+		Summary:     "Create a notification channel",
+		Tags:        []string{"notifications"},
+		Middlewares: protected,
+	}, s.handleCreateChannel)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "get-channel",
+		Method:      http.MethodGet,
+		Path:        "/v1/notifications/channels/{id}",
+		Summary:     "Get a notification channel",
+		Tags:        []string{"notifications"},
+		Middlewares: protected,
+	}, s.handleGetChannel)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "update-channel",
+		Method:      http.MethodPut,
+		Path:        "/v1/notifications/channels/{id}",
+		Summary:     "Replace a notification channel",
+		Tags:        []string{"notifications"},
+		Middlewares: protected,
+	}, s.handleUpdateChannel)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "delete-channel",
+		Method:      http.MethodDelete,
+		Path:        "/v1/notifications/channels/{id}",
+		Summary:     "Delete a notification channel",
+		Tags:        []string{"notifications"},
+		Middlewares: protected,
+	}, s.handleDeleteChannel)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "test-channel",
+		Method:      http.MethodPost,
+		Path:        "/v1/notifications/channels/{id}/test",
+		Summary:     "Send a test message through a channel",
+		Tags:        []string{"notifications"},
+		Middlewares: protected,
+	}, s.handleTestChannel)
 }
 
 // --- Register ---------------------------------------------------------------
@@ -367,6 +418,134 @@ func bearer(h string) (string, bool) {
 	}
 	t := strings.TrimSpace(h[len(p):])
 	return t, t != ""
+}
+
+// --- Notification channels --------------------------------------------------
+
+type channelIDInput struct {
+	ID string `path:"id" doc:"Channel UUID"`
+}
+
+type listChannelsOutput struct {
+	Body struct {
+		Channels []apitypes.NotificationChannel `json:"channels"`
+	}
+}
+
+func (s *Server) handleListChannels(ctx context.Context, _ *struct{}) (*listChannelsOutput, error) {
+	if s.Store == nil {
+		return nil, huma.Error503ServiceUnavailable("server has no store configured")
+	}
+	cs, err := s.Store.ListChannels(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("list failed", err)
+	}
+	out := &listChannelsOutput{}
+	out.Body.Channels = cs
+	return out, nil
+}
+
+type channelInput struct {
+	Body apitypes.NotificationChannelInput
+}
+type channelOutput struct {
+	Body apitypes.NotificationChannel
+}
+
+func (s *Server) handleCreateChannel(ctx context.Context, in *channelInput) (*channelOutput, error) {
+	u, _ := userFromContext(ctx)
+	c, err := s.Store.CreateChannel(ctx, in.Body, u.Email)
+	if err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	return &channelOutput{Body: c}, nil
+}
+
+func (s *Server) handleGetChannel(ctx context.Context, in *channelIDInput) (*channelOutput, error) {
+	id, err := uuid.Parse(in.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid id")
+	}
+	c, err := s.Store.GetChannel(ctx, id)
+	if err != nil {
+		if errors.Is(err, store.ErrChannelNotFound) {
+			return nil, huma.Error404NotFound("channel not found")
+		}
+		return nil, huma.Error500InternalServerError("get failed", err)
+	}
+	return &channelOutput{Body: c}, nil
+}
+
+type updateChannelInput struct {
+	ID   string `path:"id"`
+	Body apitypes.NotificationChannelInput
+}
+
+func (s *Server) handleUpdateChannel(ctx context.Context, in *updateChannelInput) (*channelOutput, error) {
+	id, err := uuid.Parse(in.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid id")
+	}
+	c, err := s.Store.UpdateChannel(ctx, id, in.Body)
+	if err != nil {
+		if errors.Is(err, store.ErrChannelNotFound) {
+			return nil, huma.Error404NotFound("channel not found")
+		}
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	return &channelOutput{Body: c}, nil
+}
+
+func (s *Server) handleDeleteChannel(ctx context.Context, in *channelIDInput) (*emptyOutput, error) {
+	id, err := uuid.Parse(in.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid id")
+	}
+	if err := s.Store.DeleteChannel(ctx, id); err != nil {
+		if errors.Is(err, store.ErrChannelNotFound) {
+			return nil, huma.Error404NotFound("channel not found")
+		}
+		return nil, huma.Error500InternalServerError("delete failed", err)
+	}
+	out := &emptyOutput{}
+	out.Body.OK = true
+	return out, nil
+}
+
+type testChannelInput struct {
+	ID   string `path:"id"`
+	Body apitypes.NotificationTestRequest
+}
+
+type testChannelOutput struct {
+	Body apitypes.NotificationTestResponse
+}
+
+func (s *Server) handleTestChannel(ctx context.Context, in *testChannelInput) (*testChannelOutput, error) {
+	id, err := uuid.Parse(in.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid id")
+	}
+	subject := in.Body.Subject
+	if subject == "" {
+		subject = "mon test message"
+	}
+	body := in.Body.Body
+	if body == "" {
+		body = "If you see this, the channel works."
+	}
+	out := &testChannelOutput{}
+	if err := s.Store.SendChannel(ctx, id, notify.Message{
+		Subject:  subject,
+		Body:     body,
+		Severity: "info",
+	}); err != nil {
+		out.Body.OK = false
+		out.Body.Error = err.Error()
+		return out, nil
+	}
+	out.Body.OK = true
+	return out, nil
 }
 
 // --- Auth: login / logout / me ---------------------------------------------

@@ -619,6 +619,25 @@ components:
         - cpu_cores
         - ram_total_bytes
       type: object
+    ListChannelsOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/ListChannelsOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        channels:
+          items:
+            $ref: "#/components/schemas/NotificationChannel"
+          type:
+            - array
+            - "null"
+      required:
+        - channels
+      type: object
     ListHostsOutputBody:
       additionalProperties: false
       properties:
@@ -764,6 +783,119 @@ components:
         - name
         - mac
         - speed_mbps
+      type: object
+    NotificationChannel:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/NotificationChannel.json
+          format: uri
+          readOnly: true
+          type: string
+        config:
+          additionalProperties: {}
+          description: Type-specific configuration
+          type: object
+        created_at:
+          format: date-time
+          type: string
+        created_by:
+          type: string
+        enabled:
+          type: boolean
+        id:
+          type: string
+        last_error:
+          type: string
+        last_used_at:
+          format: date-time
+          type: string
+        name:
+          type: string
+        type:
+          enum:
+            - smtp
+            - slack
+            - mattermost
+            - ntfy
+          type: string
+      required:
+        - id
+        - type
+        - name
+        - enabled
+        - config
+        - created_at
+        - created_by
+      type: object
+    NotificationChannelInput:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/NotificationChannelInput.json
+          format: uri
+          readOnly: true
+          type: string
+        config:
+          additionalProperties: {}
+          description: "Type-specific config: see /docs"
+          type: object
+        enabled:
+          type: boolean
+        name:
+          maxLength: 100
+          minLength: 1
+          type: string
+        type:
+          enum:
+            - smtp
+            - slack
+            - mattermost
+            - ntfy
+          type: string
+      required:
+        - type
+        - name
+        - enabled
+        - config
+      type: object
+    NotificationTestRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/NotificationTestRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        body:
+          description: Optional override; default identifies channel
+          type: string
+        subject:
+          description: Optional override; default 'mon test'
+          type: string
+      type: object
+    NotificationTestResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/NotificationTestResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        error:
+          type: string
+        ok:
+          type: boolean
+      required:
+        - ok
       type: object
     PackageReport:
       additionalProperties: false
@@ -1382,6 +1514,163 @@ paths:
       summary: Ingest metrics + inventory
       tags:
         - ingest
+  /v1/notifications/channels:
+    get:
+      operationId: list-channels
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListChannelsOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List notification channels
+      tags:
+        - notifications
+    post:
+      operationId: create-channel
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationChannelInput"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationChannel"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Create a notification channel
+      tags:
+        - notifications
+  /v1/notifications/channels/{id}:
+    delete:
+      operationId: delete-channel
+      parameters:
+        - description: Channel UUID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Channel UUID
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Delete a notification channel
+      tags:
+        - notifications
+    get:
+      operationId: get-channel
+      parameters:
+        - description: Channel UUID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Channel UUID
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationChannel"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get a notification channel
+      tags:
+        - notifications
+    put:
+      operationId: update-channel
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationChannelInput"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationChannel"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Replace a notification channel
+      tags:
+        - notifications
+  /v1/notifications/channels/{id}/test:
+    post:
+      operationId: test-channel
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationTestRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationTestResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Send a test message through a channel
+      tags:
+        - notifications
 servers:
   - description: current
     url: /

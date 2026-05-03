@@ -247,6 +247,37 @@ type PackageSummary struct {
 	MetadataAgeSec  int64 `json:"metadata_age_seconds"`
 }
 
+// Notification channels
+
+type NotificationChannel struct {
+	ID         string                 `json:"id"`
+	Type       string                 `json:"type"        enum:"smtp,slack,mattermost,ntfy"`
+	Name       string                 `json:"name"`
+	Enabled    bool                   `json:"enabled"`
+	Config     map[string]any         `json:"config"      doc:"Type-specific configuration"`
+	CreatedAt  time.Time              `json:"created_at"`
+	CreatedBy  string                 `json:"created_by"`
+	LastUsedAt *time.Time             `json:"last_used_at,omitempty"`
+	LastError  string                 `json:"last_error,omitempty"`
+}
+
+type NotificationChannelInput struct {
+	Type    string         `json:"type"    enum:"smtp,slack,mattermost,ntfy"`
+	Name    string         `json:"name"    minLength:"1" maxLength:"100"`
+	Enabled bool           `json:"enabled"`
+	Config  map[string]any `json:"config"  doc:"Type-specific config: see /docs"`
+}
+
+type NotificationTestRequest struct {
+	Subject string `json:"subject,omitempty" doc:"Optional override; default 'mon test'"`
+	Body    string `json:"body,omitempty"    doc:"Optional override; default identifies channel"`
+}
+
+type NotificationTestResponse struct {
+	OK    bool   `json:"ok"`
+	Error string `json:"error,omitempty"`
+}
+
 // Auth (web users; distinct from agent_keys)
 
 type LoginRequest struct {
