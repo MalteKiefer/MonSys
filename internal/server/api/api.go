@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/pr0ph37/mon/internal/server/notify"
+	"github.com/pr0ph37/mon/internal/server/serverlog"
 	"github.com/pr0ph37/mon/internal/server/spa"
 	"github.com/pr0ph37/mon/internal/server/store"
 	"github.com/pr0ph37/mon/internal/shared/apitypes"
@@ -23,9 +24,10 @@ import (
 )
 
 type Server struct {
-	Store  *store.Store
-	Router chi.Router
-	API    huma.API
+	Store     *store.Store
+	Router    chi.Router
+	API       huma.API
+	LogBuffer *serverlog.Buffer
 }
 
 func New(s *store.Store) *Server {
@@ -528,6 +530,16 @@ func (s *Server) registerRoutes() {
 		Tags:        []string{"admin"},
 		Middlewares: adminOnly,
 	}, s.handleAdminReset2FA)
+
+	// Admin: server logs
+	huma.Register(s.API, huma.Operation{
+		OperationID: "admin-server-logs",
+		Method:      http.MethodGet,
+		Path:        "/v1/admin/logs",
+		Summary:     "Read recent server log entries from the in-memory ring",
+		Tags:        []string{"admin"},
+		Middlewares: adminOnly,
+	}, s.handleAdminServerLogs)
 
 	// Admin: password policy
 	huma.Register(s.API, huma.Operation{
@@ -2119,6 +2131,54 @@ func (s *Server) handleAdminReset2FA(ctx context.Context, in *hostIDInput) (*emp
 	}
 	out := &emptyOutput{}
 	out.Body.OK = true
+	return out, nil
+}
+
+// --- Admin: server logs ---------------------------------------------------
+
+type adminLogsInput struct {
+	Since  time.Time `query:"since"   doc:"earliest entry time (RFC3339)"`
+	Until  time.Time `query:"until"   doc:"latest entry time (RFC3339)"`
+	Level  string    `query:"level"   enum:"debug,info,warn,error"`
+	Q      string    `query:"q"       doc:"substring match on msg, level, or any string attr"`
+	HostID string    `query:"host_id" doc:"only entries with attrs.host_id == this id"`
+	Limit  int       `query:"limit"   minimum:"1" maximum:"1000"`
+	Offset int       `query:"offset"  minimum:"0"`
+}
+
+type adminLogsOutput struct {
+	Body struct {
+		Total   int                `json:"total"   doc:"matching entries before paging"`
+		Limit   int                `json:"limit"`
+		Offset  int                `json:"offset"`
+		Entries []serverlog.Entry  `json:"entries"`
+		Seq     uint64             `json:"seq"     doc:"monotonic write counter; gaps mean entries were dropped"`
+	}
+}
+
+func (s *Server) handleAdminServerLogs(ctx context.Context, in *adminLogsInput) (*adminLogsOutput, error) {
+	if s.LogBuffer == nil {
+		return nil, huma.Error503ServiceUnavailable("log buffer not initialized")
+	}
+	filter := serverlog.Filter{
+		Since:    in.Since,
+		Until:    in.Until,
+		MinLevel: serverlog.LevelFromString(in.Level),
+		Q:        in.Q,
+		HostID:   in.HostID,
+	}
+	entries, seq := s.LogBuffer.Snapshot(filter)
+	limit := in.Limit
+	if limit <= 0 {
+		limit = 200
+	}
+	page := serverlog.Page(entries, in.Offset, limit)
+	out := &adminLogsOutput{}
+	out.Body.Total = len(entries)
+	out.Body.Limit = limit
+	out.Body.Offset = in.Offset
+	out.Body.Entries = page
+	out.Body.Seq = seq
 	return out, nil
 }
 

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"github.com/pr0ph37/mon/internal/server/api"
 	"github.com/pr0ph37/mon/internal/server/liveness"
 	"github.com/pr0ph37/mon/internal/server/probe"
+	"github.com/pr0ph37/mon/internal/server/serverlog"
 	"github.com/pr0ph37/mon/internal/server/store"
 	"github.com/pr0ph37/mon/internal/shared/version"
 )
@@ -40,7 +42,11 @@ func main() {
 		return
 	}
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	// Tee slog output: (1) JSON to stdout for container/journal capture,
+	// (2) ring buffer in process for the admin /v1/admin/logs endpoint.
+	logBuf := serverlog.NewBuffer(envInt("MON_LOG_BUFFER", 5000))
+	jsonHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})
+	logger := slog.New(serverlog.NewHandler(jsonHandler, logBuf))
 	slog.SetDefault(logger)
 
 	addr := envOr("MON_LISTEN_ADDR", ":8080")
@@ -136,6 +142,7 @@ func main() {
 	go eng.Run(ctx)
 
 	s := api.New(st)
+	s.LogBuffer = logBuf
 
 	srv := &http.Server{
 		Addr:              addr,
@@ -204,6 +211,17 @@ func suffix(p string) string {
 func envOr(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
+	}
+	return def
+}
+
+func envInt(key string, def int) int {
+	if v := os.Getenv(key); v != "" {
+		var n int
+		_, err := fmt.Sscanf(v, "%d", &n)
+		if err == nil && n > 0 {
+			return n
+		}
 	}
 	return def
 }

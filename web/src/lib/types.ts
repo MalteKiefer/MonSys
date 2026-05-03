@@ -367,6 +367,13 @@ export type GlobalPackageRow = {
   installed_at?: string;
 };
 
+export type ServerLogEntry = {
+  time: string;
+  level: "DEBUG" | "INFO" | "WARN" | "ERROR";
+  msg: string;
+  attrs?: Record<string, unknown>;
+};
+
 export type PendingUpdate = {
   manager: string;
   name: string;
