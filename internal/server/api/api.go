@@ -198,6 +198,56 @@ func (s *Server) registerRoutes() {
 		Tags:        []string{"notifications"},
 		Middlewares: protected,
 	}, s.handleTestChannel)
+
+	// Active monitors
+	huma.Register(s.API, huma.Operation{
+		OperationID: "list-monitors",
+		Method:      http.MethodGet,
+		Path:        "/v1/monitors",
+		Summary:     "List active monitors",
+		Tags:        []string{"monitors"},
+		Middlewares: protected,
+	}, s.handleListMonitors)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "create-monitor",
+		Method:      http.MethodPost,
+		Path:        "/v1/monitors",
+		Summary:     "Create an active monitor",
+		Tags:        []string{"monitors"},
+		Middlewares: protected,
+	}, s.handleCreateMonitor)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "get-monitor",
+		Method:      http.MethodGet,
+		Path:        "/v1/monitors/{id}",
+		Summary:     "Get a monitor",
+		Tags:        []string{"monitors"},
+		Middlewares: protected,
+	}, s.handleGetMonitor)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "update-monitor",
+		Method:      http.MethodPut,
+		Path:        "/v1/monitors/{id}",
+		Summary:     "Replace a monitor",
+		Tags:        []string{"monitors"},
+		Middlewares: protected,
+	}, s.handleUpdateMonitor)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "delete-monitor",
+		Method:      http.MethodDelete,
+		Path:        "/v1/monitors/{id}",
+		Summary:     "Delete a monitor",
+		Tags:        []string{"monitors"},
+		Middlewares: protected,
+	}, s.handleDeleteMonitor)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "monitor-results",
+		Method:      http.MethodGet,
+		Path:        "/v1/monitors/{id}/results",
+		Summary:     "Recent results for a monitor",
+		Tags:        []string{"monitors"},
+		Middlewares: protected,
+	}, s.handleMonitorResults)
 }
 
 // --- Register ---------------------------------------------------------------
@@ -418,6 +468,129 @@ func bearer(h string) (string, bool) {
 	}
 	t := strings.TrimSpace(h[len(p):])
 	return t, t != ""
+}
+
+// --- Active monitors --------------------------------------------------------
+
+type monitorIDInput struct {
+	ID string `path:"id" doc:"Monitor UUID"`
+}
+
+type listMonitorsOutput struct {
+	Body struct {
+		Monitors []apitypes.Monitor `json:"monitors"`
+	}
+}
+
+func (s *Server) handleListMonitors(ctx context.Context, _ *struct{}) (*listMonitorsOutput, error) {
+	if s.Store == nil {
+		return nil, huma.Error503ServiceUnavailable("server has no store configured")
+	}
+	ms, err := s.Store.ListMonitors(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("list failed", err)
+	}
+	out := &listMonitorsOutput{}
+	out.Body.Monitors = ms
+	return out, nil
+}
+
+type createMonitorInput struct {
+	Body apitypes.MonitorInput
+}
+type monitorOutput struct {
+	Body apitypes.Monitor
+}
+
+func (s *Server) handleCreateMonitor(ctx context.Context, in *createMonitorInput) (*monitorOutput, error) {
+	u, _ := userFromContext(ctx)
+	m, err := s.Store.CreateMonitor(ctx, in.Body, u.Email)
+	if err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	return &monitorOutput{Body: m}, nil
+}
+
+func (s *Server) handleGetMonitor(ctx context.Context, in *monitorIDInput) (*monitorOutput, error) {
+	id, err := uuid.Parse(in.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid id")
+	}
+	m, err := s.Store.GetMonitor(ctx, id)
+	if err != nil {
+		if errors.Is(err, store.ErrMonitorNotFound) {
+			return nil, huma.Error404NotFound("monitor not found")
+		}
+		return nil, huma.Error500InternalServerError("get failed", err)
+	}
+	return &monitorOutput{Body: m}, nil
+}
+
+type updateMonitorInput struct {
+	ID   string `path:"id"`
+	Body apitypes.MonitorInput
+}
+
+func (s *Server) handleUpdateMonitor(ctx context.Context, in *updateMonitorInput) (*monitorOutput, error) {
+	id, err := uuid.Parse(in.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid id")
+	}
+	m, err := s.Store.UpdateMonitor(ctx, id, in.Body)
+	if err != nil {
+		if errors.Is(err, store.ErrMonitorNotFound) {
+			return nil, huma.Error404NotFound("monitor not found")
+		}
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	return &monitorOutput{Body: m}, nil
+}
+
+func (s *Server) handleDeleteMonitor(ctx context.Context, in *monitorIDInput) (*emptyOutput, error) {
+	id, err := uuid.Parse(in.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid id")
+	}
+	if err := s.Store.DeleteMonitor(ctx, id); err != nil {
+		if errors.Is(err, store.ErrMonitorNotFound) {
+			return nil, huma.Error404NotFound("monitor not found")
+		}
+		return nil, huma.Error500InternalServerError("delete failed", err)
+	}
+	out := &emptyOutput{}
+	out.Body.OK = true
+	return out, nil
+}
+
+type monitorResultsInput struct {
+	ID    string    `path:"id"`
+	Since time.Time `query:"since" doc:"earliest result timestamp; default = now-24h"`
+	Limit int       `query:"limit" doc:"max results (1..1000); default 200"`
+}
+type monitorResultsOutput struct {
+	Body struct {
+		MonitorID string                   `json:"monitor_id"`
+		Results   []apitypes.MonitorResult `json:"results"`
+	}
+}
+
+func (s *Server) handleMonitorResults(ctx context.Context, in *monitorResultsInput) (*monitorResultsOutput, error) {
+	id, err := uuid.Parse(in.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid id")
+	}
+	since := in.Since
+	if since.IsZero() {
+		since = time.Now().Add(-24 * time.Hour).UTC()
+	}
+	rs, err := s.Store.MonitorResults(ctx, id, since, in.Limit)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("query failed", err)
+	}
+	out := &monitorResultsOutput{}
+	out.Body.MonitorID = id.String()
+	out.Body.Results = rs
+	return out, nil
 }
 
 // --- Notification channels --------------------------------------------------

@@ -247,6 +247,40 @@ type PackageSummary struct {
 	MetadataAgeSec  int64 `json:"metadata_age_seconds"`
 }
 
+// Active monitors (server-side periodic probes)
+
+type Monitor struct {
+	ID            string         `json:"id"`
+	Type          string         `json:"type"           enum:"cert,postgres,mysql,mongodb,http,tcp"`
+	Name          string         `json:"name"`
+	Target        string         `json:"target"         doc:"host:port (cert/tcp), URL (http), DSN (db)"`
+	Params        map[string]any `json:"params,omitempty"`
+	IntervalSec   int            `json:"interval_sec"`
+	Enabled       bool           `json:"enabled"`
+	CreatedAt     time.Time      `json:"created_at"`
+	CreatedBy     string         `json:"created_by,omitempty"`
+	LastCheckAt   *time.Time     `json:"last_check_at,omitempty"`
+	LastStatus    string         `json:"last_status,omitempty"  enum:"ok,warn,fail,unknown"`
+	LastLatencyMS int            `json:"last_latency_ms,omitempty"`
+	LastDetail    string         `json:"last_detail,omitempty"`
+}
+
+type MonitorInput struct {
+	Type        string         `json:"type"        enum:"cert,postgres,mysql,mongodb,http,tcp"`
+	Name        string         `json:"name"        minLength:"1" maxLength:"100"`
+	Target      string         `json:"target"      minLength:"1"`
+	Params      map[string]any `json:"params,omitempty"`
+	IntervalSec int            `json:"interval_sec" minimum:"10" maximum:"86400"`
+	Enabled     bool           `json:"enabled"`
+}
+
+type MonitorResult struct {
+	Time      time.Time `json:"time"`
+	Status    string    `json:"status"`
+	LatencyMS int       `json:"latency_ms"`
+	Detail    string    `json:"detail,omitempty"`
+}
+
 // Notification channels
 
 type NotificationChannel struct {

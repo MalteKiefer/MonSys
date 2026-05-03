@@ -15,6 +15,7 @@ import (
 
 	"github.com/pr0ph37/mon/internal/server/api"
 	"github.com/pr0ph37/mon/internal/server/liveness"
+	"github.com/pr0ph37/mon/internal/server/probe"
 	"github.com/pr0ph37/mon/internal/server/store"
 	"github.com/pr0ph37/mon/internal/shared/version"
 )
@@ -128,6 +129,20 @@ func main() {
 			slog.Info("host status changed",
 				"host_id", tr.HostID, "hostname", tr.Hostname,
 				"from", tr.From, "to", tr.To)
+		}
+	}()
+
+	// Active monitors scheduler.
+	sched := probe.NewScheduler(st.Pool)
+	go sched.Run(ctx)
+	go func() {
+		for ev := range sched.Out {
+			if ev.Result.Status != probe.StatusOK {
+				slog.Warn("monitor non-ok",
+					"id", ev.MonitorID, "type", ev.Type, "name", ev.Name,
+					"status", ev.Result.Status, "detail", ev.Result.Detail,
+					"latency_ms", ev.Result.LatencyMS)
+			}
 		}
 	}()
 

@@ -668,6 +668,25 @@ components:
       required:
         - hosts
       type: object
+    ListMonitorsOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/ListMonitorsOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        monitors:
+          items:
+            $ref: "#/components/schemas/Monitor"
+          type:
+            - array
+            - "null"
+      required:
+        - monitors
+      type: object
     LoginEvent:
       additionalProperties: false
       properties:
@@ -735,6 +754,152 @@ components:
         - token
         - expires_at
         - user
+      type: object
+    Monitor:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/Monitor.json
+          format: uri
+          readOnly: true
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        created_by:
+          type: string
+        enabled:
+          type: boolean
+        id:
+          type: string
+        interval_sec:
+          format: int64
+          type: integer
+        last_check_at:
+          format: date-time
+          type: string
+        last_detail:
+          type: string
+        last_latency_ms:
+          format: int64
+          type: integer
+        last_status:
+          enum:
+            - ok
+            - warn
+            - fail
+            - unknown
+          type: string
+        name:
+          type: string
+        params:
+          additionalProperties: {}
+          type: object
+        target:
+          description: host:port (cert/tcp), URL (http), DSN (db)
+          type: string
+        type:
+          enum:
+            - cert
+            - postgres
+            - mysql
+            - mongodb
+            - http
+            - tcp
+          type: string
+      required:
+        - id
+        - type
+        - name
+        - target
+        - interval_sec
+        - enabled
+        - created_at
+      type: object
+    MonitorInput:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/MonitorInput.json
+          format: uri
+          readOnly: true
+          type: string
+        enabled:
+          type: boolean
+        interval_sec:
+          format: int64
+          maximum: 86400
+          minimum: 10
+          type: integer
+        name:
+          maxLength: 100
+          minLength: 1
+          type: string
+        params:
+          additionalProperties: {}
+          type: object
+        target:
+          minLength: 1
+          type: string
+        type:
+          enum:
+            - cert
+            - postgres
+            - mysql
+            - mongodb
+            - http
+            - tcp
+          type: string
+      required:
+        - type
+        - name
+        - target
+        - interval_sec
+        - enabled
+      type: object
+    MonitorResult:
+      additionalProperties: false
+      properties:
+        detail:
+          type: string
+        latency_ms:
+          format: int64
+          type: integer
+        status:
+          type: string
+        time:
+          format: date-time
+          type: string
+      required:
+        - time
+        - status
+        - latency_ms
+      type: object
+    MonitorResultsOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/MonitorResultsOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        monitor_id:
+          type: string
+        results:
+          items:
+            $ref: "#/components/schemas/MonitorResult"
+          type:
+            - array
+            - "null"
+      required:
+        - monitor_id
+        - results
       type: object
     NetSample:
       additionalProperties: false
@@ -1525,6 +1690,173 @@ paths:
       summary: Ingest metrics + inventory
       tags:
         - ingest
+  /v1/monitors:
+    get:
+      operationId: list-monitors
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListMonitorsOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List active monitors
+      tags:
+        - monitors
+    post:
+      operationId: create-monitor
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MonitorInput"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Monitor"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Create an active monitor
+      tags:
+        - monitors
+  /v1/monitors/{id}:
+    delete:
+      operationId: delete-monitor
+      parameters:
+        - description: Monitor UUID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Monitor UUID
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Delete a monitor
+      tags:
+        - monitors
+    get:
+      operationId: get-monitor
+      parameters:
+        - description: Monitor UUID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Monitor UUID
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Monitor"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get a monitor
+      tags:
+        - monitors
+    put:
+      operationId: update-monitor
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MonitorInput"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Monitor"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Replace a monitor
+      tags:
+        - monitors
+  /v1/monitors/{id}/results:
+    get:
+      operationId: monitor-results
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - description: earliest result timestamp; default = now-24h
+          explode: false
+          in: query
+          name: since
+          schema:
+            description: earliest result timestamp; default = now-24h
+            format: date-time
+            type: string
+        - description: max results (1..1000); default 200
+          explode: false
+          in: query
+          name: limit
+          schema:
+            description: max results (1..1000); default 200
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MonitorResultsOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Recent results for a monitor
+      tags:
+        - monitors
   /v1/notifications/channels:
     get:
       operationId: list-channels
