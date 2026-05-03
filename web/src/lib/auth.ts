@@ -13,6 +13,7 @@ export type CurrentUser = {
   id: string;
   email: string;
   role: string;
+  totp_active?: boolean;
 };
 
 type AuthState = {

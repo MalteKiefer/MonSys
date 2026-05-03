@@ -45,8 +45,49 @@ export type AlertHistoryEntry = {
   delivery_errors: Record<string, string>;
 };
 
+export type CurrentUser = {
+  id: string;
+  email: string;
+  role: string;
+  totp_active: boolean;
+};
+
 export type LoginResponse = {
-  token: string;
+  needs_totp: boolean;
+  challenge_token?: string;
+  token?: string;
   expires_at: string;
-  user: { id: string; email: string; role: string };
+  user: CurrentUser;
+};
+
+export type TOTPSetup = {
+  secret_b32: string;
+  otpauth_url: string;
+  qr_png_base64: string;
+  backup_codes: string[];
+};
+
+export type AdminUser = {
+  id: string;
+  email: string;
+  role: "admin" | "user";
+  created_at: string;
+  disabled_at?: string | null;
+  totp_active: boolean;
+  last_login_at?: string | null;
+};
+
+export type PasswordPolicy = {
+  min_length: number;
+  require_upper: boolean;
+  require_lower: boolean;
+  require_digit: boolean;
+  require_symbol: boolean;
+  max_age_days: number;
+};
+
+export type AdminCreateUserResponse = {
+  user: AdminUser;
+  reset_url?: string;
+  invite_sent: boolean;
 };
