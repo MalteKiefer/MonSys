@@ -370,6 +370,43 @@ components:
         - size_bytes
         - is_removable
       type: object
+    DiskMetricsOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/DiskMetricsOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        devices:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        from:
+          format: date-time
+          type: string
+        host_id:
+          type: string
+        samples:
+          items:
+            $ref: "#/components/schemas/DiskSample"
+          type:
+            - array
+            - "null"
+        to:
+          format: date-time
+          type: string
+      required:
+        - host_id
+        - from
+        - to
+        - devices
+        - samples
+      type: object
     DiskRow:
       additionalProperties: false
       properties:
@@ -591,6 +628,33 @@ components:
         - engine
         - active
         - rule_count
+      type: object
+    GlobalPackageRow:
+      additionalProperties: false
+      properties:
+        arch:
+          type: string
+        host_id:
+          type: string
+        hostname:
+          type: string
+        installed_at:
+          format: date-time
+          type: string
+        manager:
+          type: string
+        name:
+          type: string
+        source_repo:
+          type: string
+        version:
+          type: string
+      required:
+        - host_id
+        - hostname
+        - manager
+        - name
+        - version
       type: object
     Host:
       additionalProperties: false
@@ -1301,6 +1365,43 @@ components:
         - monitor_id
         - results
       type: object
+    NetMetricsOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/NetMetricsOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        from:
+          format: date-time
+          type: string
+        host_id:
+          type: string
+        nics:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        samples:
+          items:
+            $ref: "#/components/schemas/NetSample"
+          type:
+            - array
+            - "null"
+        to:
+          format: date-time
+          type: string
+      required:
+        - host_id
+        - from
+        - to
+        - nics
+        - samples
+      type: object
     NetSample:
       additionalProperties: false
       properties:
@@ -1835,6 +1936,37 @@ components:
         - metadata_mtime
         - metadata_age_seconds
         - refreshed_externally
+      type: object
+    SearchPackagesOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/SearchPackagesOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        limit:
+          format: int64
+          type: integer
+        offset:
+          format: int64
+          type: integer
+        packages:
+          items:
+            $ref: "#/components/schemas/GlobalPackageRow"
+          type:
+            - array
+            - "null"
+        total:
+          format: int64
+          type: integer
+      required:
+        - total
+        - limit
+        - offset
+        - packages
       type: object
     SecurityReport:
       additionalProperties: false
@@ -2819,6 +2951,80 @@ paths:
       summary: Recent login/auth events for a host
       tags:
         - security
+  /v1/hosts/{id}/metrics/disk:
+    get:
+      operationId: host-disk-metrics
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: from
+          schema:
+            format: date-time
+            type: string
+        - explode: false
+          in: query
+          name: to
+          schema:
+            format: date-time
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiskMetricsOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Time-range disk samples for a host (optionally one disk)
+      tags:
+        - hosts
+  /v1/hosts/{id}/metrics/net:
+    get:
+      operationId: host-net-metrics
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: from
+          schema:
+            format: date-time
+            type: string
+        - explode: false
+          in: query
+          name: to
+          schema:
+            format: date-time
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NetMetricsOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Time-range network samples for a host (optionally one nic)
+      tags:
+        - hosts
   /v1/hosts/{id}/metrics/system:
     get:
       operationId: host-system-metrics
@@ -3451,6 +3657,67 @@ paths:
       summary: Replace a notification rule
       tags:
         - notifications
+  /v1/packages:
+    get:
+      operationId: search-packages
+      parameters:
+        - description: substring match on package name or version
+          explode: false
+          in: query
+          name: q
+          schema:
+            description: substring match on package name or version
+            type: string
+        - description: filter by manager
+          explode: false
+          in: query
+          name: manager
+          schema:
+            description: filter by manager
+            enum:
+              - dpkg
+              - rpm
+              - pacman
+              - apk
+            type: string
+        - description: restrict to a single host
+          explode: false
+          in: query
+          name: host_id
+          schema:
+            description: restrict to a single host
+            type: string
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            format: int64
+            maximum: 1000
+            minimum: 1
+            type: integer
+        - explode: false
+          in: query
+          name: offset
+          schema:
+            format: int64
+            minimum: 0
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchPackagesOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Search installed packages across all hosts
+      tags:
+        - packages
 servers:
   - description: current
     url: /

@@ -1,9 +1,37 @@
+/* Self-hosted variable fonts — bundled, never fetched from a CDN. */
+@import "@fontsource-variable/inter/wght.css";
+@import "@fontsource-variable/jetbrains-mono/wght.css";
+@import "uplot/dist/uPlot.min.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
-  body {
-    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  html {
+    font-feature-settings: "cv11", "ss01", "ss03"; /* Inter character variants */
   }
+  body {
+    font-family: theme("fontFamily.sans");
+    font-feature-settings: "cv11", "ss01";
+  }
+  /* Scrollbar tuned for dark UI; only applied when supported. */
+  * {
+    scrollbar-color: theme("colors.border-strong") theme("colors.bg");
+  }
+  *::-webkit-scrollbar { width: 8px; height: 8px; }
+  *::-webkit-scrollbar-thumb { background: theme("colors.border-strong"); border-radius: 4px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+}
+
+@layer components {
+  /* uPlot dark theme overrides. uPlot gives us a `.u-wrap` root we can scope. */
+  .u-wrap {
+    color: theme("colors.fg-muted");
+    font-family: theme("fontFamily.sans");
+    font-size: 11px;
+  }
+  .u-legend { color: theme("colors.fg-muted"); }
+  .u-legend th { color: theme("colors.fg-subtle"); font-weight: 500; }
+  .u-cursor-pt { box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.4); }
 }

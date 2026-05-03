@@ -162,6 +162,33 @@ func (s *Server) registerRoutes() {
 	}, s.handleHostPackageUpdates)
 
 	huma.Register(s.API, huma.Operation{
+		OperationID: "host-disk-metrics",
+		Method:      http.MethodGet,
+		Path:        "/v1/hosts/{id}/metrics/disk",
+		Summary:     "Time-range disk samples for a host (optionally one disk)",
+		Tags:        []string{"hosts"},
+		Middlewares: protected,
+	}, s.handleDiskMetrics)
+
+	huma.Register(s.API, huma.Operation{
+		OperationID: "host-net-metrics",
+		Method:      http.MethodGet,
+		Path:        "/v1/hosts/{id}/metrics/net",
+		Summary:     "Time-range network samples for a host (optionally one nic)",
+		Tags:        []string{"hosts"},
+		Middlewares: protected,
+	}, s.handleNetMetrics)
+
+	huma.Register(s.API, huma.Operation{
+		OperationID: "search-packages",
+		Method:      http.MethodGet,
+		Path:        "/v1/packages",
+		Summary:     "Search installed packages across all hosts",
+		Tags:        []string{"packages"},
+		Middlewares: protected,
+	}, s.handleSearchPackages)
+
+	huma.Register(s.API, huma.Operation{
 		OperationID: "host-security",
 		Method:      http.MethodGet,
 		Path:        "/v1/hosts/{id}/security",
@@ -567,6 +594,142 @@ type sysMetricsOutput struct {
 		To      time.Time               `json:"to"`
 		Samples []apitypes.SystemSample `json:"samples"`
 	}
+}
+
+// --- Host disk/net range metrics ------------------------------------------
+
+type rangeMetricsInput struct {
+	ID   string    `path:"id"`
+	From time.Time `query:"from"`
+	To   time.Time `query:"to"`
+}
+
+type diskMetricsOutput struct {
+	Body struct {
+		HostID  string                 `json:"host_id"`
+		From    time.Time              `json:"from"`
+		To      time.Time              `json:"to"`
+		Devices []string               `json:"devices"`
+		Samples []apitypes.DiskSample  `json:"samples"`
+	}
+}
+
+func (s *Server) handleDiskMetrics(ctx context.Context, in *rangeMetricsInput) (*diskMetricsOutput, error) {
+	id, err := uuid.Parse(in.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid id")
+	}
+	to := in.To
+	if to.IsZero() {
+		to = time.Now().UTC()
+	}
+	from := in.From
+	if from.IsZero() {
+		from = to.Add(-1 * time.Hour)
+	}
+	samples, devices, err := s.Store.QueryDiskMetrics(ctx, id, from, to, nil)
+	if err != nil {
+		if errors.Is(err, store.ErrHostNotFound) {
+			return nil, huma.Error404NotFound("host not found")
+		}
+		return nil, huma.Error500InternalServerError("query failed", err)
+	}
+	out := &diskMetricsOutput{}
+	out.Body.HostID = id.String()
+	out.Body.From = from
+	out.Body.To = to
+	out.Body.Devices = devices
+	out.Body.Samples = samples
+	return out, nil
+}
+
+type netMetricsOutput struct {
+	Body struct {
+		HostID  string               `json:"host_id"`
+		From    time.Time            `json:"from"`
+		To      time.Time            `json:"to"`
+		Nics    []string             `json:"nics"`
+		Samples []apitypes.NetSample `json:"samples"`
+	}
+}
+
+func (s *Server) handleNetMetrics(ctx context.Context, in *rangeMetricsInput) (*netMetricsOutput, error) {
+	id, err := uuid.Parse(in.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid id")
+	}
+	to := in.To
+	if to.IsZero() {
+		to = time.Now().UTC()
+	}
+	from := in.From
+	if from.IsZero() {
+		from = to.Add(-1 * time.Hour)
+	}
+	samples, nics, err := s.Store.QueryNetMetrics(ctx, id, from, to, nil)
+	if err != nil {
+		if errors.Is(err, store.ErrHostNotFound) {
+			return nil, huma.Error404NotFound("host not found")
+		}
+		return nil, huma.Error500InternalServerError("query failed", err)
+	}
+	out := &netMetricsOutput{}
+	out.Body.HostID = id.String()
+	out.Body.From = from
+	out.Body.To = to
+	out.Body.Nics = nics
+	out.Body.Samples = samples
+	return out, nil
+}
+
+// --- Global packages search -----------------------------------------------
+
+type searchPackagesInput struct {
+	Q       string `query:"q"        doc:"substring match on package name or version"`
+	Manager string `query:"manager"  enum:"dpkg,rpm,pacman,apk" doc:"filter by manager"`
+	HostID  string `query:"host_id"  doc:"restrict to a single host"`
+	Limit   int    `query:"limit"    minimum:"1" maximum:"1000"`
+	Offset  int    `query:"offset"   minimum:"0"`
+}
+
+type searchPackagesOutput struct {
+	Body struct {
+		Total    int                         `json:"total"`
+		Limit    int                         `json:"limit"`
+		Offset   int                         `json:"offset"`
+		Packages []apitypes.GlobalPackageRow `json:"packages"`
+	}
+}
+
+func (s *Server) handleSearchPackages(ctx context.Context, in *searchPackagesInput) (*searchPackagesOutput, error) {
+	var hostID *uuid.UUID
+	if in.HostID != "" {
+		id, err := uuid.Parse(in.HostID)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid host_id")
+		}
+		hostID = &id
+	}
+	results, total, err := s.Store.SearchPackages(ctx, in.Q, in.Manager, hostID, in.Limit, in.Offset)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("query failed", err)
+	}
+	limit := in.Limit
+	if limit <= 0 {
+		limit = 100
+	}
+	out := &searchPackagesOutput{}
+	out.Body.Total = total
+	out.Body.Limit = limit
+	out.Body.Offset = in.Offset
+	for _, r := range results {
+		out.Body.Packages = append(out.Body.Packages, apitypes.GlobalPackageRow{
+			HostID: r.HostID, Hostname: r.Hostname, Manager: r.Manager,
+			Name: r.Name, Version: r.Version, Arch: r.Arch,
+			SourceRepo: r.SourceRepo, InstalledAt: r.InstalledAt,
+		})
+	}
+	return out, nil
 }
 
 // --- Host detail (single host with bundles) --------------------------------

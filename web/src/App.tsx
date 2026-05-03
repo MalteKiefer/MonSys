@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Activity, LogOut, Package, Server, Settings, ShieldCheck, UserCog, Users } from "lucide-react";
 import { Link, Navigate, NavLink, Route, Routes } from "react-router-dom";
 
 import { AdminSecurity } from "./pages/AdminSecurity";
@@ -7,6 +8,7 @@ import { AdminUsers } from "./pages/AdminUsers";
 import { HostDetail } from "./pages/HostDetail";
 import { Hosts } from "./pages/Hosts";
 import { Login } from "./pages/Login";
+import { Packages } from "./pages/Packages";
 import { Profile } from "./pages/Profile";
 import { Reset } from "./pages/Reset";
 import { api } from "./lib/api";
@@ -50,6 +52,7 @@ export function App() {
         <Routes>
           <Route path="/" element={<Hosts />} />
           <Route path="/hosts/:id" element={<HostDetail />} />
+          <Route path="/packages" element={<Packages />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/admin/users" element={<AdminUsers />} />
           <Route path="/admin/security" element={<AdminSecurity />} />
@@ -65,9 +68,6 @@ export function App() {
 function Header() {
   const { user, clear } = useAuth();
   const qc = useQueryClient();
-  const linkBase =
-    "px-3 py-1.5 text-sm rounded text-zinc-300 hover:text-white hover:bg-zinc-800";
-  const linkActive = "bg-zinc-800 text-white";
   const isAdmin = user?.role === "admin";
 
   function logout() {
@@ -77,42 +77,68 @@ function Header() {
   }
 
   return (
-    <header className="flex items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4 py-2">
-      <div className="flex items-center gap-4">
-        <Link to="/" className="text-sm font-semibold tracking-tight">
-          mon
+    <header className="sticky top-0 z-30 flex items-center justify-between border-b border-border bg-bg/85 px-5 py-2.5 backdrop-blur supports-[backdrop-filter]:bg-bg/70">
+      <div className="flex items-center gap-6">
+        <Link to="/" className="flex items-center gap-2 text-sm font-semibold tracking-tight">
+          <Activity className="h-4 w-4 text-accent" />
+          <span>mon</span>
         </Link>
-        <nav className="flex items-center gap-1">
-          <NavLink to="/" end className={({ isActive }) => `${linkBase} ${isActive ? linkActive : ""}`}>
-            Hosts
-          </NavLink>
-          <NavLink to="/profile" className={({ isActive }) => `${linkBase} ${isActive ? linkActive : ""}`}>
-            Profile
-          </NavLink>
+        <nav className="flex items-center gap-0.5">
+          <NavItem to="/" icon={Server}>Hosts</NavItem>
+          <NavItem to="/packages" icon={Package}>Packages</NavItem>
+          <NavItem to="/profile" icon={UserCog}>Profile</NavItem>
           {isAdmin && (
             <>
-              <NavLink to="/admin/users" className={({ isActive }) => `${linkBase} ${isActive ? linkActive : ""}`}>
-                Users
-              </NavLink>
-              <NavLink to="/admin/security" className={({ isActive }) => `${linkBase} ${isActive ? linkActive : ""}`}>
-                Security
-              </NavLink>
+              <span className="mx-2 h-4 w-px bg-border" aria-hidden />
+              <NavItem to="/admin/users" icon={Users}>Users</NavItem>
+              <NavItem to="/admin/security" icon={ShieldCheck}>Security</NavItem>
             </>
           )}
         </nav>
       </div>
-      <div className="flex items-center gap-3 text-sm text-zinc-400">
-        <span>{user?.email}</span>
+      <div className="flex items-center gap-3 text-sm">
         {user?.totp_active && (
-          <span className="rounded bg-ok/15 px-2 py-0.5 text-xs text-ok">2FA</span>
+          <span className="hidden rounded-md bg-ok/10 px-1.5 py-0.5 text-[11px] font-medium text-ok ring-1 ring-inset ring-ok/30 sm:inline">
+            2FA
+          </span>
         )}
+        <span className="text-fg-muted">{user?.email}</span>
         <button
           onClick={logout}
-          className="rounded border border-zinc-700 px-2 py-1 text-xs hover:bg-zinc-800"
+          aria-label="Sign out"
+          className="inline-flex items-center gap-1 rounded-md border border-border bg-panel px-2 py-1 text-xs text-fg-muted transition-colors hover:bg-panel-2 hover:text-fg"
         >
-          Sign out
+          <LogOut className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">Sign out</span>
         </button>
       </div>
     </header>
+  );
+}
+
+function NavItem({
+  to,
+  icon: Icon,
+  children,
+}: {
+  to: string;
+  icon: typeof Settings;
+  children: React.ReactNode;
+}) {
+  return (
+    <NavLink
+      to={to}
+      end={to === "/"}
+      className={({ isActive }) =>
+        `inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm transition-colors duration-150 ${
+          isActive
+            ? "bg-panel-2 text-fg shadow-panel"
+            : "text-fg-muted hover:bg-panel hover:text-fg"
+        }`
+      }
+    >
+      <Icon className="h-3.5 w-3.5" />
+      {children}
+    </NavLink>
   );
 }

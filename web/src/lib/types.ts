@@ -239,6 +239,45 @@ export type SystemSample = {
   uptime_sec: number;
 };
 
+export type DiskSample = {
+  time: string;
+  device: string;
+  mountpoint: string;
+  used_bytes: number;
+  free_bytes: number;
+  inodes_used: number;
+  inodes_free: number;
+  read_bytes: number;
+  write_bytes: number;
+  read_ops: number;
+  write_ops: number;
+  io_time_ms: number;
+};
+
+export type NetSample = {
+  time: string;
+  nic_name: string;
+  rx_bytes: number;
+  tx_bytes: number;
+  rx_pkts: number;
+  tx_pkts: number;
+  rx_errs: number;
+  tx_errs: number;
+  rx_drops: number;
+  tx_drops: number;
+};
+
+export type GlobalPackageRow = {
+  host_id: string;
+  hostname: string;
+  manager: string;
+  name: string;
+  version: string;
+  arch?: string;
+  source_repo?: string;
+  installed_at?: string;
+};
+
 export type PendingUpdate = {
   manager: string;
   name: string;

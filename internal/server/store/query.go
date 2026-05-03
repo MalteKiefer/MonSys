@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -189,6 +190,181 @@ func (s *Store) ListHostLogins(ctx context.Context, hostID uuid.UUID, since time
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+// QueryDiskMetrics returns disk samples in [from, to], optionally filtered to
+// a specific disk_id. Results are flat — caller groups by disk_id for charting.
+func (s *Store) QueryDiskMetrics(ctx context.Context, hostID uuid.UUID, from, to time.Time, diskID *uuid.UUID) ([]apitypes.DiskSample, []string, error) {
+	if err := s.requireHost(ctx, hostID); err != nil {
+		return nil, nil, err
+	}
+	args := []any{hostID, from, to}
+	filter := ""
+	if diskID != nil {
+		filter = " AND m.disk_id = $4"
+		args = append(args, *diskID)
+	}
+	rows, err := s.Pool.Query(ctx, `
+		SELECT m.time, d.device, d.mountpoint,
+		       COALESCE(m.used_bytes,0), COALESCE(m.free_bytes,0),
+		       COALESCE(m.inodes_used,0), COALESCE(m.inodes_free,0),
+		       COALESCE(m.read_bytes,0), COALESCE(m.write_bytes,0),
+		       COALESCE(m.read_ops,0), COALESCE(m.write_ops,0),
+		       COALESCE(m.io_time_ms,0)
+		FROM metrics_disk m JOIN disks d ON d.id = m.disk_id
+		WHERE m.host_id = $1 AND m.time >= $2 AND m.time <= $3`+filter+`
+		ORDER BY m.time ASC`, args...)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	out := []apitypes.DiskSample{}
+	seen := map[string]struct{}{}
+	devices := []string{}
+	for rows.Next() {
+		var s apitypes.DiskSample
+		if err := rows.Scan(&s.Time, &s.Device, &s.Mountpoint,
+			&s.UsedBytes, &s.FreeBytes, &s.InodesUsed, &s.InodesFree,
+			&s.ReadBytes, &s.WriteBytes, &s.ReadOps, &s.WriteOps, &s.IOTimeMS); err != nil {
+			return nil, nil, err
+		}
+		out = append(out, s)
+		if _, ok := seen[s.Mountpoint]; !ok {
+			seen[s.Mountpoint] = struct{}{}
+			devices = append(devices, s.Mountpoint)
+		}
+	}
+	return out, devices, rows.Err()
+}
+
+// QueryNetMetrics returns nic samples in [from, to].
+func (s *Store) QueryNetMetrics(ctx context.Context, hostID uuid.UUID, from, to time.Time, nicID *uuid.UUID) ([]apitypes.NetSample, []string, error) {
+	if err := s.requireHost(ctx, hostID); err != nil {
+		return nil, nil, err
+	}
+	args := []any{hostID, from, to}
+	filter := ""
+	if nicID != nil {
+		filter = " AND m.nic_id = $4"
+		args = append(args, *nicID)
+	}
+	rows, err := s.Pool.Query(ctx, `
+		SELECT m.time, n.name,
+		       COALESCE(m.rx_bytes,0), COALESCE(m.tx_bytes,0),
+		       COALESCE(m.rx_pkts,0),  COALESCE(m.tx_pkts,0),
+		       COALESCE(m.rx_errs,0),  COALESCE(m.tx_errs,0),
+		       COALESCE(m.rx_drops,0), COALESCE(m.tx_drops,0)
+		FROM metrics_net m JOIN nics n ON n.id = m.nic_id
+		WHERE m.host_id = $1 AND m.time >= $2 AND m.time <= $3`+filter+`
+		ORDER BY m.time ASC`, args...)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	out := []apitypes.NetSample{}
+	seen := map[string]struct{}{}
+	nics := []string{}
+	for rows.Next() {
+		var s apitypes.NetSample
+		if err := rows.Scan(&s.Time, &s.NicName,
+			&s.RxBytes, &s.TxBytes, &s.RxPkts, &s.TxPkts,
+			&s.RxErrs, &s.TxErrs, &s.RxDrops, &s.TxDrops); err != nil {
+			return nil, nil, err
+		}
+		out = append(out, s)
+		if _, ok := seen[s.NicName]; !ok {
+			seen[s.NicName] = struct{}{}
+			nics = append(nics, s.NicName)
+		}
+	}
+	return out, nics, rows.Err()
+}
+
+func (s *Store) requireHost(ctx context.Context, hostID uuid.UUID) error {
+	var ok bool
+	err := s.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM hosts WHERE id = $1)`, hostID).Scan(&ok)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return ErrHostNotFound
+	}
+	return nil
+}
+
+// SearchPackages searches installed packages across hosts (or one host) with
+// optional manager filter and case-insensitive name/version matching.
+type PackageSearchResult struct {
+	HostID      string
+	Hostname    string
+	Manager     string
+	Name        string
+	Version     string
+	Arch        string
+	SourceRepo  string
+	InstalledAt *time.Time
+}
+
+func (s *Store) SearchPackages(ctx context.Context, q, manager string, hostID *uuid.UUID, limit, offset int) ([]PackageSearchResult, int, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	args := []any{}
+	where := []string{"1=1"}
+	addArg := func(v any) string {
+		args = append(args, v)
+		return fmt.Sprintf("$%d", len(args))
+	}
+	if q != "" {
+		// ILIKE on name and version. Normalize the query so trailing/leading
+		// whitespace doesn't matter.
+		pattern := "%" + q + "%"
+		where = append(where, fmt.Sprintf("(p.name ILIKE %s OR p.version ILIKE %s)", addArg(pattern), addArg(pattern)))
+	}
+	if manager != "" {
+		where = append(where, fmt.Sprintf("p.manager = %s", addArg(manager)))
+	}
+	if hostID != nil {
+		where = append(where, fmt.Sprintf("p.host_id = %s", addArg(*hostID)))
+	}
+
+	whereSQL := strings.Join(where, " AND ")
+
+	var total int
+	if err := s.Pool.QueryRow(ctx,
+		`SELECT count(*) FROM packages p WHERE `+whereSQL, args...,
+	).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	args = append(args, limit, offset)
+	rows, err := s.Pool.Query(ctx, `
+		SELECT p.host_id, h.hostname, p.manager, p.name, p.version,
+		       COALESCE(p.arch,''), COALESCE(p.source_repo,''), p.installed_at
+		FROM packages p JOIN hosts h ON h.id = p.host_id
+		WHERE `+whereSQL+`
+		ORDER BY p.name, h.hostname
+		LIMIT $`+fmt.Sprint(len(args)-1)+` OFFSET $`+fmt.Sprint(len(args)), args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	out := []PackageSearchResult{}
+	for rows.Next() {
+		var r PackageSearchResult
+		var hid uuid.UUID
+		if err := rows.Scan(&hid, &r.Hostname, &r.Manager, &r.Name, &r.Version,
+			&r.Arch, &r.SourceRepo, &r.InstalledAt); err != nil {
+			return nil, 0, err
+		}
+		r.HostID = hid.String()
+		out = append(out, r)
+	}
+	return out, total, rows.Err()
 }
 
 var _ = pgx.ErrNoRows

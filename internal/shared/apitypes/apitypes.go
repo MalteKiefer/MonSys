@@ -541,6 +541,18 @@ type PackageSummaryRow struct {
 	MetadataAgeSec  int64     `json:"metadata_age_seconds"`
 }
 
+// GlobalPackageRow is a search result row joining packages → hosts.
+type GlobalPackageRow struct {
+	HostID      string     `json:"host_id"`
+	Hostname    string     `json:"hostname"`
+	Manager     string     `json:"manager"`
+	Name        string     `json:"name"`
+	Version     string     `json:"version"`
+	Arch        string     `json:"arch,omitempty"`
+	SourceRepo  string     `json:"source_repo,omitempty"`
+	InstalledAt *time.Time `json:"installed_at,omitempty"`
+}
+
 type PackageRow struct {
 	Manager     string     `json:"manager"`
 	Name        string     `json:"name"`
