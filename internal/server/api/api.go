@@ -2009,6 +2009,9 @@ func (s *Server) handleAdminDeleteUser(ctx context.Context, in *hostIDInput) (*e
 	if caller.ID == id {
 		return nil, huma.Error400BadRequest("cannot delete yourself")
 	}
+	if err := s.refuseIfLastAdmin(ctx, id, "delete"); err != nil {
+		return nil, err
+	}
 	if err := s.Store.DeleteUser(ctx, id); err != nil {
 		if errors.Is(err, store.ErrUserNotFound) {
 			return nil, huma.Error404NotFound("user not found")
@@ -2029,12 +2032,39 @@ func (s *Server) handleAdminLockUser(ctx context.Context, in *hostIDInput) (*emp
 	if caller.ID == id {
 		return nil, huma.Error400BadRequest("cannot lock yourself")
 	}
+	if err := s.refuseIfLastAdmin(ctx, id, "lock"); err != nil {
+		return nil, err
+	}
 	if err := s.Store.SetUserDisabled(ctx, id, true); err != nil {
 		return nil, huma.Error500InternalServerError("lock failed", err)
 	}
 	out := &emptyOutput{}
 	out.Body.OK = true
 	return out, nil
+}
+
+// refuseIfLastAdmin returns a 400 if removing/disabling target would leave
+// the system without any enabled admin. Looking up the target's role first
+// avoids the count query when the target is a regular user.
+func (s *Server) refuseIfLastAdmin(ctx context.Context, target uuid.UUID, action string) error {
+	u, err := s.Store.GetUser(ctx, target)
+	if err != nil {
+		if errors.Is(err, store.ErrUserNotFound) {
+			return huma.Error404NotFound("user not found")
+		}
+		return huma.Error500InternalServerError("user fetch failed", err)
+	}
+	if u.Role != "admin" {
+		return nil
+	}
+	last, err := s.Store.IsLastEnabledAdmin(ctx, target)
+	if err != nil {
+		return huma.Error500InternalServerError("admin check failed", err)
+	}
+	if last {
+		return huma.Error400BadRequest("cannot " + action + " the last enabled admin")
+	}
+	return nil
 }
 
 func (s *Server) handleAdminUnlockUser(ctx context.Context, in *hostIDInput) (*emptyOutput, error) {

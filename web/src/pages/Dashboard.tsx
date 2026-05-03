@@ -112,7 +112,7 @@ export function Dashboard() {
               <ShieldAlert className="h-4 w-4 text-fg-muted" />
               <h3 className="text-sm font-semibold">Failing monitors</h3>
             </div>
-            <Link to="/admin/monitors" className="text-xs text-accent hover:underline">All monitors →</Link>
+            <Link to="/monitors" className="text-xs text-accent hover:underline">All monitors →</Link>
           </PanelHeader>
           <PanelBody className="p-0 overflow-x-auto">
             {failingMonitors.length === 0 ? (

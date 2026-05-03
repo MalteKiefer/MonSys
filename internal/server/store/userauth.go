@@ -242,6 +242,23 @@ func (s *Store) SetUserRole(ctx context.Context, userID uuid.UUID, role string) 
 	return nil
 }
 
+// IsLastEnabledAdmin reports whether removing or disabling userID would
+// leave the system without any enabled admin. Used by the API layer to
+// refuse delete/lock/demote on the final admin.
+func (s *Store) IsLastEnabledAdmin(ctx context.Context, userID uuid.UUID) (bool, error) {
+	// "enabled admin" = role=admin AND disabled_at IS NULL AND not the
+	// candidate being removed.
+	var n int
+	err := s.Pool.QueryRow(ctx, `
+		SELECT count(*) FROM users
+		WHERE role = 'admin' AND disabled_at IS NULL AND id <> $1`, userID,
+	).Scan(&n)
+	if err != nil {
+		return false, err
+	}
+	return n == 0, nil
+}
+
 // DeleteUser removes a user. Sessions and TOTP state cascade.
 func (s *Store) DeleteUser(ctx context.Context, userID uuid.UUID) error {
 	tag, err := s.Pool.Exec(ctx, `DELETE FROM users WHERE id = $1`, userID)

@@ -61,7 +61,8 @@ export function App() {
           <Route path="/profile" element={<Profile />} />
           <Route path="/notifications" element={<AdminNotifications />} />
           <Route path="/admin/notifications" element={<Navigate to="/notifications" replace />} />
-          <Route path="/admin/monitors" element={<AdminMonitors />} />
+          <Route path="/monitors" element={<AdminMonitors />} />
+          <Route path="/admin/monitors" element={<Navigate to="/monitors" replace />} />
           <Route path="/admin/groups" element={<AdminGroups />} />
           <Route path="/admin/users" element={<AdminUsers />} />
           <Route path="/admin/security" element={<AdminSecurity />} />
@@ -96,6 +97,7 @@ function Header() {
           <NavItem to="/" icon={LayoutDashboard}>Overview</NavItem>
           <NavItem to="/hosts" icon={Server}>Hosts</NavItem>
           <NavItem to="/packages" icon={Package}>Packages</NavItem>
+          <NavItem to="/monitors" icon={Radio}>Monitors</NavItem>
           <NavItem to="/notifications" icon={Bell}>Notifications</NavItem>
           <NavItem to="/profile" icon={UserCog}>Profile</NavItem>
           {isAdmin && (
@@ -127,7 +129,6 @@ function Header() {
 }
 
 const ADMIN_ITEMS = [
-  { to: "/admin/monitors", label: "Monitors", icon: Radio },
   { to: "/admin/groups", label: "Groups", icon: Network },
   { to: "/admin/users", label: "Users", icon: Users },
   { to: "/admin/security", label: "Security", icon: ShieldCheck },
