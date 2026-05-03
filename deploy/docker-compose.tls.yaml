@@ -1,0 +1,32 @@
+# Apply with: docker compose -f docker-compose.yaml -f docker-compose.tls.yaml up -d
+#
+# Overlay that turns on TLS for the mon-server HTTP listener and (optionally)
+# enforces TLS towards postgres. The overlay assumes that PEM-encoded cert
+# and key live next to the compose file at ./secrets/tls_cert.pem and
+# ./secrets/tls_key.pem (mode 0600, owned by uid 65532 for the distroless
+# nonroot user).
+
+name: mon
+
+services:
+  mon-server:
+    environment:
+      MON_TLS_CERT: /run/secrets/tls_cert
+      MON_TLS_KEY: /run/secrets/tls_key
+      # TODO: only flip to sslmode=require once a sibling timescaledb overlay
+      # provisions a server certificate; the stock timescale/timescaledb image
+      # ships without one, so requiring TLS here would break the connection.
+      # MON_DSN: "postgres://mon@timescaledb:5432/mon?sslmode=require"
+    secrets:
+      - source: tls_cert
+        target: tls_cert
+        mode: 0400
+      - source: tls_key
+        target: tls_key
+        mode: 0400
+
+secrets:
+  tls_cert:
+    file: ./secrets/tls_cert.pem
+  tls_key:
+    file: ./secrets/tls_key.pem

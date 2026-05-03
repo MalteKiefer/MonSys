@@ -18,7 +18,7 @@ ARG VERSION=dev
 ARG COMMIT=unknown
 ARG DATE=unknown
 RUN CGO_ENABLED=0 go build -trimpath \
-    -ldflags="-s -w \
+    -ldflags="-s -w -buildid= \
       -X github.com/pr0ph37/mon/internal/shared/version.Version=${VERSION} \
       -X github.com/pr0ph37/mon/internal/shared/version.Commit=${COMMIT} \
       -X github.com/pr0ph37/mon/internal/shared/version.Date=${DATE}" \

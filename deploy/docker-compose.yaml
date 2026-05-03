@@ -1,8 +1,16 @@
 name: mon
 
+# NOTE: compose v2 bind-mounts preserve host permissions on files under
+# ./secrets. The distroless `nonroot` user (uid 65532) used by mon-server
+# must be able to read /run/secrets/db_pw. Production deployments should
+# prefer docker swarm secrets (which set tmpfs perms automatically) or a
+# docker-socket-proxy that adjusts ownership; bind-mounting on a single
+# host requires `chown 65532 deploy/secrets/*` and mode 0600.
+
 services:
   timescaledb:
-    image: timescale/timescaledb:latest-pg16
+    # digest-pinned for supply-chain integrity; refresh via dependabot or manual review
+    image: timescale/timescaledb:latest-pg16@sha256:a9329520abc449e3b14d5bc3a6ffae065bdde0f02667fa10880c49b35c109fd1
     restart: unless-stopped
     environment:
       POSTGRES_DB: mon
@@ -30,12 +38,14 @@ services:
         condition: service_healthy
     environment:
       MON_LISTEN_ADDR: ":8080"
+      # dev: sslmode=disable; in prod overlay enables TLS
       MON_DSN: "postgres://mon@timescaledb:5432/mon?sslmode=disable"
       MON_DSN_PASSWORD_FILE: /run/secrets/db_pw
     secrets:
       - db_pw
     ports:
-      - "8080:8080"
+      # bind to loopback; expose via reverse proxy with TLS termination
+      - "127.0.0.1:8080:8080"
     read_only: true
     tmpfs:
       - /tmp
