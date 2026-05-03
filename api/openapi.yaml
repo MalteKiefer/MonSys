@@ -1,0 +1,733 @@
+components:
+  schemas:
+    AgentRegisterRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/AgentRegisterRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        agent_version:
+          description: Version of mon-agent
+          type: string
+        arch:
+          description: GOARCH
+          enum:
+            - amd64
+            - arm64
+          examples:
+            - amd64
+          type: string
+        cpu_cores:
+          description: Logical core count
+          format: int64
+          type: integer
+        cpu_model:
+          description: Model name of CPU
+          type: string
+        distro:
+          description: PRETTY_NAME from os-release
+          examples:
+            - Ubuntu 24.04
+          type: string
+        hostname:
+          description: Operating-system hostname
+          examples:
+            - db-01
+          type: string
+        kernel:
+          description: uname -r
+          examples:
+            - 6.6.0-arch
+          type: string
+        labels:
+          additionalProperties:
+            type: string
+          description: Optional user-supplied labels
+          type: object
+        machine_id:
+          description: Contents of /etc/machine-id
+          examples:
+            - a1b2c3...
+          type: string
+        os:
+          description: "GOOS, expected: linux"
+          examples:
+            - linux
+          type: string
+        ram_total_bytes:
+          description: Total physical memory
+          format: int64
+          type: integer
+      required:
+        - hostname
+        - machine_id
+        - os
+        - kernel
+        - arch
+        - distro
+        - cpu_model
+        - cpu_cores
+        - ram_total_bytes
+        - agent_version
+      type: object
+    AgentRegisterResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/AgentRegisterResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        agent_id:
+          description: UUID assigned to this host
+          type: string
+        agent_key:
+          description: Secret key for subsequent ingest calls; show only once
+          type: string
+      required:
+        - agent_id
+        - agent_key
+      type: object
+    DiskInfo:
+      additionalProperties: false
+      properties:
+        device:
+          type: string
+        fstype:
+          type: string
+        is_removable:
+          type: boolean
+        mountpoint:
+          type: string
+        size_bytes:
+          format: int64
+          type: integer
+      required:
+        - device
+        - mountpoint
+        - fstype
+        - size_bytes
+        - is_removable
+      type: object
+    DiskSample:
+      additionalProperties: false
+      properties:
+        device:
+          type: string
+        free_bytes:
+          format: int64
+          type: integer
+        inodes_free:
+          format: int64
+          type: integer
+        inodes_used:
+          format: int64
+          type: integer
+        io_time_ms:
+          format: int64
+          type: integer
+        mountpoint:
+          type: string
+        read_bytes:
+          format: int64
+          type: integer
+        read_ops:
+          format: int64
+          type: integer
+        time:
+          format: date-time
+          type: string
+        used_bytes:
+          format: int64
+          type: integer
+        write_bytes:
+          format: int64
+          type: integer
+        write_ops:
+          format: int64
+          type: integer
+      required:
+        - time
+        - device
+        - mountpoint
+        - used_bytes
+        - free_bytes
+        - inodes_used
+        - inodes_free
+        - read_bytes
+        - write_bytes
+        - read_ops
+        - write_ops
+        - io_time_ms
+      type: object
+    ErrorDetail:
+      additionalProperties: false
+      properties:
+        location:
+          description: Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'
+          type: string
+        message:
+          description: Error message text
+          type: string
+        value:
+          description: The value at the given location
+      type: object
+    ErrorModel:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/ErrorModel.json
+          format: uri
+          readOnly: true
+          type: string
+        detail:
+          description: A human-readable explanation specific to this occurrence of the problem.
+          examples:
+            - Property foo is required but is missing.
+          type: string
+        errors:
+          description: Optional list of individual error details
+          items:
+            $ref: "#/components/schemas/ErrorDetail"
+          type:
+            - array
+            - "null"
+        instance:
+          description: A URI reference that identifies the specific occurrence of the problem.
+          examples:
+            - https://example.com/error-log/abc123
+          format: uri
+          type: string
+        status:
+          description: HTTP status code
+          examples:
+            - 400
+          format: int64
+          type: integer
+        title:
+          description: A short, human-readable summary of the problem type. This value should not change between occurrences of the error.
+          examples:
+            - Bad Request
+          type: string
+        type:
+          default: about:blank
+          description: A URI reference to human-readable documentation for the error.
+          examples:
+            - https://example.com/errors/example
+          format: uri
+          type: string
+      type: object
+    IngestRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/IngestRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        disks:
+          items:
+            $ref: "#/components/schemas/DiskSample"
+          type:
+            - array
+            - "null"
+        inventory:
+          $ref: "#/components/schemas/InventorySnap"
+          description: Present only when changed
+        nics:
+          items:
+            $ref: "#/components/schemas/NetSample"
+          type:
+            - array
+            - "null"
+        packages:
+          $ref: "#/components/schemas/PackageReport"
+          description: Optional package state
+        snapshot_at:
+          description: When the agent assembled this batch
+          format: date-time
+          type: string
+        system:
+          items:
+            $ref: "#/components/schemas/SystemSample"
+          type:
+            - array
+            - "null"
+        workloads:
+          items:
+            $ref: "#/components/schemas/WorkloadSample"
+          type:
+            - array
+            - "null"
+      required:
+        - snapshot_at
+      type: object
+    IngestResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/IngestResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        accepted:
+          type: boolean
+        server_time:
+          format: date-time
+          type: string
+      required:
+        - accepted
+        - server_time
+      type: object
+    InstalledPackage:
+      additionalProperties: false
+      properties:
+        arch:
+          type: string
+        installed_at:
+          format: date-time
+          type: string
+        manager:
+          enum:
+            - dpkg
+            - rpm
+            - pacman
+            - apk
+          type: string
+        name:
+          type: string
+        source_repo:
+          type: string
+        version:
+          type: string
+      required:
+        - manager
+        - name
+        - version
+      type: object
+    InventorySnap:
+      additionalProperties: false
+      properties:
+        agent_version:
+          type: string
+        cpu_cores:
+          format: int64
+          type: integer
+        cpu_model:
+          type: string
+        disks:
+          items:
+            $ref: "#/components/schemas/DiskInfo"
+          type:
+            - array
+            - "null"
+        distro:
+          type: string
+        hostname:
+          type: string
+        kernel:
+          type: string
+        labels:
+          additionalProperties:
+            type: string
+          type: object
+        nics:
+          items:
+            $ref: "#/components/schemas/NicInfo"
+          type:
+            - array
+            - "null"
+        ram_total_bytes:
+          format: int64
+          type: integer
+        sources:
+          description: Active collectors, e.g. docker, kubelet, proxmox
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        workloads:
+          items:
+            $ref: "#/components/schemas/WorkloadInfo"
+          type:
+            - array
+            - "null"
+      required:
+        - hostname
+        - kernel
+        - distro
+        - agent_version
+        - cpu_model
+        - cpu_cores
+        - ram_total_bytes
+      type: object
+    NetSample:
+      additionalProperties: false
+      properties:
+        nic_name:
+          type: string
+        rx_bytes:
+          format: int64
+          type: integer
+        rx_drops:
+          format: int64
+          type: integer
+        rx_errs:
+          format: int64
+          type: integer
+        rx_pkts:
+          format: int64
+          type: integer
+        time:
+          format: date-time
+          type: string
+        tx_bytes:
+          format: int64
+          type: integer
+        tx_drops:
+          format: int64
+          type: integer
+        tx_errs:
+          format: int64
+          type: integer
+        tx_pkts:
+          format: int64
+          type: integer
+      required:
+        - time
+        - nic_name
+        - rx_bytes
+        - tx_bytes
+        - rx_pkts
+        - tx_pkts
+        - rx_errs
+        - tx_errs
+        - rx_drops
+        - tx_drops
+      type: object
+    NicInfo:
+      additionalProperties: false
+      properties:
+        mac:
+          type: string
+        name:
+          type: string
+        speed_mbps:
+          format: int64
+          type: integer
+      required:
+        - name
+        - mac
+        - speed_mbps
+      type: object
+    PackageReport:
+      additionalProperties: false
+      properties:
+        installed:
+          description: Full list; omit when state_hash unchanged
+          items:
+            $ref: "#/components/schemas/InstalledPackage"
+          type:
+            - array
+            - "null"
+        repo_states:
+          items:
+            $ref: "#/components/schemas/RepoMetaState"
+          type:
+            - array
+            - "null"
+        state_hash:
+          description: sha256 over sorted (manager,name,version,arch); when unchanged, server may skip processing
+          type: string
+        summary:
+          $ref: "#/components/schemas/PackageSummary"
+        time:
+          format: date-time
+          type: string
+        updates:
+          items:
+            $ref: "#/components/schemas/PendingUpdate"
+          type:
+            - array
+            - "null"
+      required:
+        - time
+        - state_hash
+        - summary
+      type: object
+    PackageSummary:
+      additionalProperties: false
+      properties:
+        installed_count:
+          format: int64
+          type: integer
+        metadata_age_seconds:
+          format: int64
+          type: integer
+        security_updates:
+          format: int64
+          type: integer
+        updates_count:
+          format: int64
+          type: integer
+      required:
+        - installed_count
+        - updates_count
+        - security_updates
+        - metadata_age_seconds
+      type: object
+    PendingUpdate:
+      additionalProperties: false
+      properties:
+        arch:
+          type: string
+        available_version:
+          type: string
+        current_version:
+          type: string
+        is_security:
+          type: boolean
+        manager:
+          enum:
+            - dpkg
+            - rpm
+            - pacman
+            - apk
+          type: string
+        name:
+          type: string
+        source_repo:
+          type: string
+      required:
+        - manager
+        - name
+        - current_version
+        - available_version
+        - is_security
+      type: object
+    RepoMetaState:
+      additionalProperties: false
+      properties:
+        manager:
+          type: string
+        metadata_age_seconds:
+          format: int64
+          type: integer
+        metadata_mtime:
+          format: date-time
+          type: string
+        refreshed_externally:
+          type: boolean
+      required:
+        - manager
+        - metadata_mtime
+        - metadata_age_seconds
+        - refreshed_externally
+      type: object
+    SystemSample:
+      additionalProperties: false
+      properties:
+        cpu_per_core:
+          items:
+            format: double
+            type: number
+          type:
+            - array
+            - "null"
+        cpu_usage_pct:
+          format: double
+          type: number
+        load_1:
+          format: double
+          type: number
+        load_15:
+          format: double
+          type: number
+        load_5:
+          format: double
+          type: number
+        ram_avail_bytes:
+          format: int64
+          type: integer
+        ram_used_bytes:
+          format: int64
+          type: integer
+        swap_used_bytes:
+          format: int64
+          type: integer
+        time:
+          format: date-time
+          type: string
+        uptime_sec:
+          format: int64
+          type: integer
+      required:
+        - time
+        - cpu_usage_pct
+        - load_1
+        - load_5
+        - load_15
+        - ram_used_bytes
+        - ram_avail_bytes
+        - swap_used_bytes
+        - uptime_sec
+      type: object
+    WorkloadInfo:
+      additionalProperties: false
+      properties:
+        external_id:
+          type: string
+        image:
+          type: string
+        kind:
+          type: string
+        labels:
+          additionalProperties:
+            type: string
+          type: object
+        name:
+          type: string
+        state:
+          type: string
+      required:
+        - kind
+        - external_id
+        - name
+        - state
+      type: object
+    WorkloadSample:
+      additionalProperties: false
+      properties:
+        block_read_bytes:
+          format: int64
+          type: integer
+        block_write_bytes:
+          format: int64
+          type: integer
+        cpu_usage_pct:
+          format: double
+          type: number
+        external_id:
+          type: string
+        kind:
+          type: string
+        mem_limit_bytes:
+          format: int64
+          type: integer
+        mem_used_bytes:
+          format: int64
+          type: integer
+        net_rx_bytes:
+          format: int64
+          type: integer
+        net_tx_bytes:
+          format: int64
+          type: integer
+        state:
+          type: string
+        time:
+          format: date-time
+          type: string
+      required:
+        - time
+        - kind
+        - external_id
+        - cpu_usage_pct
+        - mem_used_bytes
+        - mem_limit_bytes
+        - net_rx_bytes
+        - net_tx_bytes
+        - block_read_bytes
+        - block_write_bytes
+        - state
+      type: object
+info:
+  description: Self-hosted server-monitoring API. Agents push metrics; users query.
+  title: mon
+  version: 53c4eba-dirty
+openapi: 3.1.0
+paths:
+  /v1/agents/register:
+    post:
+      description: "Trade a one-time bootstrap token (Authorization: Bearer …) for a per-host agent_key."
+      operationId: agent-register
+      parameters:
+        - description: Bearer <bootstrap-token>
+          in: header
+          name: Authorization
+          required: true
+          schema:
+            description: Bearer <bootstrap-token>
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentRegisterRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentRegisterResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Register a new agent
+      tags:
+        - agents
+  /v1/ingest:
+    post:
+      description: "Agents push samples here. Auth: Authorization: Bearer <agent_key>."
+      operationId: ingest
+      parameters:
+        - description: Bearer <agent_key>
+          in: header
+          name: Authorization
+          required: true
+          schema:
+            description: Bearer <agent_key>
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IngestRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Ingest metrics + inventory
+      tags:
+        - ingest
+servers:
+  - description: current
+    url: /

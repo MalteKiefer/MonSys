@@ -1,0 +1,88 @@
+package store
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/stdlib"
+	"github.com/pressly/goose/v3"
+
+	"github.com/pr0ph37/mon/internal/server/store/migrations"
+)
+
+type Store struct {
+	Pool *pgxpool.Pool
+}
+
+func Open(ctx context.Context, dsn string) (*Store, error) {
+	dsn, err := withPasswordFile(dsn)
+	if err != nil {
+		return nil, err
+	}
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		return nil, fmt.Errorf("pgxpool: %w", err)
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("ping: %w", err)
+	}
+	return &Store{Pool: pool}, nil
+}
+
+func (s *Store) Close() {
+	if s.Pool != nil {
+		s.Pool.Close()
+	}
+}
+
+// MigrateUp applies embedded SQL migrations using goose.
+func (s *Store) MigrateUp(ctx context.Context) error {
+	if err := goose.SetDialect("postgres"); err != nil {
+		return err
+	}
+	goose.SetBaseFS(migrations.FS)
+
+	cfg := s.Pool.Config().ConnConfig
+	db := stdlib.OpenDB(*cfg)
+	defer db.Close()
+
+	if err := goose.UpContext(ctx, db, "."); err != nil {
+		return fmt.Errorf("goose up: %w", err)
+	}
+	return nil
+}
+
+// withPasswordFile expands MON_DSN_PASSWORD_FILE if set, embedding the password
+// into the DSN. Useful for Docker secrets.
+func withPasswordFile(dsn string) (string, error) {
+	pwFile := os.Getenv("MON_DSN_PASSWORD_FILE")
+	if pwFile == "" {
+		return dsn, nil
+	}
+	b, err := os.ReadFile(pwFile)
+	if err != nil {
+		return "", fmt.Errorf("read password file: %w", err)
+	}
+	pw := strings.TrimSpace(string(b))
+	// pgx parses standard URL-form DSNs; insert password between user and host.
+	// Expect form: postgres://user@host:port/db?...
+	idx := strings.Index(dsn, "@")
+	if idx < 0 {
+		return "", errors.New("DSN missing user@ separator")
+	}
+	scheme := strings.Index(dsn, "://")
+	if scheme < 0 {
+		return "", errors.New("DSN missing scheme")
+	}
+	user := dsn[scheme+3 : idx]
+	rest := dsn[idx:]
+	return dsn[:scheme+3] + user + ":" + pw + rest, nil
+}
+
+var _ = sql.ErrNoRows
