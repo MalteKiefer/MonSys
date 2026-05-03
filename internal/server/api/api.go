@@ -45,6 +45,12 @@ type Server struct {
 
 func New(s *store.Store) *Server {
 	r := chi.NewRouter()
+	srv := &Server{Store: s, Router: r}
+
+	// chi requires every Use() call before any route registration.
+	// humachi.New below registers the openapi/docs routes, so all
+	// middleware must be installed first — including the docs gate that
+	// closes over srv.
 	r.Use(middleware.RealIP)
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Recoverer)
@@ -57,19 +63,15 @@ func New(s *store.Store) *Server {
 	// ingest endpoints. Cheap routes like /healthz and /readyz are skipped
 	// inside the middleware itself.
 	r.Use(rateLimitByPath())
+	// AUDIT-066: openapi/docs are session-protected.
+	r.Use(srv.requireSessionForDocs)
 	r.Use(middleware.Timeout(30 * time.Second))
 
 	cfg := huma.DefaultConfig("mon", version.Version)
 	cfg.Info.Description = "Self-hosted server-monitoring API. Agents push metrics; users query."
 	cfg.Servers = []*huma.Server{{URL: "/", Description: "current"}}
+	srv.API = humachi.New(r, cfg)
 
-	api := humachi.New(r, cfg)
-
-	srv := &Server{Store: s, Router: r, API: api}
-	// AUDIT-066: openapi/docs are session-protected. Wire the gate before
-	// route registration so chi's middleware chain captures /docs and
-	// /openapi.* requests.
-	r.Use(srv.requireSessionForDocs)
 	srv.registerRoutes()
 	return srv
 }
