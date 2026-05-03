@@ -15,9 +15,23 @@ GOFLAGS_BASE := -trimpath -ldflags='$(LDFLAGS)'
 BIN_DIR := bin
 
 .PHONY: all build build-server build-agent build-all tidy test vet fmt clean \
-        compose-up compose-down compose-logs
+        web web-dev compose-up compose-down compose-logs
 
-all: build
+all: web build
+
+# `make web` builds the SPA and stages it into the embed directory used by
+# `internal/server/spa`. Run this before `make build-server` if you've
+# changed anything under web/.
+web:
+	cd web && npm ci --no-audit --no-fund && npm run build
+	rm -rf internal/server/spa/dist
+	mkdir -p internal/server/spa/dist
+	cp -r web/dist/. internal/server/spa/dist/
+
+# Local dev: assumes mon-server is already running on :8080. Vite proxies
+# /v1, /healthz, /readyz, /docs to it. Open http://localhost:5173.
+web-dev:
+	cd web && npm install --no-audit --no-fund && npm run dev
 
 build: build-server build-agent
 

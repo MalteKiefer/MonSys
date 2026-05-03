@@ -10,3 +10,8 @@ deploy/certs/
 *.swp
 .idea/
 .vscode/
+# SPA embed dir: track the placeholder, ignore generated assets.
+# (the leading "!" overrides a global "dist/" ignore some users have)
+!internal/server/spa/dist/
+!internal/server/spa/dist/index.html
+internal/server/spa/dist/assets/

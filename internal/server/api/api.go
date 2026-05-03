@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/pr0ph37/mon/internal/server/notify"
+	"github.com/pr0ph37/mon/internal/server/spa"
 	"github.com/pr0ph37/mon/internal/server/store"
 	"github.com/pr0ph37/mon/internal/shared/apitypes"
 	"github.com/pr0ph37/mon/internal/shared/version"
@@ -290,6 +291,11 @@ func (s *Server) registerRoutes() {
 		Tags:        []string{"notifications"},
 		Middlewares: protected,
 	}, s.handleAlertHistory)
+
+	// SPA mount: anything not claimed by /v1, /healthz, /readyz, /docs is
+	// served from the embedded React build. Registered last so huma's API
+	// routes win.
+	s.Router.Handle("/*", spa.Handler())
 }
 
 // --- Register ---------------------------------------------------------------
