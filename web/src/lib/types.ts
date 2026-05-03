@@ -16,35 +16,6 @@ export type Host = {
   labels: Record<string, string>;
 };
 
-export type Monitor = {
-  id: string;
-  type: "cert" | "postgres" | "mysql" | "mongodb" | "http" | "tcp";
-  name: string;
-  target: string;
-  params?: Record<string, unknown>;
-  interval_sec: number;
-  enabled: boolean;
-  created_at: string;
-  created_by?: string;
-  last_check_at?: string;
-  last_status?: "ok" | "warn" | "fail" | "unknown";
-  last_latency_ms?: number;
-  last_detail?: string;
-};
-
-export type AlertHistoryEntry = {
-  id: number;
-  at: string;
-  rule_id?: string;
-  rule_name: string;
-  severity: "info" | "warning" | "critical";
-  subject: string;
-  body: string;
-  dedup_key: string;
-  delivered_to: string[];
-  delivery_errors: Record<string, string>;
-};
-
 export type CurrentUser = {
   id: string;
   email: string;
@@ -237,6 +208,102 @@ export type SystemSample = {
   ram_avail_bytes: number;
   swap_used_bytes: number;
   uptime_sec: number;
+};
+
+// Notifications
+
+export type NotificationChannel = {
+  id: string;
+  type: "smtp" | "slack" | "mattermost" | "ntfy";
+  name: string;
+  enabled: boolean;
+  config: Record<string, unknown>;
+  created_at: string;
+  created_by?: string;
+  last_used_at?: string | null;
+  last_error?: string;
+};
+
+export type NotificationChannelInput = {
+  type: "smtp" | "slack" | "mattermost" | "ntfy";
+  name: string;
+  enabled: boolean;
+  config: Record<string, unknown>;
+};
+
+export type NotificationRule = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  condition_type:
+    | "host_offline"
+    | "monitor_failed"
+    | "cert_expiring"
+    | "login_failed_threshold"
+    | "security_updates_pending";
+  condition_params?: Record<string, unknown>;
+  channel_ids: string[];
+  severity: "info" | "warning" | "critical";
+  throttle_sec: number;
+  created_at: string;
+  created_by?: string;
+};
+
+export type NotificationRuleInput = {
+  name: string;
+  enabled: boolean;
+  condition_type: NotificationRule["condition_type"];
+  condition_params?: Record<string, unknown>;
+  channel_ids: string[];
+  severity: NotificationRule["severity"];
+  throttle_sec: number;
+};
+
+export type AlertHistoryEntry = {
+  id: number;
+  at: string;
+  rule_id?: string;
+  rule_name: string;
+  severity: "info" | "warning" | "critical";
+  subject: string;
+  body: string;
+  dedup_key: string;
+  delivered_to: string[];
+  delivery_errors: Record<string, unknown>;
+};
+
+// Monitors
+
+export type Monitor = {
+  id: string;
+  type: "cert" | "postgres" | "mysql" | "mongodb" | "http" | "tcp";
+  name: string;
+  target: string;
+  params?: Record<string, unknown>;
+  interval_sec: number;
+  enabled: boolean;
+  created_at: string;
+  created_by?: string;
+  last_check_at?: string | null;
+  last_status?: "ok" | "warn" | "fail" | "unknown";
+  last_latency_ms?: number;
+  last_detail?: string;
+};
+
+export type MonitorInput = {
+  type: Monitor["type"];
+  name: string;
+  target: string;
+  params?: Record<string, unknown>;
+  interval_sec: number;
+  enabled: boolean;
+};
+
+export type MonitorResult = {
+  time: string;
+  status: "ok" | "warn" | "fail" | "unknown";
+  latency_ms: number;
+  detail?: string;
 };
 
 export type DiskSample = {

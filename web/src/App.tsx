@@ -1,10 +1,13 @@
 import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, LogOut, Package, Server, Settings, ShieldCheck, UserCog, Users } from "lucide-react";
+import { Activity, Bell, LayoutDashboard, LogOut, Package, Radio, Server, Settings, ShieldCheck, UserCog, Users } from "lucide-react";
 import { Link, Navigate, NavLink, Route, Routes } from "react-router-dom";
 
+import { AdminMonitors } from "./pages/AdminMonitors";
+import { AdminNotifications } from "./pages/AdminNotifications";
 import { AdminSecurity } from "./pages/AdminSecurity";
 import { AdminUsers } from "./pages/AdminUsers";
+import { Dashboard } from "./pages/Dashboard";
 import { HostDetail } from "./pages/HostDetail";
 import { Hosts } from "./pages/Hosts";
 import { Login } from "./pages/Login";
@@ -50,10 +53,13 @@ export function App() {
       <Header />
       <main className="flex-1 overflow-auto">
         <Routes>
-          <Route path="/" element={<Hosts />} />
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/hosts" element={<Hosts />} />
           <Route path="/hosts/:id" element={<HostDetail />} />
           <Route path="/packages" element={<Packages />} />
           <Route path="/profile" element={<Profile />} />
+          <Route path="/admin/notifications" element={<AdminNotifications />} />
+          <Route path="/admin/monitors" element={<AdminMonitors />} />
           <Route path="/admin/users" element={<AdminUsers />} />
           <Route path="/admin/security" element={<AdminSecurity />} />
           <Route path="/login" element={<Navigate to="/" replace />} />
@@ -84,12 +90,15 @@ function Header() {
           <span>mon</span>
         </Link>
         <nav className="flex items-center gap-0.5">
-          <NavItem to="/" icon={Server}>Hosts</NavItem>
+          <NavItem to="/" icon={LayoutDashboard}>Overview</NavItem>
+          <NavItem to="/hosts" icon={Server}>Hosts</NavItem>
           <NavItem to="/packages" icon={Package}>Packages</NavItem>
           <NavItem to="/profile" icon={UserCog}>Profile</NavItem>
           {isAdmin && (
             <>
               <span className="mx-2 h-4 w-px bg-border" aria-hidden />
+              <NavItem to="/admin/monitors" icon={Radio}>Monitors</NavItem>
+              <NavItem to="/admin/notifications" icon={Bell}>Notifications</NavItem>
               <NavItem to="/admin/users" icon={Users}>Users</NavItem>
               <NavItem to="/admin/security" icon={ShieldCheck}>Security</NavItem>
             </>
