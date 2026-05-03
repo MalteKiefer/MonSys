@@ -10,7 +10,7 @@ name: mon
 services:
   timescaledb:
     # digest-pinned for supply-chain integrity; refresh via dependabot or manual review
-    image: timescale/timescaledb:latest-pg16@sha256:a9329520abc449e3b14d5bc3a6ffae065bdde0f02667fa10880c49b35c109fd1
+    image: timescale/timescaledb:latest-pg16@sha256:15e00162766bd6f0019afaad4e57b850dcf882de5909bd7633899eebd4c03d57
     restart: unless-stopped
     environment:
       POSTGRES_DB: mon
