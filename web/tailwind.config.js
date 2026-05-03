@@ -38,6 +38,22 @@ export default {
       transitionTimingFunction: {
         "ui": "cubic-bezier(0.2, 0.0, 0.0, 1.0)",
       },
+      keyframes: {
+        // Subtle "alive" pulse for the online status dot. Two-stage glow that
+        // never fully fades so the dot stays visible even at the trough.
+        pulse: {
+          "0%, 100%": { boxShadow: "0 0 0 0 rgba(16, 185, 129, 0.0)" },
+          "50%": { boxShadow: "0 0 0 6px rgba(16, 185, 129, 0.0)", opacity: "0.85" },
+        },
+        shimmer: {
+          "0%": { backgroundPosition: "-400px 0" },
+          "100%": { backgroundPosition: "400px 0" },
+        },
+      },
+      animation: {
+        "pulse-soft": "pulse 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+        "shimmer": "shimmer 1.6s linear infinite",
+      },
     },
   },
   plugins: [],

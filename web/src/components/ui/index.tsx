@@ -61,7 +61,7 @@ export function StatusPill({ status, children }: { status: StatusKey | string; c
   );
 }
 
-export function Dot({ status }: { status: StatusKey | string }) {
+export function Dot({ status, pulse = false }: { status: StatusKey | string; pulse?: boolean }) {
   const map: Record<StatusKey, string> = {
     online: "bg-ok",
     ok: "bg-ok",
@@ -72,7 +72,9 @@ export function Dot({ status }: { status: StatusKey | string }) {
     unknown: "bg-fg-subtle",
     info: "bg-info",
   };
-  return <span className={`inline-block h-2 w-2 rounded-full ${map[status as StatusKey] ?? map.unknown}`} />;
+  const cls = map[status as StatusKey] ?? map.unknown;
+  const pulseCls = pulse && (status === "online" || status === "ok") ? "animate-pulse-soft" : "";
+  return <span className={`inline-block h-2 w-2 rounded-full ${cls} ${pulseCls}`} />;
 }
 
 // ---- Stats ----------------------------------------------------------------
@@ -247,6 +249,76 @@ export function PercentBar({ pct }: { pct: number }) {
         <div className={`h-full ${color} transition-all duration-200 ease-ui`} style={{ width: `${v}%` }} />
       </div>
       <span className="w-10 text-right text-xs tabular-nums text-fg-muted">{v.toFixed(0)}%</span>
+    </div>
+  );
+}
+
+// ---- Skeleton ------------------------------------------------------------
+
+export function Skeleton({ className = "" }: { className?: string }) {
+  return (
+    <div
+      className={`overflow-hidden rounded-md bg-panel-2 ${className}`}
+      style={{
+        backgroundImage:
+          "linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.04) 50%, rgba(255,255,255,0) 100%)",
+        backgroundSize: "800px 100%",
+        animation: "shimmer 1.6s linear infinite",
+      }}
+      aria-hidden
+    />
+  );
+}
+
+// ---- Tabs ----------------------------------------------------------------
+
+export type TabItem<T extends string> = {
+  key: T;
+  label: string;
+  icon?: React.ComponentType<{ className?: string }>;
+  badge?: ReactNode;
+  hidden?: boolean;
+};
+
+export function Tabs<T extends string>({
+  items,
+  value,
+  onChange,
+  className = "",
+}: {
+  items: ReadonlyArray<TabItem<T>>;
+  value: T;
+  onChange: (v: T) => void;
+  className?: string;
+}) {
+  return (
+    <div role="tablist" className={`sticky top-[49px] z-20 -mx-2 flex gap-1 overflow-x-auto border-b border-border bg-bg/85 px-2 py-1.5 backdrop-blur supports-[backdrop-filter]:bg-bg/70 ${className}`}>
+      {items
+        .filter((i) => !i.hidden)
+        .map(({ key, label, icon: Icon, badge }) => {
+          const active = key === value;
+          return (
+            <button
+              key={key}
+              role="tab"
+              aria-selected={active}
+              onClick={() => onChange(key)}
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors duration-150 ${
+                active
+                  ? "bg-panel-2 text-fg shadow-panel"
+                  : "text-fg-muted hover:bg-panel hover:text-fg"
+              }`}
+            >
+              {Icon && <Icon className="h-3.5 w-3.5" />}
+              {label}
+              {badge !== undefined && badge !== null && (
+                <span className="rounded-full bg-border-strong px-1.5 py-0.5 text-[10px] font-mono text-fg-muted">
+                  {badge}
+                </span>
+              )}
+            </button>
+          );
+        })}
     </div>
   );
 }
