@@ -1831,6 +1831,9 @@ func (s *Server) handleLogin(ctx context.Context, in *loginInput) (*loginOutput,
 		if errors.Is(err, store.ErrUserDisabled) {
 			return nil, huma.Error403Forbidden("user is disabled")
 		}
+		if errors.Is(err, store.ErrUserLockedOut) {
+			return nil, huma.Error429TooManyRequests("account temporarily locked; retry later")
+		}
 		return nil, internalErr(ctx, "login failed", err)
 	}
 
