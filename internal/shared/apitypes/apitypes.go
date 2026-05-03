@@ -609,6 +609,74 @@ type HostTagsInput struct {
 	Tags []string `json:"tags" doc:"Replaces the host's tag set entirely"`
 }
 
+// AgentConfig is the JSON shape stored in agent_configs.config and shipped
+// to agents via /v1/agent/config. Fields are optional so that a per-host
+// override can change just one knob without re-stating the rest.
+type AgentConfig struct {
+	IntervalSeconds  *int                  `json:"interval_seconds,omitempty"  minimum:"5"  maximum:"3600"`
+	BufferMaxMB      *int                  `json:"buffer_max_mb,omitempty"     minimum:"1"  maximum:"4096"`
+	Packages         *AgentPackagesConfig  `json:"packages,omitempty"`
+	QuietHours       *AgentQuietHours      `json:"quiet_hours,omitempty"`
+	Schedules        []AgentSchedule       `json:"schedules,omitempty"`
+	Labels           map[string]string     `json:"labels,omitempty"`
+}
+
+type AgentPackagesConfig struct {
+	Enabled                 *bool   `json:"enabled,omitempty"`
+	UpdateCheckInterval     *string `json:"update_check_interval,omitempty"      doc:"e.g. 30m, 2h"`
+	FullSnapshotMaxInterval *string `json:"full_snapshot_max_interval,omitempty" doc:"e.g. 24h"`
+}
+
+// AgentQuietHours pauses ingest during a daily window in the agent's local
+// timezone. Format HH:MM 24h. When start==end the agent treats it as
+// disabled.
+type AgentQuietHours struct {
+	Enabled bool   `json:"enabled"`
+	Start   string `json:"start" pattern:"^([01]?[0-9]|2[0-3]):[0-5][0-9]$"`
+	End     string `json:"end"   pattern:"^([01]?[0-9]|2[0-3]):[0-5][0-9]$"`
+	// Days of week when quiet hours apply, 0 = Sun..6 = Sat. Empty = every day.
+	Days    []int  `json:"days,omitempty"`
+}
+
+// AgentSchedule lets operators raise or lower the tick rate during a window.
+// e.g. "every 60s during business hours, every 300s overnight".
+type AgentSchedule struct {
+	Name            string `json:"name"`
+	Start           string `json:"start"            pattern:"^([01]?[0-9]|2[0-3]):[0-5][0-9]$"`
+	End             string `json:"end"              pattern:"^([01]?[0-9]|2[0-3]):[0-5][0-9]$"`
+	Days            []int  `json:"days,omitempty"`
+	IntervalSeconds int    `json:"interval_seconds" minimum:"5" maximum:"3600"`
+}
+
+type AgentConfigEntry struct {
+	ID          string      `json:"id"`
+	Scope       string      `json:"scope"        enum:"global,group,host"`
+	TargetID    string      `json:"target_id,omitempty"   doc:"NULL for global"`
+	TargetName  string      `json:"target_name,omitempty" doc:"hostname for host-scoped, group name for group-scoped"`
+	Config      AgentConfig `json:"config"`
+	Description string      `json:"description,omitempty"`
+	Enabled     bool        `json:"enabled"`
+	CreatedAt   time.Time   `json:"created_at"`
+	UpdatedAt   time.Time   `json:"updated_at"`
+	UpdatedBy   string      `json:"updated_by,omitempty"`
+}
+
+type AgentConfigInput struct {
+	Scope       string      `json:"scope"        enum:"global,group,host"`
+	TargetID    string      `json:"target_id,omitempty" doc:"required for scope=group or host"`
+	Config      AgentConfig `json:"config"`
+	Description string      `json:"description,omitempty"`
+	Enabled     bool        `json:"enabled"`
+}
+
+// AgentConfigResolved is what the agent receives. It already merges
+// host > group > global so the agent doesn't have to know about scopes.
+type AgentConfigResolved struct {
+	Config       AgentConfig `json:"config"`
+	SourceScopes []string    `json:"source_scopes" doc:"Which scopes contributed; useful for the agent to log on apply."`
+	FetchedAt    time.Time   `json:"fetched_at"`
+}
+
 type GroupMembersInput struct {
 	HostIDs []string `json:"host_ids" doc:"Replaces the group's member set entirely"`
 }

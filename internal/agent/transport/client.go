@@ -140,6 +140,33 @@ func (c *Client) Register(ctx context.Context, bootstrapToken string, req apityp
 }
 
 // Ingest pushes a payload (already-marshalled JSON) using the agent key.
+// FetchConfig pulls the resolved agent config from the server. Returns
+// (nil, nil) when the server does not provide one (older server).
+func (c *Client) FetchConfig(ctx context.Context, agentKey string) (*apitypes.AgentConfigResolved, error) {
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+"/v1/agent/config", nil)
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+agentKey)
+	httpResp, err := c.HTTP.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer httpResp.Body.Close()
+	if httpResp.StatusCode == http.StatusNotFound {
+		return nil, nil
+	}
+	if httpResp.StatusCode/100 != 2 {
+		raw, _ := io.ReadAll(io.LimitReader(httpResp.Body, 4<<10))
+		return nil, fmt.Errorf("config fetch: %d %s", httpResp.StatusCode, string(raw))
+	}
+	var out apitypes.AgentConfigResolved
+	if err := json.NewDecoder(httpResp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("config decode: %w", err)
+	}
+	return &out, nil
+}
+
 func (c *Client) Ingest(ctx context.Context, agentKey string, payload []byte) error {
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/v1/ingest", bytes.NewReader(payload))
 	if err != nil {

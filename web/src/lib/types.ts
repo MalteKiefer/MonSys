@@ -384,6 +384,65 @@ export type IngestPayload = {
   payload: unknown;
 };
 
+// Agent configuration
+
+export type AgentPackagesConfig = {
+  enabled?: boolean;
+  update_check_interval?: string;
+  full_snapshot_max_interval?: string;
+};
+
+export type AgentQuietHours = {
+  enabled: boolean;
+  start: string;
+  end: string;
+  days?: number[];
+};
+
+export type AgentSchedule = {
+  name: string;
+  start: string;
+  end: string;
+  days?: number[];
+  interval_seconds: number;
+};
+
+export type AgentConfig = {
+  interval_seconds?: number;
+  buffer_max_mb?: number;
+  packages?: AgentPackagesConfig;
+  quiet_hours?: AgentQuietHours;
+  schedules?: AgentSchedule[];
+  labels?: Record<string, string>;
+};
+
+export type AgentConfigEntry = {
+  id: string;
+  scope: "global" | "group" | "host";
+  target_id?: string;
+  target_name?: string;
+  config: AgentConfig;
+  description?: string;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+  updated_by?: string;
+};
+
+export type AgentConfigInput = {
+  scope: "global" | "group" | "host";
+  target_id?: string;
+  config: AgentConfig;
+  description?: string;
+  enabled: boolean;
+};
+
+export type AgentConfigResolved = {
+  config: AgentConfig;
+  source_scopes: string[];
+  fetched_at: string;
+};
+
 export type ServerLogEntry = {
   time: string;
   level: "DEBUG" | "INFO" | "WARN" | "ERROR";

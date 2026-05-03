@@ -37,6 +37,14 @@ type Agent struct {
 	Inventory  []collector.InventoryProvider
 
 	agentKey string
+
+	// Active interval after merging the server-provided config; falls back
+	// to Cfg.Interval() when no remote config is available.
+	currentInterval time.Duration
+	// Cached remote config and its last successful fetch time, for log
+	// breadcrumbs and quiet-hour decisions.
+	remote          *apitypes.AgentConfigResolved
+	remoteFetchedAt time.Time
 }
 
 func New(cfg config.Config) (*Agent, error) {
@@ -153,7 +161,18 @@ func (a *Agent) Run(ctx context.Context) error {
 		return fmt.Errorf("agent key not present (%w); run with --bootstrap-token first", err)
 	}
 
-	t := time.NewTicker(a.Cfg.Interval())
+	// Try to pull server-managed config once at startup. On failure (server
+	// older than agent or unreachable) we fall back to the local file's
+	// values silently — the bootstrap-only flow still works.
+	a.currentInterval = a.Cfg.Interval()
+	a.refreshRemoteConfig(ctx)
+
+	// Reload remote config every 5 minutes so admin edits propagate without
+	// requiring an agent restart.
+	cfgRefresh := time.NewTicker(5 * time.Minute)
+	defer cfgRefresh.Stop()
+
+	t := time.NewTicker(a.currentInterval)
 	defer t.Stop()
 
 	// Always send an initial inventory at startup so the server knows us.
@@ -165,12 +184,126 @@ func (a *Agent) Run(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return nil
+		case <-cfgRefresh.C:
+			if changed := a.refreshRemoteConfig(ctx); changed {
+				t.Reset(a.currentInterval)
+				slog.Info("agent config reloaded; ticker reset", "interval", a.currentInterval)
+			}
 		case <-t.C:
+			if a.inQuietHours(time.Now()) {
+				continue
+			}
 			if err := a.tick(ctx, false); err != nil {
 				slog.Warn("tick failed", "err", err)
 			}
 		}
 	}
+}
+
+// refreshRemoteConfig fetches the merged config from the server and applies
+// it to the agent's runtime knobs. Returns true if any setting changed.
+func (a *Agent) refreshRemoteConfig(ctx context.Context) bool {
+	fetchCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	r, err := a.Client.FetchConfig(fetchCtx, a.agentKey)
+	if err != nil {
+		slog.Warn("remote config fetch failed; keeping current settings", "err", err)
+		return false
+	}
+	if r == nil {
+		// Server doesn't expose config endpoint; treat as no-op.
+		return false
+	}
+	a.remote = r
+	a.remoteFetchedAt = time.Now()
+
+	prev := a.currentInterval
+	if r.Config.IntervalSeconds != nil && *r.Config.IntervalSeconds > 0 {
+		a.currentInterval = time.Duration(*r.Config.IntervalSeconds) * time.Second
+	} else {
+		a.currentInterval = a.Cfg.Interval()
+	}
+	if r.Config.Labels != nil && len(r.Config.Labels) > 0 {
+		// Remote labels add to (don't replace) yaml labels — yaml is
+		// considered more authoritative for ground-truth identity tags.
+		merged := map[string]string{}
+		for k, v := range a.Cfg.Labels {
+			merged[k] = v
+		}
+		for k, v := range r.Config.Labels {
+			if _, taken := merged[k]; !taken {
+				merged[k] = v
+			}
+		}
+		a.Cfg.Labels = merged
+	}
+	slog.Info("remote config applied",
+		"sources", strings.Join(r.SourceScopes, ","),
+		"interval", a.currentInterval)
+	return prev != a.currentInterval
+}
+
+// inQuietHours returns true when "now" falls inside the configured quiet
+// window. We check the remote config only — yaml has no quiet-hour field.
+// Days are 0=Sun..6=Sat. Window may wrap midnight (e.g. 22:00 → 06:00).
+func (a *Agent) inQuietHours(now time.Time) bool {
+	if a.remote == nil || a.remote.Config.QuietHours == nil {
+		return false
+	}
+	q := a.remote.Config.QuietHours
+	if !q.Enabled {
+		return false
+	}
+	if len(q.Days) > 0 {
+		match := false
+		for _, d := range q.Days {
+			if int(now.Weekday()) == d {
+				match = true
+				break
+			}
+		}
+		if !match {
+			return false
+		}
+	}
+	startMin, ok1 := parseHHMM(q.Start)
+	endMin, ok2 := parseHHMM(q.End)
+	if !ok1 || !ok2 || startMin == endMin {
+		return false
+	}
+	cur := now.Hour()*60 + now.Minute()
+	if startMin < endMin {
+		return cur >= startMin && cur < endMin
+	}
+	// Wraparound (e.g. 22:00 - 06:00).
+	return cur >= startMin || cur < endMin
+}
+
+func parseHHMM(s string) (int, bool) {
+	if len(s) < 4 || len(s) > 5 {
+		return 0, false
+	}
+	parts := strings.Split(s, ":")
+	if len(parts) != 2 {
+		return 0, false
+	}
+	h, err1 := atoiSafe(parts[0])
+	m, err2 := atoiSafe(parts[1])
+	if err1 != nil || err2 != nil || h < 0 || h > 23 || m < 0 || m > 59 {
+		return 0, false
+	}
+	return h*60 + m, true
+}
+
+func atoiSafe(s string) (int, error) {
+	n := 0
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return 0, fmt.Errorf("not a number: %q", s)
+		}
+		n = n*10 + int(c-'0')
+	}
+	return n, nil
 }
 
 func (a *Agent) tick(ctx context.Context, withInventory bool) error {

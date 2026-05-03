@@ -536,6 +536,49 @@ func (s *Server) registerRoutes() {
 		Middlewares: adminOnly,
 	}, s.handleAdminReset2FA)
 
+	// Agent-config: agents fetch their resolved config (auth via agent_key,
+	// not web user). Admin CRUD lives separately under /v1/admin/agent-config.
+	huma.Register(s.API, huma.Operation{
+		OperationID: "agent-config-fetch",
+		Method:      http.MethodGet,
+		Path:        "/v1/agent/config",
+		Summary:     "Agent fetches its resolved config (auth: Bearer agent_key)",
+		Tags:        []string{"agents"},
+	}, s.handleAgentConfigFetch)
+
+	huma.Register(s.API, huma.Operation{
+		OperationID: "list-agent-configs",
+		Method:      http.MethodGet,
+		Path:        "/v1/admin/agent-config",
+		Summary:     "List all agent config rows (global + group + host)",
+		Tags:        []string{"admin"},
+		Middlewares: adminOnly,
+	}, s.handleListAgentConfigs)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "upsert-agent-config",
+		Method:      http.MethodPut,
+		Path:        "/v1/admin/agent-config",
+		Summary:     "Create or replace an agent config row (keyed by scope+target)",
+		Tags:        []string{"admin"},
+		Middlewares: adminOnly,
+	}, s.handleUpsertAgentConfig)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "delete-agent-config",
+		Method:      http.MethodDelete,
+		Path:        "/v1/admin/agent-config/{id}",
+		Summary:     "Delete an agent config row",
+		Tags:        []string{"admin"},
+		Middlewares: adminOnly,
+	}, s.handleDeleteAgentConfig)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "preview-agent-config",
+		Method:      http.MethodGet,
+		Path:        "/v1/admin/agent-config/preview/{host_id}",
+		Summary:     "Resolve and preview the merged config a host would receive",
+		Tags:        []string{"admin"},
+		Middlewares: adminOnly,
+	}, s.handlePreviewAgentConfig)
+
 	// Admin: server logs
 	huma.Register(s.API, huma.Operation{
 		OperationID: "admin-server-logs",
@@ -2212,6 +2255,108 @@ func (s *Server) handleAdminReset2FA(ctx context.Context, in *hostIDInput) (*emp
 	out := &emptyOutput{}
 	out.Body.OK = true
 	return out, nil
+}
+
+// --- Agent config (agent fetch + admin CRUD) ------------------------------
+
+type agentConfigFetchInput struct {
+	Authorization string `header:"Authorization" required:"true" doc:"Bearer <agent_key>"`
+}
+type agentConfigFetchOutput struct {
+	Body apitypes.AgentConfigResolved
+}
+
+func (s *Server) handleAgentConfigFetch(ctx context.Context, in *agentConfigFetchInput) (*agentConfigFetchOutput, error) {
+	key, ok := bearer(in.Authorization)
+	if !ok {
+		return nil, huma.Error401Unauthorized("missing agent key")
+	}
+	if s.Store == nil {
+		return nil, huma.Error503ServiceUnavailable("server has no store configured")
+	}
+	hostID, err := s.Store.HostIDForAgentKey(ctx, key)
+	if err != nil {
+		if errors.Is(err, store.ErrAgentKeyInvalid) {
+			return nil, huma.Error401Unauthorized("agent key invalid")
+		}
+		return nil, huma.Error500InternalServerError("auth failed", err)
+	}
+	resolved, err := s.Store.ResolveAgentConfig(ctx, hostID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("resolve failed", err)
+	}
+	return &agentConfigFetchOutput{Body: resolved}, nil
+}
+
+type listAgentConfigsOutput struct {
+	Body struct {
+		Configs []apitypes.AgentConfigEntry `json:"configs"`
+	}
+}
+
+func (s *Server) handleListAgentConfigs(ctx context.Context, _ *struct{}) (*listAgentConfigsOutput, error) {
+	cs, err := s.Store.ListAgentConfigs(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("list failed", err)
+	}
+	out := &listAgentConfigsOutput{}
+	out.Body.Configs = cs
+	return out, nil
+}
+
+type upsertAgentConfigInput struct {
+	Body apitypes.AgentConfigInput
+}
+type agentConfigEntryOutput struct {
+	Body apitypes.AgentConfigEntry
+}
+
+func (s *Server) handleUpsertAgentConfig(ctx context.Context, in *upsertAgentConfigInput) (*agentConfigEntryOutput, error) {
+	u, _ := userFromContext(ctx)
+	c, err := s.Store.UpsertAgentConfig(ctx, in.Body, u.Email)
+	if err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	return &agentConfigEntryOutput{Body: c}, nil
+}
+
+type agentConfigIDInput struct {
+	ID string `path:"id"`
+}
+
+func (s *Server) handleDeleteAgentConfig(ctx context.Context, in *agentConfigIDInput) (*emptyOutput, error) {
+	id, err := uuid.Parse(in.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid id")
+	}
+	if err := s.Store.DeleteAgentConfig(ctx, id); err != nil {
+		if errors.Is(err, store.ErrAgentConfigNotFound) {
+			return nil, huma.Error404NotFound("agent config not found")
+		}
+		return nil, huma.Error500InternalServerError("delete failed", err)
+	}
+	out := &emptyOutput{}
+	out.Body.OK = true
+	return out, nil
+}
+
+type previewAgentConfigInput struct {
+	HostID string `path:"host_id"`
+}
+type previewAgentConfigOutput struct {
+	Body apitypes.AgentConfigResolved
+}
+
+func (s *Server) handlePreviewAgentConfig(ctx context.Context, in *previewAgentConfigInput) (*previewAgentConfigOutput, error) {
+	id, err := uuid.Parse(in.HostID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid host_id")
+	}
+	resolved, err := s.Store.ResolveAgentConfig(ctx, id)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("resolve failed", err)
+	}
+	return &previewAgentConfigOutput{Body: resolved}, nil
 }
 
 // --- Admin: server logs ---------------------------------------------------

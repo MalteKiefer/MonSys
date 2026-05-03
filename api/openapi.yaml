@@ -179,6 +179,172 @@ components:
         - created_at
         - totp_active
       type: object
+    AgentConfig:
+      additionalProperties: false
+      properties:
+        buffer_max_mb:
+          format: int64
+          maximum: 4096
+          minimum: 1
+          type: integer
+        interval_seconds:
+          format: int64
+          maximum: 3600
+          minimum: 5
+          type: integer
+        labels:
+          additionalProperties:
+            type: string
+          type: object
+        packages:
+          $ref: "#/components/schemas/AgentPackagesConfig"
+        quiet_hours:
+          $ref: "#/components/schemas/AgentQuietHours"
+        schedules:
+          items:
+            $ref: "#/components/schemas/AgentSchedule"
+          type:
+            - array
+            - "null"
+      type: object
+    AgentConfigEntry:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/AgentConfigEntry.json
+          format: uri
+          readOnly: true
+          type: string
+        config:
+          $ref: "#/components/schemas/AgentConfig"
+        created_at:
+          format: date-time
+          type: string
+        description:
+          type: string
+        enabled:
+          type: boolean
+        id:
+          type: string
+        scope:
+          enum:
+            - global
+            - group
+            - host
+          type: string
+        target_id:
+          description: NULL for global
+          type: string
+        target_name:
+          description: hostname for host-scoped, group name for group-scoped
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+        updated_by:
+          type: string
+      required:
+        - id
+        - scope
+        - config
+        - enabled
+        - created_at
+        - updated_at
+      type: object
+    AgentConfigInput:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/AgentConfigInput.json
+          format: uri
+          readOnly: true
+          type: string
+        config:
+          $ref: "#/components/schemas/AgentConfig"
+        description:
+          type: string
+        enabled:
+          type: boolean
+        scope:
+          enum:
+            - global
+            - group
+            - host
+          type: string
+        target_id:
+          description: required for scope=group or host
+          type: string
+      required:
+        - scope
+        - config
+        - enabled
+      type: object
+    AgentConfigResolved:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/AgentConfigResolved.json
+          format: uri
+          readOnly: true
+          type: string
+        config:
+          $ref: "#/components/schemas/AgentConfig"
+        fetched_at:
+          format: date-time
+          type: string
+        source_scopes:
+          description: Which scopes contributed; useful for the agent to log on apply.
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+      required:
+        - config
+        - source_scopes
+        - fetched_at
+      type: object
+    AgentPackagesConfig:
+      additionalProperties: false
+      properties:
+        enabled:
+          type: boolean
+        full_snapshot_max_interval:
+          description: e.g. 24h
+          type: string
+        update_check_interval:
+          description: e.g. 30m, 2h
+          type: string
+      type: object
+    AgentQuietHours:
+      additionalProperties: false
+      properties:
+        days:
+          items:
+            format: int64
+            type: integer
+          type:
+            - array
+            - "null"
+        enabled:
+          type: boolean
+        end:
+          pattern: ^([01]?[0-9]|2[0-3]):[0-5][0-9]$
+          type: string
+        start:
+          pattern: ^([01]?[0-9]|2[0-3]):[0-5][0-9]$
+          type: string
+      required:
+        - enabled
+        - start
+        - end
+      type: object
     AgentRegisterRequest:
       additionalProperties: false
       properties:
@@ -272,6 +438,35 @@ components:
       required:
         - agent_id
         - agent_key
+      type: object
+    AgentSchedule:
+      additionalProperties: false
+      properties:
+        days:
+          items:
+            format: int64
+            type: integer
+          type:
+            - array
+            - "null"
+        end:
+          pattern: ^([01]?[0-9]|2[0-3]):[0-5][0-9]$
+          type: string
+        interval_seconds:
+          format: int64
+          maximum: 3600
+          minimum: 5
+          type: integer
+        name:
+          type: string
+        start:
+          pattern: ^([01]?[0-9]|2[0-3]):[0-5][0-9]$
+          type: string
+      required:
+        - name
+        - start
+        - end
+        - interval_seconds
       type: object
     AlertHistoryEntry:
       additionalProperties: false
@@ -1321,6 +1516,25 @@ components:
       required:
         - tag
         - count
+      type: object
+    ListAgentConfigsOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/ListAgentConfigsOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        configs:
+          items:
+            $ref: "#/components/schemas/AgentConfigEntry"
+          type:
+            - array
+            - "null"
+      required:
+        - configs
       type: object
     ListChannelsOutputBody:
       additionalProperties: false
@@ -2710,6 +2924,99 @@ info:
   version: dev
 openapi: 3.1.0
 paths:
+  /v1/admin/agent-config:
+    get:
+      operationId: list-agent-configs
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListAgentConfigsOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List all agent config rows (global + group + host)
+      tags:
+        - admin
+    put:
+      operationId: upsert-agent-config
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentConfigInput"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentConfigEntry"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Create or replace an agent config row (keyed by scope+target)
+      tags:
+        - admin
+  /v1/admin/agent-config/preview/{host_id}:
+    get:
+      operationId: preview-agent-config
+      parameters:
+        - in: path
+          name: host_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentConfigResolved"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Resolve and preview the merged config a host would receive
+      tags:
+        - admin
+  /v1/admin/agent-config/{id}:
+    delete:
+      operationId: delete-agent-config
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Delete an agent config row
+      tags:
+        - admin
   /v1/admin/ingests:
     get:
       operationId: admin-list-ingests
@@ -3072,6 +3379,33 @@ paths:
       summary: Unlock a user
       tags:
         - admin
+  /v1/agent/config:
+    get:
+      operationId: agent-config-fetch
+      parameters:
+        - description: Bearer <agent_key>
+          in: header
+          name: Authorization
+          required: true
+          schema:
+            description: Bearer <agent_key>
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentConfigResolved"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: "Agent fetches its resolved config (auth: Bearer agent_key)"
+      tags:
+        - agents
   /v1/agents/register:
     post:
       description: "Trade a one-time bootstrap token (Authorization: Bearer …) for a per-host agent_key."
