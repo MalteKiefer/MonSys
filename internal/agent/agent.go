@@ -16,6 +16,7 @@ import (
 
 	"github.com/pr0ph37/mon/internal/agent/buffer"
 	"github.com/pr0ph37/mon/internal/agent/collector"
+	"github.com/pr0ph37/mon/internal/agent/collector/workload"
 	"github.com/pr0ph37/mon/internal/agent/config"
 	"github.com/pr0ph37/mon/internal/agent/transport"
 	"github.com/pr0ph37/mon/internal/shared/apitypes"
@@ -55,12 +56,23 @@ func New(cfg config.Config) (*Agent, error) {
 	disk := collector.NewDisk()
 	netc := collector.NewNet()
 
+	collectors := []collector.Source{sys, disk, netc}
+	inventory := []collector.InventoryProvider{sys, disk, netc}
+
+	// Docker collector is opt-in via reachable socket. We probe once at init;
+	// if the socket appears later (e.g. dockerd restart), the agent will need
+	// to be restarted. That's acceptable — a probe-on-every-tick is wasteful.
+	if d := workload.NewDocker(cfg.DockerEndpoint); d.Available(context.Background()) {
+		collectors = append(collectors, d)
+		inventory = append(inventory, d)
+	}
+
 	a := &Agent{
 		Cfg:        cfg,
 		Client:     c,
 		Spool:      sp,
-		Collectors: []collector.Source{sys, disk, netc},
-		Inventory:  []collector.InventoryProvider{sys, disk, netc},
+		Collectors: collectors,
+		Inventory:  inventory,
 	}
 	return a, nil
 }
