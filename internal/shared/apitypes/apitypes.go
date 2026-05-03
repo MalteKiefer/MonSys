@@ -309,5 +309,7 @@ type Host struct {
 	AgentVersion  string            `json:"agent_version"`
 	FirstSeenAt   time.Time         `json:"first_seen_at"`
 	LastSeenAt    time.Time         `json:"last_seen_at"`
+	Status        string            `json:"status"      enum:"online,stale,offline,unknown"`
+	StatusSince   time.Time         `json:"status_since,omitempty"`
 	Labels        map[string]string `json:"labels"`
 }

@@ -372,6 +372,16 @@ components:
         ram_total_bytes:
           format: int64
           type: integer
+        status:
+          enum:
+            - online
+            - stale
+            - offline
+            - unknown
+          type: string
+        status_since:
+          format: date-time
+          type: string
       required:
         - id
         - hostname
@@ -382,6 +392,7 @@ components:
         - agent_version
         - first_seen_at
         - last_seen_at
+        - status
         - labels
       type: object
     HostLoginsOutputBody:

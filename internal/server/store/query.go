@@ -17,23 +17,30 @@ var ErrHostNotFound = errors.New("host not found")
 
 func (s *Store) ListHosts(ctx context.Context) ([]apitypes.Host, error) {
 	rows, err := s.Pool.Query(ctx, `
-		SELECT id, hostname, COALESCE(distro,''), COALESCE(arch,''),
-		       COALESCE(cpu_cores,0), COALESCE(ram_total_bytes,0),
-		       COALESCE(agent_version,''), first_seen_at, last_seen_at, labels
-		FROM hosts
-		WHERE revoked_at IS NULL
-		ORDER BY hostname`)
+		SELECT h.id, h.hostname, COALESCE(h.distro,''), COALESCE(h.arch,''),
+		       COALESCE(h.cpu_cores,0), COALESCE(h.ram_total_bytes,0),
+		       COALESCE(h.agent_version,''), h.first_seen_at, h.last_seen_at, h.labels,
+		       COALESCE(hs.status, 'unknown'),
+		       hs.since
+		FROM hosts h
+		LEFT JOIN host_status hs ON hs.host_id = h.id
+		WHERE h.revoked_at IS NULL
+		ORDER BY h.hostname`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	out := []apitypes.Host{}
 	for rows.Next() {
-		var h apitypes.Host
-		var labels []byte
+		var (
+			h           apitypes.Host
+			labels      []byte
+			statusSince *time.Time
+		)
 		if err := rows.Scan(&h.ID, &h.Hostname, &h.Distro, &h.Arch,
 			&h.CPUCores, &h.RAMTotalBytes, &h.AgentVersion,
-			&h.FirstSeenAt, &h.LastSeenAt, &labels); err != nil {
+			&h.FirstSeenAt, &h.LastSeenAt, &labels,
+			&h.Status, &statusSince); err != nil {
 			return nil, err
 		}
 		if len(labels) > 0 {
@@ -41,6 +48,9 @@ func (s *Store) ListHosts(ctx context.Context) ([]apitypes.Host, error) {
 		}
 		if h.Labels == nil {
 			h.Labels = map[string]string{}
+		}
+		if statusSince != nil {
+			h.StatusSince = *statusSince
 		}
 		out = append(out, h)
 	}

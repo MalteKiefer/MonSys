@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/pr0ph37/mon/internal/server/api"
+	"github.com/pr0ph37/mon/internal/server/liveness"
 	"github.com/pr0ph37/mon/internal/server/store"
 	"github.com/pr0ph37/mon/internal/shared/version"
 )
@@ -116,6 +117,19 @@ func main() {
 		slog.Info("user created", "id", u.ID.String(), "email", u.Email, "role", u.Role)
 		return
 	}
+
+	// Background liveness watcher: every 30s, derives host_status from
+	// last_seen_at. Drains transitions so the channel doesn't fill up; the
+	// rules engine will subscribe in M8d.
+	lw := liveness.New(st.Pool)
+	go lw.Run(ctx)
+	go func() {
+		for tr := range lw.Out {
+			slog.Info("host status changed",
+				"host_id", tr.HostID, "hostname", tr.Hostname,
+				"from", tr.From, "to", tr.To)
+		}
+	}()
 
 	s := api.New(st)
 
