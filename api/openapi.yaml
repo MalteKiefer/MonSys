@@ -225,6 +225,47 @@ components:
           format: uri
           type: string
       type: object
+    Host:
+      additionalProperties: false
+      properties:
+        agent_version:
+          type: string
+        arch:
+          type: string
+        cpu_cores:
+          format: int64
+          type: integer
+        distro:
+          type: string
+        first_seen_at:
+          format: date-time
+          type: string
+        hostname:
+          type: string
+        id:
+          type: string
+        labels:
+          additionalProperties:
+            type: string
+          type: object
+        last_seen_at:
+          format: date-time
+          type: string
+        ram_total_bytes:
+          format: int64
+          type: integer
+      required:
+        - id
+        - hostname
+        - distro
+        - arch
+        - cpu_cores
+        - ram_total_bytes
+        - agent_version
+        - first_seen_at
+        - last_seen_at
+        - labels
+      type: object
     IngestRequest:
       additionalProperties: false
       properties:
@@ -373,6 +414,25 @@ components:
         - cpu_model
         - cpu_cores
         - ram_total_bytes
+      type: object
+    ListHostsOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/ListHostsOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        hosts:
+          items:
+            $ref: "#/components/schemas/Host"
+          type:
+            - array
+            - "null"
+      required:
+        - hosts
       type: object
     NetSample:
       additionalProperties: false
@@ -537,6 +597,36 @@ components:
         - metadata_age_seconds
         - refreshed_externally
       type: object
+    SysMetricsOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/SysMetricsOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        from:
+          format: date-time
+          type: string
+        host_id:
+          type: string
+        samples:
+          items:
+            $ref: "#/components/schemas/SystemSample"
+          type:
+            - array
+            - "null"
+        to:
+          format: date-time
+          type: string
+      required:
+        - host_id
+        - from
+        - to
+        - samples
+      type: object
     SystemSample:
       additionalProperties: false
       properties:
@@ -657,7 +747,7 @@ components:
 info:
   description: Self-hosted server-monitoring API. Agents push metrics; users query.
   title: mon
-  version: fbf91ba-dirty
+  version: dev
 openapi: 3.1.0
 paths:
   /v1/agents/register:
@@ -700,6 +790,68 @@ paths:
       summary: Register a new agent
       tags:
         - agents
+  /v1/hosts:
+    get:
+      operationId: list-hosts
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListHostsOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List all known hosts
+      tags:
+        - hosts
+  /v1/hosts/{id}/metrics/system:
+    get:
+      operationId: host-system-metrics
+      parameters:
+        - description: host UUID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: host UUID
+            type: string
+        - description: inclusive start (RFC3339); default = now-1h
+          explode: false
+          in: query
+          name: from
+          schema:
+            description: inclusive start (RFC3339); default = now-1h
+            format: date-time
+            type: string
+        - description: inclusive end (RFC3339); default = now
+          explode: false
+          in: query
+          name: to
+          schema:
+            description: inclusive end (RFC3339); default = now
+            format: date-time
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SysMetricsOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Time-range query of system metrics for a host
+      tags:
+        - hosts
   /v1/ingest:
     post:
       description: "Agents push samples here. Auth: Authorization: Bearer <agent_key>."
