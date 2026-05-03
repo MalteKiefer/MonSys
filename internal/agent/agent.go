@@ -16,6 +16,7 @@ import (
 
 	"github.com/pr0ph37/mon/internal/agent/buffer"
 	"github.com/pr0ph37/mon/internal/agent/collector"
+	"github.com/pr0ph37/mon/internal/agent/collector/packages"
 	"github.com/pr0ph37/mon/internal/agent/collector/workload"
 	"github.com/pr0ph37/mon/internal/agent/config"
 	"github.com/pr0ph37/mon/internal/agent/transport"
@@ -65,6 +66,10 @@ func New(cfg config.Config) (*Agent, error) {
 	if d := workload.NewDocker(cfg.DockerEndpoint); d.Available(context.Background()) {
 		collectors = append(collectors, d)
 		inventory = append(inventory, d)
+	}
+
+	if pc, ok := packages.New(cfg.Packages); ok {
+		collectors = append(collectors, pc)
 	}
 
 	a := &Agent{

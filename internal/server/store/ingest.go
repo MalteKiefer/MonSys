@@ -109,6 +109,10 @@ func (s *Store) SaveIngest(ctx context.Context, hostID uuid.UUID, req apitypes.I
 			) VALUES ($1,$2,$3,$4,$5,$6)`,
 			p.Time, hostID, p.Summary.InstalledCount, p.Summary.UpdatesCount,
 			p.Summary.SecurityUpdates, p.Summary.MetadataAgeSec)
+
+		if err := savePackagesTx(ctx, tx, hostID, p); err != nil {
+			return fmt.Errorf("packages: %w", err)
+		}
 	}
 
 	if batch.Len() > 0 {
@@ -269,6 +273,117 @@ func loadWorkloadIDs(ctx context.Context, tx pgx.Tx, hostID uuid.UUID) (map[work
 		out[workloadKey{kind, ext}] = id
 	}
 	return out, rows.Err()
+}
+
+// savePackagesTx upserts the installed-package list (only when the agent
+// actually re-sent it, signalled by a non-empty Installed slice), refreshes
+// pending-update rows, and updates per-manager repo metadata. The full
+// installed list is replaced wholesale: we delete rows that were last seen
+// before this batch's timestamp, so removed packages disappear without us
+// needing the agent to remember the diff.
+func savePackagesTx(ctx context.Context, tx pgx.Tx, hostID uuid.UUID, p *apitypes.PackageReport) error {
+	if len(p.Installed) > 0 {
+		seenAt := p.Time.UTC()
+		for _, pkg := range p.Installed {
+			_, err := tx.Exec(ctx, `
+				INSERT INTO packages (
+					host_id, manager, name, version, arch, source_repo, installed_at, last_seen_at
+				) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+				ON CONFLICT (host_id, manager, name, arch) DO UPDATE SET
+					version       = EXCLUDED.version,
+					source_repo   = EXCLUDED.source_repo,
+					installed_at  = COALESCE(EXCLUDED.installed_at, packages.installed_at),
+					last_seen_at  = EXCLUDED.last_seen_at`,
+				hostID, pkg.Manager, pkg.Name, pkg.Version, pkg.Arch,
+				nullableString(pkg.SourceRepo), pkg.InstalledAt, seenAt)
+			if err != nil {
+				return fmt.Errorf("packages upsert: %w", err)
+			}
+		}
+		// Drop rows we didn't see in this snapshot for the same managers.
+		managers := uniqueManagers(p.Installed)
+		if len(managers) > 0 {
+			if _, err := tx.Exec(ctx, `
+				DELETE FROM packages
+				WHERE host_id = $1
+				  AND manager = ANY($2)
+				  AND last_seen_at < $3`,
+				hostID, managers, seenAt); err != nil {
+				return fmt.Errorf("packages prune: %w", err)
+			}
+		}
+	}
+
+	// Pending updates are always replaced for the managers we report on.
+	if len(p.Updates) > 0 {
+		managers := uniqueUpdateManagers(p.Updates)
+		if _, err := tx.Exec(ctx,
+			`DELETE FROM package_updates WHERE host_id = $1 AND manager = ANY($2)`,
+			hostID, managers); err != nil {
+			return fmt.Errorf("package_updates prune: %w", err)
+		}
+		for _, u := range p.Updates {
+			_, err := tx.Exec(ctx, `
+				INSERT INTO package_updates (
+					host_id, manager, name, arch, current_version, available_version,
+					source_repo, is_security
+				) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+				ON CONFLICT (host_id, manager, name, arch) DO UPDATE SET
+					current_version   = EXCLUDED.current_version,
+					available_version = EXCLUDED.available_version,
+					source_repo       = EXCLUDED.source_repo,
+					is_security       = EXCLUDED.is_security,
+					detected_at       = now()`,
+				hostID, u.Manager, u.Name, u.Arch, u.CurrentVersion, u.AvailableVersion,
+				nullableString(u.SourceRepo), u.IsSecurity)
+			if err != nil {
+				return fmt.Errorf("package_updates upsert: %w", err)
+			}
+		}
+	}
+
+	for _, rs := range p.RepoStates {
+		_, err := tx.Exec(ctx, `
+			INSERT INTO package_repo_state (
+				host_id, manager, metadata_mtime, metadata_age_seconds, refreshed_externally, updated_at
+			) VALUES ($1,$2,$3,$4,$5, now())
+			ON CONFLICT (host_id, manager) DO UPDATE SET
+				metadata_mtime       = EXCLUDED.metadata_mtime,
+				metadata_age_seconds = EXCLUDED.metadata_age_seconds,
+				refreshed_externally = EXCLUDED.refreshed_externally,
+				updated_at           = now()`,
+			hostID, rs.Manager, rs.MetadataMtime, rs.MetadataAgeSec, rs.RefreshedExternally)
+		if err != nil {
+			return fmt.Errorf("package_repo_state upsert: %w", err)
+		}
+	}
+	return nil
+}
+
+func uniqueManagers(pkgs []apitypes.InstalledPackage) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	for _, p := range pkgs {
+		if _, ok := seen[p.Manager]; ok {
+			continue
+		}
+		seen[p.Manager] = struct{}{}
+		out = append(out, p.Manager)
+	}
+	return out
+}
+
+func uniqueUpdateManagers(ups []apitypes.PendingUpdate) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	for _, u := range ups {
+		if _, ok := seen[u.Manager]; ok {
+			continue
+		}
+		seen[u.Manager] = struct{}{}
+		out = append(out, u.Manager)
+	}
+	return out
 }
 
 func orEmpty(m map[string]string) map[string]string {
