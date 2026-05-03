@@ -117,6 +117,28 @@ components:
       required:
         - decision_id
       type: object
+    CurrentUser:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/CurrentUser.json
+          format: uri
+          readOnly: true
+          type: string
+        email:
+          type: string
+        id:
+          type: string
+        role:
+          description: admin or user
+          type: string
+      required:
+        - id
+        - email
+        - role
+      type: object
     DiskInfo:
       additionalProperties: false
       properties:
@@ -188,6 +210,21 @@ components:
         - read_ops
         - write_ops
         - io_time_ms
+      type: object
+    EmptyOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/EmptyOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        ok:
+          type: boolean
+      required:
+        - ok
       type: object
     ErrorDetail:
       additionalProperties: false
@@ -622,6 +659,52 @@ components:
         - time
         - method
         - success
+      type: object
+    LoginRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/LoginRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        email:
+          description: Login email
+          examples:
+            - admin@example.com
+          type: string
+        password:
+          description: Plaintext password — TLS required
+          type: string
+      required:
+        - email
+        - password
+      type: object
+    LoginResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/LoginResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        expires_at:
+          description: Session expiry (UTC)
+          format: date-time
+          type: string
+        token:
+          description: "Session token; pass as Authorization: Bearer …"
+          type: string
+        user:
+          $ref: "#/components/schemas/CurrentUser"
+      required:
+        - token
+        - expires_at
+        - user
       type: object
     NetSample:
       additionalProperties: false
@@ -1070,6 +1153,69 @@ paths:
       summary: Register a new agent
       tags:
         - agents
+  /v1/auth/login:
+    post:
+      operationId: auth-login
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Exchange email+password for a session token
+      tags:
+        - auth
+  /v1/auth/logout:
+    post:
+      operationId: auth-logout
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Revoke the current session
+      tags:
+        - auth
+  /v1/auth/me:
+    get:
+      operationId: auth-me
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentUser"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Return the authenticated user
+      tags:
+        - auth
   /v1/hosts:
     get:
       operationId: list-hosts

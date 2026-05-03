@@ -82,12 +82,43 @@ func (s *Server) registerRoutes() {
 		Tags:        []string{"ingest"},
 	}, s.handleIngest)
 
+	// Auth: login + me + logout. Login itself is unauthenticated.
+	huma.Register(s.API, huma.Operation{
+		OperationID: "auth-login",
+		Method:      http.MethodPost,
+		Path:        "/v1/auth/login",
+		Summary:     "Exchange email+password for a session token",
+		Tags:        []string{"auth"},
+	}, s.handleLogin)
+
+	huma.Register(s.API, huma.Operation{
+		OperationID: "auth-logout",
+		Method:      http.MethodPost,
+		Path:        "/v1/auth/logout",
+		Summary:     "Revoke the current session",
+		Tags:        []string{"auth"},
+		Middlewares: huma.Middlewares{s.requireUser},
+	}, s.handleLogout)
+
+	huma.Register(s.API, huma.Operation{
+		OperationID: "auth-me",
+		Method:      http.MethodGet,
+		Path:        "/v1/auth/me",
+		Summary:     "Return the authenticated user",
+		Tags:        []string{"auth"},
+		Middlewares: huma.Middlewares{s.requireUser},
+	}, s.handleMe)
+
+	// Read APIs require a user session.
+	protected := huma.Middlewares{s.requireUser}
+
 	huma.Register(s.API, huma.Operation{
 		OperationID: "list-hosts",
 		Method:      http.MethodGet,
 		Path:        "/v1/hosts",
 		Summary:     "List all known hosts",
 		Tags:        []string{"hosts"},
+		Middlewares: protected,
 	}, s.handleListHosts)
 
 	huma.Register(s.API, huma.Operation{
@@ -96,6 +127,7 @@ func (s *Server) registerRoutes() {
 		Path:        "/v1/hosts/{id}/metrics/system",
 		Summary:     "Time-range query of system metrics for a host",
 		Tags:        []string{"hosts"},
+		Middlewares: protected,
 	}, s.handleSystemMetrics)
 
 	huma.Register(s.API, huma.Operation{
@@ -104,6 +136,7 @@ func (s *Server) registerRoutes() {
 		Path:        "/v1/hosts/{id}/security",
 		Summary:     "Latest firewall, fail2ban, and CrowdSec snapshot for a host",
 		Tags:        []string{"security"},
+		Middlewares: protected,
 	}, s.handleHostSecurity)
 
 	huma.Register(s.API, huma.Operation{
@@ -112,6 +145,7 @@ func (s *Server) registerRoutes() {
 		Path:        "/v1/hosts/{id}/logins",
 		Summary:     "Recent login/auth events for a host",
 		Tags:        []string{"security"},
+		Middlewares: protected,
 	}, s.handleHostLogins)
 }
 
@@ -333,4 +367,119 @@ func bearer(h string) (string, bool) {
 	}
 	t := strings.TrimSpace(h[len(p):])
 	return t, t != ""
+}
+
+// --- Auth: login / logout / me ---------------------------------------------
+
+type loginInput struct {
+	Body apitypes.LoginRequest
+}
+type loginOutput struct {
+	Body apitypes.LoginResponse
+}
+
+func (s *Server) handleLogin(ctx context.Context, in *loginInput) (*loginOutput, error) {
+	if s.Store == nil {
+		return nil, huma.Error503ServiceUnavailable("server has no store configured")
+	}
+	if in.Body.Email == "" || in.Body.Password == "" {
+		return nil, huma.Error400BadRequest("email and password required")
+	}
+	u, err := s.Store.AuthenticateUser(ctx, in.Body.Email, in.Body.Password)
+	if err != nil {
+		// Avoid leaking whether the email exists.
+		if errors.Is(err, store.ErrUserNotFound) || errors.Is(err, store.ErrPasswordMismatch) {
+			return nil, huma.Error401Unauthorized("invalid credentials")
+		}
+		if errors.Is(err, store.ErrUserDisabled) {
+			return nil, huma.Error403Forbidden("user is disabled")
+		}
+		return nil, huma.Error500InternalServerError("login failed", err)
+	}
+	token, err := s.Store.IssueSession(ctx, u, "", "", 0)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("session create failed", err)
+	}
+	out := &loginOutput{}
+	out.Body.Token = token
+	out.Body.ExpiresAt = time.Now().Add(12 * time.Hour).UTC()
+	out.Body.User = apitypes.CurrentUser{
+		ID: u.ID.String(), Email: u.Email, Role: u.Role,
+	}
+	return out, nil
+}
+
+type emptyInput struct{}
+type emptyOutput struct {
+	Body struct {
+		OK bool `json:"ok"`
+	}
+}
+
+func (s *Server) handleLogout(ctx context.Context, _ *emptyInput) (*emptyOutput, error) {
+	tok, _ := tokenFromContext(ctx)
+	if tok != "" {
+		_ = s.Store.RevokeSession(ctx, tok)
+	}
+	out := &emptyOutput{}
+	out.Body.OK = true
+	return out, nil
+}
+
+type meOutput struct {
+	Body apitypes.CurrentUser
+}
+
+func (s *Server) handleMe(ctx context.Context, _ *emptyInput) (*meOutput, error) {
+	u, ok := userFromContext(ctx)
+	if !ok {
+		return nil, huma.Error401Unauthorized("no session")
+	}
+	return &meOutput{Body: apitypes.CurrentUser{
+		ID: u.ID.String(), Email: u.Email, Role: u.Role,
+	}}, nil
+}
+
+// --- Session middleware ----------------------------------------------------
+
+type ctxKey int
+
+const (
+	ctxKeyUser ctxKey = iota
+	ctxKeyToken
+)
+
+// requireUser is a huma middleware: verifies session token, stashes user on
+// the context, denies with 401 otherwise.
+func (s *Server) requireUser(c huma.Context, next func(huma.Context)) {
+	if s.Store == nil {
+		_ = huma.WriteErr(s.API, c, http.StatusServiceUnavailable,
+			"server has no store configured")
+		return
+	}
+	tok, ok := bearer(c.Header("Authorization"))
+	if !ok {
+		_ = huma.WriteErr(s.API, c, http.StatusUnauthorized,
+			"missing session token")
+		return
+	}
+	u, err := s.Store.ValidateSession(c.Context(), tok)
+	if err != nil {
+		_ = huma.WriteErr(s.API, c, http.StatusUnauthorized,
+			"invalid session")
+		return
+	}
+	ctx := context.WithValue(c.Context(), ctxKeyUser, u)
+	ctx = context.WithValue(ctx, ctxKeyToken, tok)
+	next(huma.WithContext(c, ctx))
+}
+
+func userFromContext(ctx context.Context) (store.User, bool) {
+	u, ok := ctx.Value(ctxKeyUser).(store.User)
+	return u, ok
+}
+
+func tokenFromContext(ctx context.Context) (string, bool) {
+	t, ok := ctx.Value(ctxKeyToken).(string)
+	return t, ok
 }

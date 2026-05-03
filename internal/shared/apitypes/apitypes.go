@@ -247,6 +247,25 @@ type PackageSummary struct {
 	MetadataAgeSec  int64 `json:"metadata_age_seconds"`
 }
 
+// Auth (web users; distinct from agent_keys)
+
+type LoginRequest struct {
+	Email    string `json:"email"    doc:"Login email"    example:"admin@example.com"`
+	Password string `json:"password" doc:"Plaintext password — TLS required"`
+}
+
+type LoginResponse struct {
+	Token     string    `json:"token"      doc:"Session token; pass as Authorization: Bearer …"`
+	ExpiresAt time.Time `json:"expires_at" doc:"Session expiry (UTC)"`
+	User      CurrentUser `json:"user"`
+}
+
+type CurrentUser struct {
+	ID    string `json:"id"`
+	Email string `json:"email"`
+	Role  string `json:"role"   doc:"admin or user"`
+}
+
 // Public read APIs (used by future UI)
 
 type Host struct {

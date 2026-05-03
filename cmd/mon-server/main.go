@@ -25,6 +25,10 @@ func main() {
 		newToken          = flag.Bool("new-token", false, "issue a new bootstrap token, print it, and exit")
 		newTokenDesc      = flag.String("token-description", "", "description for the new bootstrap token")
 		newTokenTTLString = flag.String("token-ttl", "24h", "lifetime of the new bootstrap token")
+		createUser        = flag.Bool("create-user", false, "create a web user (interactive password unless --password is given) and exit")
+		createUserEmail   = flag.String("user-email", "", "email for --create-user")
+		createUserRole    = flag.String("user-role", "user", "role for --create-user (admin|user)")
+		createUserPassword = flag.String("user-password", "", "password for --create-user; if empty, read from stdin")
 	)
 	flag.Parse()
 
@@ -87,6 +91,29 @@ func main() {
 			os.Exit(1)
 		}
 		_, _ = os.Stdout.WriteString(plaintext + "\n")
+		return
+	}
+
+	if *createUser {
+		if *createUserEmail == "" {
+			slog.Error("--create-user requires --user-email")
+			os.Exit(2)
+		}
+		pw := *createUserPassword
+		if pw == "" {
+			line, err := readLine(os.Stdin)
+			if err != nil || line == "" {
+				slog.Error("password required (pass --user-password or pipe via stdin)")
+				os.Exit(2)
+			}
+			pw = line
+		}
+		u, err := st.CreateUser(openCtx, *createUserEmail, pw, *createUserRole)
+		if err != nil {
+			slog.Error("create user", "err", err)
+			os.Exit(1)
+		}
+		slog.Info("user created", "id", u.ID.String(), "email", u.Email, "role", u.Role)
 		return
 	}
 
@@ -161,4 +188,27 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
+}
+
+func readLine(r *os.File) (string, error) {
+	buf := make([]byte, 1024)
+	var out []byte
+	for {
+		n, err := r.Read(buf)
+		if n > 0 {
+			for i := 0; i < n; i++ {
+				if buf[i] == '\n' {
+					out = append(out, buf[:i]...)
+					return string(out), nil
+				}
+			}
+			out = append(out, buf[:n]...)
+		}
+		if err != nil {
+			if len(out) > 0 {
+				return string(out), nil
+			}
+			return "", err
+		}
+	}
 }
