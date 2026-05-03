@@ -147,7 +147,7 @@ export function Dashboard() {
             <Bell className="h-4 w-4 text-fg-muted" />
             <h3 className="text-sm font-semibold">Recent alerts (24h)</h3>
           </div>
-          <Link to="/admin/notifications" className="text-xs text-accent hover:underline">All alerts →</Link>
+          <Link to="/notifications" className="text-xs text-accent hover:underline">All alerts →</Link>
         </PanelHeader>
         <PanelBody className="p-0 overflow-x-auto">
           {(alerts.data?.alerts ?? []).length === 0 ? (

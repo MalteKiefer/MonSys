@@ -1172,7 +1172,8 @@ func (s *Server) handleListChannels(ctx context.Context, _ *struct{}) (*listChan
 	if s.Store == nil {
 		return nil, huma.Error503ServiceUnavailable("server has no store configured")
 	}
-	cs, err := s.Store.ListChannels(ctx)
+	u, _ := userFromContext(ctx)
+	cs, err := s.Store.ListChannels(ctx, u.ID, u.Role == "admin")
 	if err != nil {
 		return nil, huma.Error500InternalServerError("list failed", err)
 	}
@@ -1190,7 +1191,18 @@ type channelOutput struct {
 
 func (s *Server) handleCreateChannel(ctx context.Context, in *channelInput) (*channelOutput, error) {
 	u, _ := userFromContext(ctx)
-	c, err := s.Store.CreateChannel(ctx, in.Body, u.Email)
+	isAdmin := u.Role == "admin"
+	if strings.EqualFold(in.Body.Type, "smtp") && !isAdmin {
+		return nil, huma.Error403Forbidden("SMTP channels can only be created by admins")
+	}
+	// Admin creates shared channels (owner = NULL); regular users own
+	// their channels. SMTP from admin = shared; non-SMTP from admin =
+	// also admin-owned (so admin's own ntfy doesn't show to other users).
+	var owner *uuid.UUID
+	if !(isAdmin && strings.EqualFold(in.Body.Type, "smtp")) {
+		owner = &u.ID
+	}
+	c, err := s.Store.CreateChannel(ctx, in.Body, u.Email, owner)
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
@@ -1202,12 +1214,17 @@ func (s *Server) handleGetChannel(ctx context.Context, in *channelIDInput) (*cha
 	if err != nil {
 		return nil, huma.Error400BadRequest("invalid id")
 	}
+	u, _ := userFromContext(ctx)
 	c, err := s.Store.GetChannel(ctx, id)
 	if err != nil {
 		if errors.Is(err, store.ErrChannelNotFound) {
 			return nil, huma.Error404NotFound("channel not found")
 		}
 		return nil, huma.Error500InternalServerError("get failed", err)
+	}
+	// Hide channels owned by other users from non-admin callers.
+	if u.Role != "admin" && c.OwnerUserID != "" && c.OwnerUserID != u.ID.String() {
+		return nil, huma.Error404NotFound("channel not found")
 	}
 	return &channelOutput{Body: c}, nil
 }
@@ -1222,7 +1239,12 @@ func (s *Server) handleUpdateChannel(ctx context.Context, in *updateChannelInput
 	if err != nil {
 		return nil, huma.Error400BadRequest("invalid id")
 	}
-	c, err := s.Store.UpdateChannel(ctx, id, in.Body)
+	u, _ := userFromContext(ctx)
+	isAdmin := u.Role == "admin"
+	if strings.EqualFold(in.Body.Type, "smtp") && !isAdmin {
+		return nil, huma.Error403Forbidden("SMTP channels can only be edited by admins")
+	}
+	c, err := s.Store.UpdateChannel(ctx, id, in.Body, u.ID, isAdmin)
 	if err != nil {
 		if errors.Is(err, store.ErrChannelNotFound) {
 			return nil, huma.Error404NotFound("channel not found")
@@ -1237,7 +1259,8 @@ func (s *Server) handleDeleteChannel(ctx context.Context, in *channelIDInput) (*
 	if err != nil {
 		return nil, huma.Error400BadRequest("invalid id")
 	}
-	if err := s.Store.DeleteChannel(ctx, id); err != nil {
+	u, _ := userFromContext(ctx)
+	if err := s.Store.DeleteChannel(ctx, id, u.ID, u.Role == "admin"); err != nil {
 		if errors.Is(err, store.ErrChannelNotFound) {
 			return nil, huma.Error404NotFound("channel not found")
 		}
@@ -1262,6 +1285,21 @@ func (s *Server) handleTestChannel(ctx context.Context, in *testChannelInput) (*
 	if err != nil {
 		return nil, huma.Error400BadRequest("invalid id")
 	}
+	// Visibility check: non-admin callers may only test their own channels.
+	u, _ := userFromContext(ctx)
+	if u.Role != "admin" {
+		c, err := s.Store.GetChannel(ctx, id)
+		if err != nil {
+			if errors.Is(err, store.ErrChannelNotFound) {
+				return nil, huma.Error404NotFound("channel not found")
+			}
+			return nil, huma.Error500InternalServerError("get failed", err)
+		}
+		if c.OwnerUserID != u.ID.String() {
+			return nil, huma.Error404NotFound("channel not found")
+		}
+	}
+
 	subject := in.Body.Subject
 	if subject == "" {
 		subject = "mon test message"
@@ -1729,9 +1767,12 @@ func randomPlaceholder() (string, error) {
 
 // sendInviteMail looks for an SMTP channel named "system" and dispatches a
 // simple body. Failure is non-fatal — the admin still has the URL in the
-// response.
+// response. Caller is the admin issuing the invite.
 func (s *Server) sendInviteMail(ctx context.Context, recipient, url string) error {
-	channels, err := s.Store.ListChannels(ctx)
+	_ = recipient // currently the SMTP channel's "to" config controls delivery
+	// isAdmin=true so we see the shared SMTP "system" channel regardless of
+	// who initiated the call.
+	channels, err := s.Store.ListChannels(ctx, uuid.Nil, true)
 	if err != nil {
 		return err
 	}

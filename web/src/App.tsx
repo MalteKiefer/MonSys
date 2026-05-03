@@ -58,7 +58,8 @@ export function App() {
           <Route path="/hosts/:id" element={<HostDetail />} />
           <Route path="/packages" element={<Packages />} />
           <Route path="/profile" element={<Profile />} />
-          <Route path="/admin/notifications" element={<AdminNotifications />} />
+          <Route path="/notifications" element={<AdminNotifications />} />
+          <Route path="/admin/notifications" element={<Navigate to="/notifications" replace />} />
           <Route path="/admin/monitors" element={<AdminMonitors />} />
           <Route path="/admin/users" element={<AdminUsers />} />
           <Route path="/admin/security" element={<AdminSecurity />} />
@@ -93,12 +94,12 @@ function Header() {
           <NavItem to="/" icon={LayoutDashboard}>Overview</NavItem>
           <NavItem to="/hosts" icon={Server}>Hosts</NavItem>
           <NavItem to="/packages" icon={Package}>Packages</NavItem>
+          <NavItem to="/notifications" icon={Bell}>Notifications</NavItem>
           <NavItem to="/profile" icon={UserCog}>Profile</NavItem>
           {isAdmin && (
             <>
               <span className="mx-2 h-4 w-px bg-border" aria-hidden />
               <NavItem to="/admin/monitors" icon={Radio}>Monitors</NavItem>
-              <NavItem to="/admin/notifications" icon={Bell}>Notifications</NavItem>
               <NavItem to="/admin/users" icon={Users}>Users</NavItem>
               <NavItem to="/admin/security" icon={ShieldCheck}>Security</NavItem>
             </>

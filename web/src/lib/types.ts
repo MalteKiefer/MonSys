@@ -212,20 +212,23 @@ export type SystemSample = {
 
 // Notifications
 
+export type ChannelType = "smtp" | "slack" | "mattermost" | "discord" | "ntfy";
+
 export type NotificationChannel = {
   id: string;
-  type: "smtp" | "slack" | "mattermost" | "ntfy";
+  type: ChannelType;
   name: string;
   enabled: boolean;
   config: Record<string, unknown>;
   created_at: string;
   created_by?: string;
+  owner_user_id?: string;
   last_used_at?: string | null;
   last_error?: string;
 };
 
 export type NotificationChannelInput = {
-  type: "smtp" | "slack" | "mattermost" | "ntfy";
+  type: ChannelType;
   name: string;
   enabled: boolean;
   config: Record<string, unknown>;

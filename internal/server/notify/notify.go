@@ -54,6 +54,8 @@ func Dispatch(ctx context.Context, ch Channel, m Message) error {
 		return Slack{}.Send(ctx, ch, m)
 	case "mattermost":
 		return Mattermost{}.Send(ctx, ch, m)
+	case "discord":
+		return Discord{}.Send(ctx, ch, m)
 	case "ntfy":
 		return Ntfy{}.Send(ctx, ch, m)
 	}
@@ -216,6 +218,53 @@ func (Mattermost) Send(ctx context.Context, ch Channel, m Message) error {
 		"text":     fmt.Sprintf("**%s**\n%s", m.Subject, m.Body),
 	}
 	return postJSON(ctx, url, payload)
+}
+
+// --- Discord (incoming webhook) -------------------------------------------
+
+// Discord webhooks accept either a flat `content` string (max 2000 chars) or
+// `embeds` for rich messages. We use a single embed so severity color shows
+// as a left-edge bar in the client.
+type Discord struct{}
+
+func (Discord) Send(ctx context.Context, ch Channel, m Message) error {
+	url := stringField(ch.Config, "webhook_url")
+	if url == "" {
+		return errors.New("discord config requires webhook_url")
+	}
+	username := stringField(ch.Config, "username")
+	if username == "" {
+		username = "mon"
+	}
+	body := m.Body
+	// Discord caps embed.description at 4096 chars; truncate well below.
+	if len(body) > 3500 {
+		body = body[:3500] + "…"
+	}
+	payload := map[string]any{
+		"username": username,
+		"embeds": []map[string]any{
+			{
+				"title":       m.Subject,
+				"description": body,
+				"color":       discordColor(m.Severity),
+			},
+		},
+	}
+	return postJSON(ctx, url, payload)
+}
+
+// discordColor returns the integer color value Discord expects (0xRRGGBB).
+func discordColor(s string) int {
+	switch strings.ToLower(s) {
+	case "critical":
+		return 0xCC0000
+	case "warning":
+		return 0xE8A23A
+	case "info":
+		return 0x3AA3E8
+	}
+	return 0x3AA3E8
 }
 
 // --- ntfy ------------------------------------------------------------------

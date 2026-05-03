@@ -322,19 +322,20 @@ type MonitorResult struct {
 // Notification channels
 
 type NotificationChannel struct {
-	ID         string                 `json:"id"`
-	Type       string                 `json:"type"        enum:"smtp,slack,mattermost,ntfy"`
-	Name       string                 `json:"name"`
-	Enabled    bool                   `json:"enabled"`
-	Config     map[string]any         `json:"config"      doc:"Type-specific configuration"`
-	CreatedAt  time.Time              `json:"created_at"`
-	CreatedBy  string                 `json:"created_by"`
-	LastUsedAt *time.Time             `json:"last_used_at,omitempty"`
-	LastError  string                 `json:"last_error,omitempty"`
+	ID          string         `json:"id"`
+	Type        string         `json:"type"        enum:"smtp,slack,mattermost,discord,ntfy"`
+	Name        string         `json:"name"`
+	Enabled     bool           `json:"enabled"`
+	Config      map[string]any `json:"config"      doc:"Type-specific configuration"`
+	CreatedAt   time.Time      `json:"created_at"`
+	CreatedBy   string         `json:"created_by"`
+	OwnerUserID string         `json:"owner_user_id,omitempty" doc:"Empty when channel is shared/admin-only (e.g. SMTP)"`
+	LastUsedAt  *time.Time     `json:"last_used_at,omitempty"`
+	LastError   string         `json:"last_error,omitempty"`
 }
 
 type NotificationChannelInput struct {
-	Type    string         `json:"type"    enum:"smtp,slack,mattermost,ntfy"`
+	Type    string         `json:"type"    enum:"smtp,slack,mattermost,discord,ntfy"`
 	Name    string         `json:"name"    minLength:"1" maxLength:"100"`
 	Enabled bool           `json:"enabled"`
 	Config  map[string]any `json:"config"  doc:"Type-specific config: see /docs"`

@@ -1524,11 +1524,15 @@ components:
           type: string
         name:
           type: string
+        owner_user_id:
+          description: Empty when channel is shared/admin-only (e.g. SMTP)
+          type: string
         type:
           enum:
             - smtp
             - slack
             - mattermost
+            - discord
             - ntfy
           type: string
       required:
@@ -1565,6 +1569,7 @@ components:
             - smtp
             - slack
             - mattermost
+            - discord
             - ntfy
           type: string
       required:

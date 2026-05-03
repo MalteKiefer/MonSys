@@ -29,8 +29,10 @@ import {
   TextInput,
 } from "../components/ui";
 import { api, ApiError } from "../lib/api";
+import { useAuth } from "../lib/auth";
 import {
   AlertHistoryEntry,
+  ChannelType,
   NotificationChannel,
   NotificationChannelInput,
   NotificationRule,
@@ -40,22 +42,27 @@ import {
 type Tab = "channels" | "rules" | "alerts";
 
 export function AdminNotifications() {
+  const user = useAuth((s) => s.user);
+  const isAdmin = user?.role === "admin";
   const [tab, setTab] = useState<Tab>("channels");
+
   return (
     <div className="mx-auto max-w-6xl space-y-5 p-6">
       <header className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold tracking-tight">Notifications</h2>
           <p className="text-sm text-fg-muted">
-            Configure channels (SMTP / Slack / Mattermost / ntfy), rules, and review alert history.
+            {isAdmin
+              ? "Manage channels (SMTP admin-only), rules, and review alert history."
+              : "Manage your delivery channels (Slack, Mattermost, Discord, ntfy)."}
           </p>
         </div>
-        <Tabs tab={tab} onChange={setTab} />
+        {isAdmin && <Tabs tab={tab} onChange={setTab} />}
       </header>
 
-      {tab === "channels" && <ChannelsPanel />}
-      {tab === "rules" && <RulesPanel />}
-      {tab === "alerts" && <AlertsPanel />}
+      {(!isAdmin || tab === "channels") && <ChannelsPanel isAdmin={!!isAdmin} myID={user?.id ?? ""} />}
+      {isAdmin && tab === "rules" && <RulesPanel />}
+      {isAdmin && tab === "alerts" && <AlertsPanel />}
     </div>
   );
 }
@@ -91,7 +98,7 @@ function Tabs({ tab, onChange }: { tab: Tab; onChange: (t: Tab) => void }) {
 
 // ---- Channels -------------------------------------------------------------
 
-function ChannelsPanel() {
+function ChannelsPanel({ isAdmin, myID }: { isAdmin: boolean; myID: string }) {
   const qc = useQueryClient();
   const list = useQuery({
     queryKey: ["channels"],
@@ -106,6 +113,7 @@ function ChannelsPanel() {
       {(creating || editing) && (
         <ChannelForm
           initial={editing}
+          isAdmin={isAdmin}
           onCancel={() => {
             setEditing(null);
             setCreating(false);
@@ -138,6 +146,7 @@ function ChannelsPanel() {
                 <tr>
                   <TH>Type</TH>
                   <TH>Name</TH>
+                  <TH>Owner</TH>
                   <TH>Enabled</TH>
                   <TH>Last used</TH>
                   <TH>Last error</TH>
@@ -149,6 +158,8 @@ function ChannelsPanel() {
                   <ChannelRow
                     key={c.id}
                     channel={c}
+                    isAdmin={isAdmin}
+                    myID={myID}
                     onEdit={() => setEditing(c)}
                     onChange={() => qc.invalidateQueries({ queryKey: ["channels"] })}
                   />
@@ -164,13 +175,24 @@ function ChannelsPanel() {
 
 function ChannelRow({
   channel,
+  isAdmin,
+  myID,
   onEdit,
   onChange,
 }: {
   channel: NotificationChannel;
+  isAdmin: boolean;
+  myID: string;
   onEdit: () => void;
   onChange: () => void;
 }) {
+  const ownedByMe = channel.owner_user_id === myID;
+  const canEdit = isAdmin || ownedByMe;
+  const ownerLabel = !channel.owner_user_id
+    ? "shared"
+    : ownedByMe
+      ? "you"
+      : "other";
   const [testMsg, setTestMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
   const sendTest = useMutation({
@@ -197,6 +219,15 @@ function ChannelRow({
         <TD className="text-fg-muted">{channel.type}</TD>
         <TD className="font-medium">{channel.name}</TD>
         <TD>
+          <span className={`inline-flex rounded-md px-1.5 py-0.5 text-[11px] font-medium ${
+            ownerLabel === "shared"
+              ? "bg-info/10 text-info ring-1 ring-inset ring-info/30"
+              : ownerLabel === "you"
+                ? "bg-accent/10 text-accent ring-1 ring-inset ring-accent/30"
+                : "bg-panel-2 text-fg-subtle ring-1 ring-inset ring-border"
+          }`}>{ownerLabel}</span>
+        </TD>
+        <TD>
           <StatusPill status={channel.enabled ? "ok" : "offline"}>
             {channel.enabled ? "on" : "off"}
           </StatusPill>
@@ -209,14 +240,15 @@ function ChannelRow({
         </TD>
         <TD className="text-right">
           <div className="inline-flex items-center gap-1">
-            <Button onClick={() => sendTest.mutate()} disabled={sendTest.isPending}>
+            <Button onClick={() => sendTest.mutate()} disabled={sendTest.isPending || !canEdit}>
               <Send className="h-3.5 w-3.5" /> Test
             </Button>
-            <Button onClick={onEdit}>
+            <Button onClick={onEdit} disabled={!canEdit}>
               <PencilLine className="h-3.5 w-3.5" /> Edit
             </Button>
             <Button
               variant="danger"
+              disabled={!canEdit}
               onClick={() => {
                 if (confirm(`Delete channel "${channel.name}"?`)) del.mutate();
               }}
@@ -228,7 +260,7 @@ function ChannelRow({
       </tr>
       {testMsg && (
         <tr className="bg-bg">
-          <td colSpan={6} className="px-3 py-2 text-xs">
+          <td colSpan={7} className="px-3 py-2 text-xs">
             {testMsg.kind === "ok" ? <SuccessBox>{testMsg.text}</SuccessBox> : <ErrorBox>{testMsg.text}</ErrorBox>}
           </td>
         </tr>
@@ -238,7 +270,7 @@ function ChannelRow({
 }
 
 // Channel-form schema by type. Sensitive fields shown as password inputs.
-const CHANNEL_FIELDS: Record<NotificationChannel["type"], Array<{ key: string; label: string; type?: string; placeholder?: string; help?: string }>> = {
+const CHANNEL_FIELDS: Record<ChannelType, Array<{ key: string; label: string; type?: string; placeholder?: string; help?: string }>> = {
   smtp: [
     { key: "host", label: "Host", placeholder: "smtp.example.com" },
     { key: "port", label: "Port", placeholder: "587" },
@@ -256,6 +288,10 @@ const CHANNEL_FIELDS: Record<NotificationChannel["type"], Array<{ key: string; l
     { key: "webhook_url", label: "Incoming webhook URL", type: "password" },
     { key: "username", label: "Display username (optional)", placeholder: "mon" },
   ],
+  discord: [
+    { key: "webhook_url", label: "Webhook URL", type: "password", placeholder: "https://discord.com/api/webhooks/…" },
+    { key: "username", label: "Display username (optional)", placeholder: "mon" },
+  ],
   ntfy: [
     { key: "server_url", label: "Server URL", placeholder: "https://ntfy.sh" },
     { key: "topic", label: "Topic" },
@@ -267,14 +303,16 @@ const CHANNEL_FIELDS: Record<NotificationChannel["type"], Array<{ key: string; l
 
 function ChannelForm({
   initial,
+  isAdmin,
   onCancel,
   onSaved,
 }: {
   initial: NotificationChannel | null;
+  isAdmin: boolean;
   onCancel: () => void;
   onSaved: () => void;
 }) {
-  const [type, setType] = useState<NotificationChannel["type"]>(initial?.type ?? "ntfy");
+  const [type, setType] = useState<ChannelType>(initial?.type ?? "ntfy");
   const [name, setName] = useState(initial?.name ?? "");
   const [enabled, setEnabled] = useState(initial?.enabled ?? true);
   const [config, setConfig] = useState<Record<string, string>>(() => {
@@ -323,20 +361,21 @@ function ChannelForm({
       <PanelBody>
         <form onSubmit={submit} className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Type">
+            <Field label="Type" hint={!isAdmin ? "SMTP requires admin role." : undefined}>
               <select
                 value={type}
                 disabled={!!initial}
                 onChange={(e) => {
-                  setType(e.target.value as NotificationChannel["type"]);
+                  setType(e.target.value as ChannelType);
                   setConfig({});
                 }}
                 className="w-full rounded-md border border-border bg-panel px-3 py-2 text-sm focus:border-accent focus:outline-none disabled:opacity-60"
               >
                 <option value="ntfy">ntfy</option>
                 <option value="slack">slack</option>
+                <option value="discord">discord</option>
                 <option value="mattermost">mattermost</option>
-                <option value="smtp">smtp</option>
+                {isAdmin && <option value="smtp">smtp</option>}
               </select>
             </Field>
             <Field label="Name">
@@ -379,7 +418,7 @@ function ChannelForm({
   );
 }
 
-function parseConfig(type: NotificationChannel["type"], cfg: Record<string, string>): Record<string, unknown> {
+function parseConfig(type: ChannelType, cfg: Record<string, string>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(cfg)) {
     if (v === "") continue;

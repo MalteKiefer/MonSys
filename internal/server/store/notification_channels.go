@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/pr0ph37/mon/internal/server/notify"
 	"github.com/pr0ph37/mon/internal/shared/apitypes"
@@ -17,12 +18,28 @@ var (
 	ErrChannelNotFound = errors.New("notification channel not found")
 )
 
-func (s *Store) ListChannels(ctx context.Context) ([]apitypes.NotificationChannel, error) {
-	rows, err := s.Pool.Query(ctx, `
-		SELECT id, type, name, enabled, config, created_at,
-		       COALESCE(created_by, ''), last_used_at, COALESCE(last_error, '')
-		FROM notification_channels
-		ORDER BY name`)
+// ListChannels returns channels visible to the caller. Admins see every
+// channel (own + others' user-owned + shared). Non-admin users see their own
+// channels plus shared channels (owner_user_id IS NULL).
+func (s *Store) ListChannels(ctx context.Context, callerID uuid.UUID, isAdmin bool) ([]apitypes.NotificationChannel, error) {
+	var rows pgx.Rows
+	var err error
+	if isAdmin {
+		rows, err = s.Pool.Query(ctx, `
+			SELECT id, type, name, enabled, config, created_at,
+			       COALESCE(created_by, ''), owner_user_id,
+			       last_used_at, COALESCE(last_error, '')
+			FROM notification_channels
+			ORDER BY name`)
+	} else {
+		rows, err = s.Pool.Query(ctx, `
+			SELECT id, type, name, enabled, config, created_at,
+			       COALESCE(created_by, ''), owner_user_id,
+			       last_used_at, COALESCE(last_error, '')
+			FROM notification_channels
+			WHERE owner_user_id = $1 OR owner_user_id IS NULL
+			ORDER BY name`, callerID)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -48,8 +65,9 @@ func (s *Store) GetChannel(ctx context.Context, id uuid.UUID) (apitypes.Notifica
 	return c, nil
 }
 
-// CreateChannel inserts a new channel. Type and name combined are unique.
-func (s *Store) CreateChannel(ctx context.Context, in apitypes.NotificationChannelInput, createdBy string) (apitypes.NotificationChannel, error) {
+// CreateChannel inserts a new channel. owner is nil for shared/admin-only
+// channels (used for SMTP); otherwise the channel is private to the user.
+func (s *Store) CreateChannel(ctx context.Context, in apitypes.NotificationChannelInput, createdBy string, owner *uuid.UUID) (apitypes.NotificationChannel, error) {
 	if in.Type == "" || in.Name == "" {
 		return apitypes.NotificationChannel{}, errors.New("type and name required")
 	}
@@ -57,14 +75,17 @@ func (s *Store) CreateChannel(ctx context.Context, in apitypes.NotificationChann
 	if err != nil {
 		return apitypes.NotificationChannel{}, err
 	}
+	var ownerArg any
+	if owner != nil {
+		ownerArg = *owner
+	}
 	var id uuid.UUID
-	var createdAt time.Time
 	err = s.Pool.QueryRow(ctx, `
-		INSERT INTO notification_channels (type, name, enabled, config, created_by)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, created_at`,
-		in.Type, in.Name, in.Enabled, cfg, nullableString(createdBy),
-	).Scan(&id, &createdAt)
+		INSERT INTO notification_channels (type, name, enabled, config, created_by, owner_user_id)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id`,
+		in.Type, in.Name, in.Enabled, cfg, nullableString(createdBy), ownerArg,
+	).Scan(&id)
 	if err != nil {
 		if pgIsUniqueViolation(err) {
 			return apitypes.NotificationChannel{}, errors.New("a channel with this type+name already exists")
@@ -75,7 +96,13 @@ func (s *Store) CreateChannel(ctx context.Context, in apitypes.NotificationChann
 	return c, err
 }
 
-func (s *Store) UpdateChannel(ctx context.Context, id uuid.UUID, in apitypes.NotificationChannelInput) (apitypes.NotificationChannel, error) {
+// UpdateChannel only succeeds when the caller owns the channel or is admin.
+func (s *Store) UpdateChannel(ctx context.Context, id uuid.UUID, in apitypes.NotificationChannelInput, callerID uuid.UUID, isAdmin bool) (apitypes.NotificationChannel, error) {
+	if !isAdmin {
+		if err := s.assertOwner(ctx, id, callerID); err != nil {
+			return apitypes.NotificationChannel{}, err
+		}
+	}
 	cfg, err := json.Marshal(orEmptyAny(in.Config))
 	if err != nil {
 		return apitypes.NotificationChannel{}, err
@@ -97,12 +124,37 @@ func (s *Store) UpdateChannel(ctx context.Context, id uuid.UUID, in apitypes.Not
 	return s.GetChannel(ctx, id)
 }
 
-func (s *Store) DeleteChannel(ctx context.Context, id uuid.UUID) error {
+func (s *Store) DeleteChannel(ctx context.Context, id uuid.UUID, callerID uuid.UUID, isAdmin bool) error {
+	if !isAdmin {
+		if err := s.assertOwner(ctx, id, callerID); err != nil {
+			return err
+		}
+	}
 	tag, err := s.Pool.Exec(ctx, `DELETE FROM notification_channels WHERE id = $1`, id)
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
+		return ErrChannelNotFound
+	}
+	return nil
+}
+
+// assertOwner returns ErrChannelNotFound when the channel does not exist or
+// is not owned by callerID. We deliberately conflate "not found" and
+// "not yours" so a non-admin can't probe foreign channel ids.
+func (s *Store) assertOwner(ctx context.Context, id uuid.UUID, callerID uuid.UUID) error {
+	var owner *uuid.UUID
+	err := s.Pool.QueryRow(ctx,
+		`SELECT owner_user_id FROM notification_channels WHERE id = $1`, id,
+	).Scan(&owner)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrChannelNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if owner == nil || *owner != callerID {
 		return ErrChannelNotFound
 	}
 	return nil
@@ -141,7 +193,8 @@ func (s *Store) SendChannel(ctx context.Context, id uuid.UUID, m notify.Message)
 func (s *Store) fetchChannelRaw(ctx context.Context, id uuid.UUID) (apitypes.NotificationChannel, error) {
 	rows, err := s.Pool.Query(ctx, `
 		SELECT id, type, name, enabled, config, created_at,
-		       COALESCE(created_by, ''), last_used_at, COALESCE(last_error, '')
+		       COALESCE(created_by, ''), owner_user_id,
+		       last_used_at, COALESCE(last_error, '')
 		FROM notification_channels WHERE id = $1`, id)
 	if err != nil {
 		return apitypes.NotificationChannel{}, err
@@ -157,17 +210,21 @@ func scanChannel(scan func(...any) error) (apitypes.NotificationChannel, error) 
 	var (
 		c          apitypes.NotificationChannel
 		idVal      uuid.UUID
+		ownerVal   *uuid.UUID
 		cfg        []byte
 		lastUsedAt *time.Time
 	)
 	if err := scan(&idVal, &c.Type, &c.Name, &c.Enabled, &cfg, &c.CreatedAt,
-		&c.CreatedBy, &lastUsedAt, &c.LastError); err != nil {
+		&c.CreatedBy, &ownerVal, &lastUsedAt, &c.LastError); err != nil {
 		return c, err
 	}
 	c.ID = idVal.String()
 	c.Config = map[string]any{}
 	if len(cfg) > 0 {
 		_ = json.Unmarshal(cfg, &c.Config)
+	}
+	if ownerVal != nil {
+		c.OwnerUserID = ownerVal.String()
 	}
 	c.LastUsedAt = lastUsedAt
 	return c, nil
@@ -176,7 +233,8 @@ func scanChannel(scan func(...any) error) (apitypes.NotificationChannel, error) 
 // redactSecrets blanks sensitive fields before returning a channel to the API.
 // We never want to surface SMTP passwords, webhook URLs, or ntfy tokens to a
 // caller listing channels, even an admin. To rotate, the operator updates the
-// channel.
+// channel. Note: Discord and Slack/Mattermost all use webhook_url, so the
+// same key covers them.
 func redactSecrets(c *apitypes.NotificationChannel) {
 	if c.Config == nil {
 		return
