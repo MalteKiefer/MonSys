@@ -8,12 +8,21 @@ Wants=network-online.target
 Type=simple
 User=monagent
 Group=monagent
+# Optional: grant collector access by adding monagent to these groups
+# during package install. The agent degrades gracefully if absent.
+#  - docker / podman : workload collector
+#  - libvirt         : KVM/LXC inventory via virsh
+#  - systemd-journal : sshd auth events via journalctl
+#  - fail2ban        : fail2ban-client UNIX socket
+SupplementaryGroups=docker libvirt systemd-journal fail2ban
 ExecStart=/usr/local/bin/mon-agent --config=/etc/mon-agent/config.yaml
 
 # Filesystem
 ProtectSystem=strict
 ProtectHome=yes
 ReadWritePaths=/var/lib/mon-agent /var/log/mon-agent
+# /var/log/wtmp, /var/log/btmp for last/lastb fallback when journal absent.
+ReadOnlyPaths=/var/log/wtmp /var/log/btmp /etc/passwd /etc/group
 PrivateTmp=yes
 PrivateDevices=yes
 ProtectHostname=yes
@@ -27,14 +36,16 @@ ProcSubset=pid
 
 # Privileges
 NoNewPrivileges=yes
-CapabilityBoundingSet=
-AmbientCapabilities=
+# CAP_NET_ADMIN: nft list ruleset / iptables-save read live netfilter state.
+# CAP_DAC_READ_SEARCH: read /var/log/wtmp, /var/log/btmp without group ownership.
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_DAC_READ_SEARCH
+AmbientCapabilities=CAP_NET_ADMIN CAP_DAC_READ_SEARCH
 LockPersonality=yes
 MemoryDenyWriteExecute=yes
 RestrictNamespaces=yes
 RestrictRealtime=yes
 RestrictSUIDSGID=yes
-RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
 SystemCallArchitectures=native
 SystemCallFilter=@system-service
 SystemCallFilter=~@privileged @resources @mount @swap @reboot @raw-io @debug @cpu-emulation @obsolete

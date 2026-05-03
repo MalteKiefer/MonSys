@@ -28,13 +28,15 @@ type AgentRegisterResponse struct {
 // Inventory is sent on first call after agent start and whenever the host inventory
 // hash changes (new disk, removed NIC, …).
 type IngestRequest struct {
-	SnapshotAt time.Time         `json:"snapshot_at"          doc:"When the agent assembled this batch"`
-	Inventory  *InventorySnap    `json:"inventory,omitempty"  doc:"Present only when changed"`
-	System     []SystemSample    `json:"system,omitempty"`
-	Disks      []DiskSample      `json:"disks,omitempty"`
-	Nics       []NetSample       `json:"nics,omitempty"`
-	Workloads  []WorkloadSample  `json:"workloads,omitempty"`
-	Packages   *PackageReport    `json:"packages,omitempty"   doc:"Optional package state"`
+	SnapshotAt time.Time            `json:"snapshot_at"          doc:"When the agent assembled this batch"`
+	Inventory  *InventorySnap       `json:"inventory,omitempty"  doc:"Present only when changed"`
+	System     []SystemSample       `json:"system,omitempty"`
+	Disks      []DiskSample         `json:"disks,omitempty"`
+	Nics       []NetSample          `json:"nics,omitempty"`
+	Workloads  []WorkloadSample     `json:"workloads,omitempty"`
+	Packages   *PackageReport       `json:"packages,omitempty"   doc:"Optional package state"`
+	Security   *SecurityReport      `json:"security,omitempty"   doc:"Firewall, fail2ban, crowdsec snapshot"`
+	Logins     []LoginEvent         `json:"logins,omitempty"     doc:"Incremental login/auth events since previous tick"`
 }
 
 type IngestResponse struct {
@@ -53,8 +55,76 @@ type InventorySnap struct {
 	Disks         []DiskInfo        `json:"disks,omitempty"`
 	Nics          []NicInfo         `json:"nics,omitempty"`
 	Workloads     []WorkloadInfo    `json:"workloads,omitempty"`
+	VMs           []VMInfo          `json:"vms,omitempty"      doc:"libvirt/KVM domains and system LXC containers"`
+	Users         []UserInfo        `json:"users,omitempty"    doc:"Local accounts from /etc/passwd"`
 	Sources       []string          `json:"sources,omitempty"  doc:"Active collectors, e.g. docker, kubelet, proxmox"`
 	Labels        map[string]string `json:"labels,omitempty"`
+}
+
+type VMInfo struct {
+	Kind       string `json:"kind"        enum:"kvm,lxc,libvirt-lxc"`
+	ExternalID string `json:"external_id" doc:"libvirt UUID or LXC name"`
+	Name       string `json:"name"`
+	State      string `json:"state"       doc:"running, paused, shut off, …"`
+	VCPU       int    `json:"vcpu"`
+	MemBytes   int64  `json:"mem_bytes"`
+	Autostart  bool   `json:"autostart"`
+}
+
+type UserInfo struct {
+	Username    string     `json:"username"`
+	UID         int        `json:"uid"`
+	GID         int        `json:"gid"`
+	Shell       string     `json:"shell,omitempty"`
+	Home        string     `json:"home,omitempty"`
+	IsSudoer    bool       `json:"is_sudoer"`
+	IsSystem    bool       `json:"is_system"   doc:"uid < 1000"`
+	LastLoginAt *time.Time `json:"last_login_at,omitempty"`
+}
+
+type LoginEvent struct {
+	Time     time.Time `json:"time"`
+	Username string    `json:"username,omitempty"`
+	SourceIP string    `json:"source_ip,omitempty"`
+	Method   string    `json:"method"   doc:"ssh, login, su, sudo, …"`
+	Success  bool      `json:"success"`
+	Detail   string    `json:"detail,omitempty"`
+}
+
+type SecurityReport struct {
+	Time      time.Time            `json:"time"`
+	Firewalls []FirewallStatus     `json:"firewalls,omitempty"`
+	Fail2ban  []Fail2banJailInfo   `json:"fail2ban,omitempty"`
+	CrowdSec  []CrowdsecDecision   `json:"crowdsec,omitempty"`
+}
+
+type FirewallStatus struct {
+	Engine           string `json:"engine"            enum:"ufw,nftables,iptables"`
+	Active           bool   `json:"active"`
+	DefaultInput     string `json:"default_input,omitempty"`
+	DefaultOutput    string `json:"default_output,omitempty"`
+	DefaultForward   string `json:"default_forward,omitempty"`
+	RuleCount        int    `json:"rule_count"`
+	SnapshotExcerpt  string `json:"snapshot_excerpt,omitempty" doc:"First ~4 KiB of the rule dump"`
+}
+
+type Fail2banJailInfo struct {
+	Jail            string   `json:"jail"`
+	CurrentlyFailed int      `json:"currently_failed"`
+	TotalFailed     int      `json:"total_failed"`
+	CurrentlyBanned int      `json:"currently_banned"`
+	TotalBanned     int      `json:"total_banned"`
+	BannedIPs       []string `json:"banned_ips,omitempty"`
+}
+
+type CrowdsecDecision struct {
+	DecisionID string    `json:"decision_id"`
+	Origin     string    `json:"origin,omitempty"`
+	Scope      string    `json:"scope,omitempty"   doc:"Ip, Range, Country, AS, …"`
+	Target     string    `json:"target,omitempty"`
+	Type       string    `json:"type,omitempty"    doc:"ban, captcha, …"`
+	Reason     string    `json:"reason,omitempty"`
+	Until      time.Time `json:"until,omitempty"`
 }
 
 type DiskInfo struct {

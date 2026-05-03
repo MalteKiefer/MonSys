@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -23,6 +24,23 @@ func (s *Store) SaveIngest(ctx context.Context, hostID uuid.UUID, req apitypes.I
 	if req.Inventory != nil {
 		if err := saveInventoryTx(ctx, tx, hostID, *req.Inventory); err != nil {
 			return fmt.Errorf("inventory: %w", err)
+		}
+		if err := saveVMsTx(ctx, tx, hostID, req.Inventory.VMs); err != nil {
+			return fmt.Errorf("vms: %w", err)
+		}
+		if err := saveUsersTx(ctx, tx, hostID, req.Inventory.Users); err != nil {
+			return fmt.Errorf("users: %w", err)
+		}
+	}
+
+	if len(req.Logins) > 0 {
+		if err := saveLoginEventsTx(ctx, tx, hostID, req.Logins); err != nil {
+			return fmt.Errorf("logins: %w", err)
+		}
+	}
+	if req.Security != nil {
+		if err := saveSecurityTx(ctx, tx, hostID, *req.Security); err != nil {
+			return fmt.Errorf("security: %w", err)
 		}
 	}
 
@@ -358,6 +376,189 @@ func savePackagesTx(ctx context.Context, tx pgx.Tx, hostID uuid.UUID, p *apitype
 		}
 	}
 	return nil
+}
+
+func saveVMsTx(ctx context.Context, tx pgx.Tx, hostID uuid.UUID, vms []apitypes.VMInfo) error {
+	if len(vms) == 0 {
+		return nil
+	}
+	seenAt := time.Now().UTC()
+	kinds := map[string]struct{}{}
+	for _, v := range vms {
+		if v.Kind == "" || v.ExternalID == "" {
+			continue
+		}
+		kinds[v.Kind] = struct{}{}
+		_, err := tx.Exec(ctx, `
+			INSERT INTO vms (host_id, kind, external_id, name, state, vcpu, mem_bytes, autostart, last_seen_at)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+			ON CONFLICT (host_id, kind, external_id) DO UPDATE SET
+				name         = EXCLUDED.name,
+				state        = EXCLUDED.state,
+				vcpu         = EXCLUDED.vcpu,
+				mem_bytes    = EXCLUDED.mem_bytes,
+				autostart    = EXCLUDED.autostart,
+				last_seen_at = EXCLUDED.last_seen_at`,
+			hostID, v.Kind, v.ExternalID, v.Name, v.State, v.VCPU, v.MemBytes, v.Autostart, seenAt)
+		if err != nil {
+			return fmt.Errorf("vms upsert: %w", err)
+		}
+	}
+	// Drop VMs we no longer see for the same kinds.
+	if len(kinds) > 0 {
+		ks := make([]string, 0, len(kinds))
+		for k := range kinds {
+			ks = append(ks, k)
+		}
+		if _, err := tx.Exec(ctx,
+			`DELETE FROM vms WHERE host_id = $1 AND kind = ANY($2) AND last_seen_at < $3`,
+			hostID, ks, seenAt); err != nil {
+			return fmt.Errorf("vms prune: %w", err)
+		}
+	}
+	return nil
+}
+
+func saveUsersTx(ctx context.Context, tx pgx.Tx, hostID uuid.UUID, users []apitypes.UserInfo) error {
+	if len(users) == 0 {
+		return nil
+	}
+	seenAt := time.Now().UTC()
+	for _, u := range users {
+		if u.Username == "" {
+			continue
+		}
+		_, err := tx.Exec(ctx, `
+			INSERT INTO observed_users (
+				host_id, username, uid, gid, shell, home,
+				is_sudoer, is_system, last_login_at, last_seen_at
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+			ON CONFLICT (host_id, username) DO UPDATE SET
+				uid           = EXCLUDED.uid,
+				gid           = EXCLUDED.gid,
+				shell         = EXCLUDED.shell,
+				home          = EXCLUDED.home,
+				is_sudoer     = EXCLUDED.is_sudoer,
+				is_system     = EXCLUDED.is_system,
+				last_login_at = COALESCE(EXCLUDED.last_login_at, observed_users.last_login_at),
+				last_seen_at  = EXCLUDED.last_seen_at`,
+			hostID, u.Username, u.UID, u.GID, nullableString(u.Shell), nullableString(u.Home),
+			u.IsSudoer, u.IsSystem, u.LastLoginAt, seenAt)
+		if err != nil {
+			return fmt.Errorf("observed_users upsert: %w", err)
+		}
+	}
+	// Prune accounts that disappeared since the previous snapshot.
+	if _, err := tx.Exec(ctx,
+		`DELETE FROM observed_users WHERE host_id = $1 AND last_seen_at < $2`,
+		hostID, seenAt); err != nil {
+		return fmt.Errorf("observed_users prune: %w", err)
+	}
+	return nil
+}
+
+func saveLoginEventsTx(ctx context.Context, tx pgx.Tx, hostID uuid.UUID, events []apitypes.LoginEvent) error {
+	for _, e := range events {
+		_, err := tx.Exec(ctx, `
+			INSERT INTO login_events (time, host_id, username, source_ip, method, success, detail)
+			VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+			e.Time, hostID, nullableString(e.Username), nullableString(e.SourceIP),
+			e.Method, e.Success, nullableString(e.Detail))
+		if err != nil {
+			return fmt.Errorf("login_events insert: %w", err)
+		}
+	}
+	return nil
+}
+
+func saveSecurityTx(ctx context.Context, tx pgx.Tx, hostID uuid.UUID, sec apitypes.SecurityReport) error {
+	for _, fw := range sec.Firewalls {
+		_, err := tx.Exec(ctx, `
+			INSERT INTO firewall_status (
+				host_id, engine, active, default_input, default_output, default_forward,
+				rule_count, snapshot_excerpt, snapshot_at
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8, now())
+			ON CONFLICT (host_id, engine) DO UPDATE SET
+				active           = EXCLUDED.active,
+				default_input    = EXCLUDED.default_input,
+				default_output   = EXCLUDED.default_output,
+				default_forward  = EXCLUDED.default_forward,
+				rule_count       = EXCLUDED.rule_count,
+				snapshot_excerpt = EXCLUDED.snapshot_excerpt,
+				snapshot_at      = now()`,
+			hostID, fw.Engine, fw.Active,
+			nullableString(fw.DefaultInput), nullableString(fw.DefaultOutput), nullableString(fw.DefaultForward),
+			fw.RuleCount, nullableString(fw.SnapshotExcerpt))
+		if err != nil {
+			return fmt.Errorf("firewall_status upsert: %w", err)
+		}
+	}
+
+	if len(sec.Fail2ban) > 0 {
+		seenAt := time.Now().UTC()
+		for _, j := range sec.Fail2ban {
+			_, err := tx.Exec(ctx, `
+				INSERT INTO fail2ban_jails (
+					host_id, jail, currently_failed, total_failed,
+					currently_banned, total_banned, banned_ips, last_seen_at
+				) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+				ON CONFLICT (host_id, jail) DO UPDATE SET
+					currently_failed = EXCLUDED.currently_failed,
+					total_failed     = EXCLUDED.total_failed,
+					currently_banned = EXCLUDED.currently_banned,
+					total_banned     = EXCLUDED.total_banned,
+					banned_ips       = EXCLUDED.banned_ips,
+					last_seen_at     = EXCLUDED.last_seen_at`,
+				hostID, j.Jail, j.CurrentlyFailed, j.TotalFailed,
+				j.CurrentlyBanned, j.TotalBanned, j.BannedIPs, seenAt)
+			if err != nil {
+				return fmt.Errorf("fail2ban_jails upsert: %w", err)
+			}
+		}
+		if _, err := tx.Exec(ctx,
+			`DELETE FROM fail2ban_jails WHERE host_id = $1 AND last_seen_at < $2`,
+			hostID, seenAt); err != nil {
+			return fmt.Errorf("fail2ban_jails prune: %w", err)
+		}
+	}
+
+	if len(sec.CrowdSec) > 0 {
+		seenAt := time.Now().UTC()
+		for _, d := range sec.CrowdSec {
+			_, err := tx.Exec(ctx, `
+				INSERT INTO crowdsec_decisions (
+					host_id, decision_id, origin, scope, target,
+					decision_type, reason, until, last_seen_at
+				) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+				ON CONFLICT (host_id, decision_id) DO UPDATE SET
+					origin        = EXCLUDED.origin,
+					scope         = EXCLUDED.scope,
+					target        = EXCLUDED.target,
+					decision_type = EXCLUDED.decision_type,
+					reason        = EXCLUDED.reason,
+					until         = EXCLUDED.until,
+					last_seen_at  = EXCLUDED.last_seen_at`,
+				hostID, d.DecisionID, nullableString(d.Origin), nullableString(d.Scope),
+				nullableString(d.Target), nullableString(d.Type), nullableString(d.Reason),
+				nilIfZero(d.Until), seenAt)
+			if err != nil {
+				return fmt.Errorf("crowdsec_decisions upsert: %w", err)
+			}
+		}
+		if _, err := tx.Exec(ctx,
+			`DELETE FROM crowdsec_decisions WHERE host_id = $1 AND last_seen_at < $2`,
+			hostID, seenAt); err != nil {
+			return fmt.Errorf("crowdsec_decisions prune: %w", err)
+		}
+	}
+	return nil
+}
+
+func nilIfZero(t time.Time) any {
+	if t.IsZero() {
+		return nil
+	}
+	return t
 }
 
 func uniqueManagers(pkgs []apitypes.InstalledPackage) []string {

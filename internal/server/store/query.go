@@ -85,4 +85,100 @@ func (s *Store) QuerySystemMetrics(ctx context.Context, hostID uuid.UUID, from, 
 	return out, rows.Err()
 }
 
+// HostSecurity bundles the security-relevant snapshot a UI typically wants
+// in a single fetch.
+type HostSecurity struct {
+	Firewalls []apitypes.FirewallStatus   `json:"firewalls"`
+	Fail2ban  []apitypes.Fail2banJailInfo `json:"fail2ban"`
+	CrowdSec  []apitypes.CrowdsecDecision `json:"crowdsec"`
+}
+
+func (s *Store) HostSecurity(ctx context.Context, hostID uuid.UUID) (HostSecurity, error) {
+	var hs HostSecurity
+
+	rows, err := s.Pool.Query(ctx, `
+		SELECT engine, active,
+		       COALESCE(default_input,''), COALESCE(default_output,''), COALESCE(default_forward,''),
+		       COALESCE(rule_count,0), COALESCE(snapshot_excerpt,'')
+		FROM firewall_status WHERE host_id = $1`, hostID)
+	if err != nil {
+		return hs, fmt.Errorf("firewall_status: %w", err)
+	}
+	for rows.Next() {
+		var f apitypes.FirewallStatus
+		if err := rows.Scan(&f.Engine, &f.Active,
+			&f.DefaultInput, &f.DefaultOutput, &f.DefaultForward,
+			&f.RuleCount, &f.SnapshotExcerpt); err != nil {
+			rows.Close()
+			return hs, err
+		}
+		hs.Firewalls = append(hs.Firewalls, f)
+	}
+	rows.Close()
+
+	rows, err = s.Pool.Query(ctx, `
+		SELECT jail, COALESCE(currently_failed,0), COALESCE(total_failed,0),
+		       COALESCE(currently_banned,0), COALESCE(total_banned,0), COALESCE(banned_ips,'{}')
+		FROM fail2ban_jails WHERE host_id = $1`, hostID)
+	if err != nil {
+		return hs, fmt.Errorf("fail2ban_jails: %w", err)
+	}
+	for rows.Next() {
+		var j apitypes.Fail2banJailInfo
+		if err := rows.Scan(&j.Jail, &j.CurrentlyFailed, &j.TotalFailed,
+			&j.CurrentlyBanned, &j.TotalBanned, &j.BannedIPs); err != nil {
+			rows.Close()
+			return hs, err
+		}
+		hs.Fail2ban = append(hs.Fail2ban, j)
+	}
+	rows.Close()
+
+	rows, err = s.Pool.Query(ctx, `
+		SELECT decision_id, COALESCE(origin,''), COALESCE(scope,''), COALESCE(target,''),
+		       COALESCE(decision_type,''), COALESCE(reason,''), COALESCE(until, 'epoch'::timestamptz)
+		FROM crowdsec_decisions WHERE host_id = $1`, hostID)
+	if err != nil {
+		return hs, fmt.Errorf("crowdsec_decisions: %w", err)
+	}
+	for rows.Next() {
+		var d apitypes.CrowdsecDecision
+		if err := rows.Scan(&d.DecisionID, &d.Origin, &d.Scope, &d.Target,
+			&d.Type, &d.Reason, &d.Until); err != nil {
+			rows.Close()
+			return hs, err
+		}
+		hs.CrowdSec = append(hs.CrowdSec, d)
+	}
+	rows.Close()
+
+	return hs, nil
+}
+
+func (s *Store) ListHostLogins(ctx context.Context, hostID uuid.UUID, since time.Time, limit int) ([]apitypes.LoginEvent, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 200
+	}
+	rows, err := s.Pool.Query(ctx, `
+		SELECT time, COALESCE(username,''), COALESCE(source_ip,''),
+		       COALESCE(method,''), success, COALESCE(detail,'')
+		FROM login_events
+		WHERE host_id = $1 AND time >= $2
+		ORDER BY time DESC
+		LIMIT $3`, hostID, since, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []apitypes.LoginEvent{}
+	for rows.Next() {
+		var e apitypes.LoginEvent
+		if err := rows.Scan(&e.Time, &e.Username, &e.SourceIP, &e.Method, &e.Success, &e.Detail); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
 var _ = pgx.ErrNoRows

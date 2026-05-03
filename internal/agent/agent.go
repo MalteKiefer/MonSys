@@ -16,7 +16,10 @@ import (
 
 	"github.com/pr0ph37/mon/internal/agent/buffer"
 	"github.com/pr0ph37/mon/internal/agent/collector"
+	"github.com/pr0ph37/mon/internal/agent/collector/identity"
 	"github.com/pr0ph37/mon/internal/agent/collector/packages"
+	"github.com/pr0ph37/mon/internal/agent/collector/security"
+	"github.com/pr0ph37/mon/internal/agent/collector/virt"
 	"github.com/pr0ph37/mon/internal/agent/collector/workload"
 	"github.com/pr0ph37/mon/internal/agent/config"
 	"github.com/pr0ph37/mon/internal/agent/transport"
@@ -71,6 +74,17 @@ func New(cfg config.Config) (*Agent, error) {
 	if pc, ok := packages.New(cfg.Packages); ok {
 		collectors = append(collectors, pc)
 	}
+
+	if v := virt.New(); v.Available() {
+		inventory = append(inventory, v)
+		collectors = append(collectors, v)
+	}
+
+	id := identity.New()
+	inventory = append(inventory, id)
+	collectors = append(collectors, id)
+
+	collectors = append(collectors, security.New())
 
 	a := &Agent{
 		Cfg:        cfg,

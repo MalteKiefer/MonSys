@@ -97,6 +97,22 @@ func (s *Server) registerRoutes() {
 		Summary:     "Time-range query of system metrics for a host",
 		Tags:        []string{"hosts"},
 	}, s.handleSystemMetrics)
+
+	huma.Register(s.API, huma.Operation{
+		OperationID: "host-security",
+		Method:      http.MethodGet,
+		Path:        "/v1/hosts/{id}/security",
+		Summary:     "Latest firewall, fail2ban, and CrowdSec snapshot for a host",
+		Tags:        []string{"security"},
+	}, s.handleHostSecurity)
+
+	huma.Register(s.API, huma.Operation{
+		OperationID: "host-logins",
+		Method:      http.MethodGet,
+		Path:        "/v1/hosts/{id}/logins",
+		Summary:     "Recent login/auth events for a host",
+		Tags:        []string{"security"},
+	}, s.handleHostLogins)
 }
 
 // --- Register ---------------------------------------------------------------
@@ -200,6 +216,80 @@ type sysMetricsOutput struct {
 		To      time.Time               `json:"to"`
 		Samples []apitypes.SystemSample `json:"samples"`
 	}
+}
+
+// --- Host security snapshot -------------------------------------------------
+
+type hostIDInput struct {
+	ID string `path:"id" doc:"host UUID"`
+}
+
+type hostSecurityOutput struct {
+	Body struct {
+		HostID    string                      `json:"host_id"`
+		Firewalls []apitypes.FirewallStatus   `json:"firewalls"`
+		Fail2ban  []apitypes.Fail2banJailInfo `json:"fail2ban"`
+		CrowdSec  []apitypes.CrowdsecDecision `json:"crowdsec"`
+	}
+}
+
+func (s *Server) handleHostSecurity(ctx context.Context, in *hostIDInput) (*hostSecurityOutput, error) {
+	if s.Store == nil {
+		return nil, huma.Error503ServiceUnavailable("server has no store configured")
+	}
+	hostID, err := uuid.Parse(in.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid host id")
+	}
+	hs, err := s.Store.HostSecurity(ctx, hostID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("query failed", err)
+	}
+	out := &hostSecurityOutput{}
+	out.Body.HostID = hostID.String()
+	out.Body.Firewalls = hs.Firewalls
+	out.Body.Fail2ban = hs.Fail2ban
+	out.Body.CrowdSec = hs.CrowdSec
+	return out, nil
+}
+
+// --- Host logins ------------------------------------------------------------
+
+type hostLoginsInput struct {
+	ID    string    `path:"id"     doc:"host UUID"`
+	Since time.Time `query:"since" doc:"earliest event timestamp (RFC3339); default = now-24h"`
+	Limit int       `query:"limit" doc:"max events to return (1..1000); default 200"`
+}
+
+type hostLoginsOutput struct {
+	Body struct {
+		HostID string                `json:"host_id"`
+		Since  time.Time             `json:"since"`
+		Events []apitypes.LoginEvent `json:"events"`
+	}
+}
+
+func (s *Server) handleHostLogins(ctx context.Context, in *hostLoginsInput) (*hostLoginsOutput, error) {
+	if s.Store == nil {
+		return nil, huma.Error503ServiceUnavailable("server has no store configured")
+	}
+	hostID, err := uuid.Parse(in.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid host id")
+	}
+	since := in.Since
+	if since.IsZero() {
+		since = time.Now().Add(-24 * time.Hour).UTC()
+	}
+	events, err := s.Store.ListHostLogins(ctx, hostID, since, in.Limit)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("query failed", err)
+	}
+	out := &hostLoginsOutput{}
+	out.Body.HostID = hostID.String()
+	out.Body.Since = since
+	out.Body.Events = events
+	return out, nil
 }
 
 func (s *Server) handleSystemMetrics(ctx context.Context, in *sysMetricsInput) (*sysMetricsOutput, error) {

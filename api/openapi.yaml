@@ -94,6 +94,29 @@ components:
         - agent_id
         - agent_key
       type: object
+    CrowdsecDecision:
+      additionalProperties: false
+      properties:
+        decision_id:
+          type: string
+        origin:
+          type: string
+        reason:
+          type: string
+        scope:
+          description: Ip, Range, Country, AS, …
+          type: string
+        target:
+          type: string
+        type:
+          description: ban, captcha, …
+          type: string
+        until:
+          format: date-time
+          type: string
+      required:
+        - decision_id
+      type: object
     DiskInfo:
       additionalProperties: false
       properties:
@@ -225,6 +248,64 @@ components:
           format: uri
           type: string
       type: object
+    Fail2banJailInfo:
+      additionalProperties: false
+      properties:
+        banned_ips:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        currently_banned:
+          format: int64
+          type: integer
+        currently_failed:
+          format: int64
+          type: integer
+        jail:
+          type: string
+        total_banned:
+          format: int64
+          type: integer
+        total_failed:
+          format: int64
+          type: integer
+      required:
+        - jail
+        - currently_failed
+        - total_failed
+        - currently_banned
+        - total_banned
+      type: object
+    FirewallStatus:
+      additionalProperties: false
+      properties:
+        active:
+          type: boolean
+        default_forward:
+          type: string
+        default_input:
+          type: string
+        default_output:
+          type: string
+        engine:
+          enum:
+            - ufw
+            - nftables
+            - iptables
+          type: string
+        rule_count:
+          format: int64
+          type: integer
+        snapshot_excerpt:
+          description: First ~4 KiB of the rule dump
+          type: string
+      required:
+        - engine
+        - active
+        - rule_count
+      type: object
     Host:
       additionalProperties: false
       properties:
@@ -266,6 +347,68 @@ components:
         - last_seen_at
         - labels
       type: object
+    HostLoginsOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/HostLoginsOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        events:
+          items:
+            $ref: "#/components/schemas/LoginEvent"
+          type:
+            - array
+            - "null"
+        host_id:
+          type: string
+        since:
+          format: date-time
+          type: string
+      required:
+        - host_id
+        - since
+        - events
+      type: object
+    HostSecurityOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/HostSecurityOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        crowdsec:
+          items:
+            $ref: "#/components/schemas/CrowdsecDecision"
+          type:
+            - array
+            - "null"
+        fail2ban:
+          items:
+            $ref: "#/components/schemas/Fail2banJailInfo"
+          type:
+            - array
+            - "null"
+        firewalls:
+          items:
+            $ref: "#/components/schemas/FirewallStatus"
+          type:
+            - array
+            - "null"
+        host_id:
+          type: string
+      required:
+        - host_id
+        - firewalls
+        - fail2ban
+        - crowdsec
+      type: object
     IngestRequest:
       additionalProperties: false
       properties:
@@ -285,6 +428,13 @@ components:
         inventory:
           $ref: "#/components/schemas/InventorySnap"
           description: Present only when changed
+        logins:
+          description: Incremental login/auth events since previous tick
+          items:
+            $ref: "#/components/schemas/LoginEvent"
+          type:
+            - array
+            - "null"
         nics:
           items:
             $ref: "#/components/schemas/NetSample"
@@ -294,6 +444,9 @@ components:
         packages:
           $ref: "#/components/schemas/PackageReport"
           description: Optional package state
+        security:
+          $ref: "#/components/schemas/SecurityReport"
+          description: Firewall, fail2ban, crowdsec snapshot
         snapshot_at:
           description: When the agent assembled this batch
           format: date-time
@@ -400,6 +553,20 @@ components:
           type:
             - array
             - "null"
+        users:
+          description: Local accounts from /etc/passwd
+          items:
+            $ref: "#/components/schemas/UserInfo"
+          type:
+            - array
+            - "null"
+        vms:
+          description: libvirt/KVM domains and system LXC containers
+          items:
+            $ref: "#/components/schemas/VMInfo"
+          type:
+            - array
+            - "null"
         workloads:
           items:
             $ref: "#/components/schemas/WorkloadInfo"
@@ -433,6 +600,28 @@ components:
             - "null"
       required:
         - hosts
+      type: object
+    LoginEvent:
+      additionalProperties: false
+      properties:
+        detail:
+          type: string
+        method:
+          description: ssh, login, su, sudo, …
+          type: string
+        source_ip:
+          type: string
+        success:
+          type: boolean
+        time:
+          format: date-time
+          type: string
+        username:
+          type: string
+      required:
+        - time
+        - method
+        - success
       type: object
     NetSample:
       additionalProperties: false
@@ -597,6 +786,33 @@ components:
         - metadata_age_seconds
         - refreshed_externally
       type: object
+    SecurityReport:
+      additionalProperties: false
+      properties:
+        crowdsec:
+          items:
+            $ref: "#/components/schemas/CrowdsecDecision"
+          type:
+            - array
+            - "null"
+        fail2ban:
+          items:
+            $ref: "#/components/schemas/Fail2banJailInfo"
+          type:
+            - array
+            - "null"
+        firewalls:
+          items:
+            $ref: "#/components/schemas/FirewallStatus"
+          type:
+            - array
+            - "null"
+        time:
+          format: date-time
+          type: string
+      required:
+        - time
+      type: object
     SysMetricsOutputBody:
       additionalProperties: false
       properties:
@@ -674,6 +890,70 @@ components:
         - ram_avail_bytes
         - swap_used_bytes
         - uptime_sec
+      type: object
+    UserInfo:
+      additionalProperties: false
+      properties:
+        gid:
+          format: int64
+          type: integer
+        home:
+          type: string
+        is_sudoer:
+          type: boolean
+        is_system:
+          description: uid < 1000
+          type: boolean
+        last_login_at:
+          format: date-time
+          type: string
+        shell:
+          type: string
+        uid:
+          format: int64
+          type: integer
+        username:
+          type: string
+      required:
+        - username
+        - uid
+        - gid
+        - is_sudoer
+        - is_system
+      type: object
+    VMInfo:
+      additionalProperties: false
+      properties:
+        autostart:
+          type: boolean
+        external_id:
+          description: libvirt UUID or LXC name
+          type: string
+        kind:
+          enum:
+            - kvm
+            - lxc
+            - libvirt-lxc
+          type: string
+        mem_bytes:
+          format: int64
+          type: integer
+        name:
+          type: string
+        state:
+          description: running, paused, shut off, …
+          type: string
+        vcpu:
+          format: int64
+          type: integer
+      required:
+        - kind
+        - external_id
+        - name
+        - state
+        - vcpu
+        - mem_bytes
+        - autostart
       type: object
     WorkloadInfo:
       additionalProperties: false
@@ -809,6 +1089,49 @@ paths:
       summary: List all known hosts
       tags:
         - hosts
+  /v1/hosts/{id}/logins:
+    get:
+      operationId: host-logins
+      parameters:
+        - description: host UUID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: host UUID
+            type: string
+        - description: earliest event timestamp (RFC3339); default = now-24h
+          explode: false
+          in: query
+          name: since
+          schema:
+            description: earliest event timestamp (RFC3339); default = now-24h
+            format: date-time
+            type: string
+        - description: max events to return (1..1000); default 200
+          explode: false
+          in: query
+          name: limit
+          schema:
+            description: max events to return (1..1000); default 200
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostLoginsOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Recent login/auth events for a host
+      tags:
+        - security
   /v1/hosts/{id}/metrics/system:
     get:
       operationId: host-system-metrics
@@ -852,6 +1175,33 @@ paths:
       summary: Time-range query of system metrics for a host
       tags:
         - hosts
+  /v1/hosts/{id}/security:
+    get:
+      operationId: host-security
+      parameters:
+        - description: host UUID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: host UUID
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostSecurityOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Latest firewall, fail2ban, and CrowdSec snapshot for a host
+      tags:
+        - security
   /v1/ingest:
     post:
       description: "Agents push samples here. Auth: Authorization: Bearer <agent_key>."
