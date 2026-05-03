@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"log/slog"
+
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
@@ -580,6 +582,7 @@ type registerOutput struct {
 func (s *Server) handleAgentRegister(ctx context.Context, in *registerInput) (*registerOutput, error) {
 	token, ok := bearer(in.Authorization)
 	if !ok {
+		slog.Warn("agent register: missing bootstrap token", "remote", in.RawHost)
 		return nil, huma.Error401Unauthorized("missing bootstrap token")
 	}
 	if s.Store == nil {
@@ -588,10 +591,20 @@ func (s *Server) handleAgentRegister(ctx context.Context, in *registerInput) (*r
 	resp, err := s.Store.RegisterAgent(ctx, token, in.Body, in.RawHost)
 	if err != nil {
 		if errors.Is(err, store.ErrTokenInvalid) {
+			slog.Warn("agent register: bootstrap token rejected",
+				"remote", in.RawHost, "hostname", in.Body.Hostname)
 			return nil, huma.Error401Unauthorized("bootstrap token invalid or expired")
 		}
+		slog.Error("agent register failed", "err", err, "hostname", in.Body.Hostname)
 		return nil, huma.Error500InternalServerError("registration failed", err)
 	}
+	slog.Info("agent registered",
+		"host_id", resp.AgentID,
+		"hostname", in.Body.Hostname,
+		"distro", in.Body.Distro,
+		"arch", in.Body.Arch,
+		"agent_version", in.Body.AgentVersion,
+		"remote", in.RawHost)
 	return &registerOutput{Body: resp}, nil
 }
 
@@ -609,6 +622,7 @@ type ingestOutput struct {
 func (s *Server) handleIngest(ctx context.Context, in *ingestInput) (*ingestOutput, error) {
 	key, ok := bearer(in.Authorization)
 	if !ok {
+		slog.Warn("ingest: missing agent key")
 		return nil, huma.Error401Unauthorized("missing agent key")
 	}
 	if s.Store == nil {
@@ -617,13 +631,45 @@ func (s *Server) handleIngest(ctx context.Context, in *ingestInput) (*ingestOutp
 	hostID, err := s.Store.AuthenticateAgent(ctx, key)
 	if err != nil {
 		if errors.Is(err, store.ErrAgentKeyInvalid) {
+			slog.Warn("ingest: agent key rejected")
 			return nil, huma.Error401Unauthorized("agent key invalid")
 		}
 		return nil, huma.Error500InternalServerError("auth failed", err)
 	}
-	if err := s.Store.SaveIngest(ctx, hostID, in.Body); err != nil {
+
+	b := in.Body
+	pkgsCount := 0
+	updatesCount := 0
+	if b.Packages != nil {
+		pkgsCount = b.Packages.Summary.InstalledCount
+		updatesCount = b.Packages.Summary.UpdatesCount
+	}
+	hasInventory := b.Inventory != nil
+	hasSecurity := b.Security != nil
+
+	if err := s.Store.SaveIngest(ctx, hostID, b); err != nil {
+		slog.Error("ingest persist failed",
+			"host_id", hostID.String(),
+			"err", err,
+			"snapshot_at", b.SnapshotAt)
 		return nil, huma.Error500InternalServerError("ingest persist failed", err)
 	}
+
+	// Log a summary, not the payload itself: full dpkg listings are huge and
+	// the operator can drill into individual rows via /v1/hosts/{id}/* anyway.
+	slog.Info("ingest accepted",
+		"host_id", hostID.String(),
+		"snapshot_at", b.SnapshotAt,
+		"system_samples", len(b.System),
+		"disk_samples", len(b.Disks),
+		"net_samples", len(b.Nics),
+		"workload_samples", len(b.Workloads),
+		"login_events", len(b.Logins),
+		"packages_installed", pkgsCount,
+		"packages_updates", updatesCount,
+		"has_inventory", hasInventory,
+		"has_security", hasSecurity)
+
 	return &ingestOutput{Body: apitypes.IngestResponse{
 		Accepted:   true,
 		ServerTime: time.Now().UTC(),
