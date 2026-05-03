@@ -15,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -74,9 +75,106 @@ func finish(start time.Time, r Result) Result {
 	return r
 }
 
+// --- SSRF guard ------------------------------------------------------------
+
+// privateCIDRs lists ranges that are typically off-limits for probes when
+// the operator opts into the deny mode: RFC1918, loopback, link-local,
+// IPv6 ULA, and IPv6 link-local. The cloud metadata endpoint
+// (169.254.169.254) is covered by 169.254.0.0/16.
+var privateCIDRs = func() []*net.IPNet {
+	cidrs := []string{
+		"127.0.0.0/8",
+		"10.0.0.0/8",
+		"172.16.0.0/12",
+		"192.168.0.0/16",
+		"169.254.0.0/16",
+		"::1/128",
+		"fc00::/7",
+		"fe80::/10",
+	}
+	out := make([]*net.IPNet, 0, len(cidrs))
+	for _, c := range cidrs {
+		_, n, err := net.ParseCIDR(c)
+		if err == nil {
+			out = append(out, n)
+		}
+	}
+	return out
+}()
+
+// denyDestination resolves host (which may be a bare hostname or contain a
+// port) and rejects probes whose targets fall inside privateCIDRs.
+//
+// Default policy: allow internal targets. Operators routinely run probes
+// against internal services (DBs on RFC1918 networks, etc.), so the deny
+// list is opt-in. Set MON_PROBE_ALLOW_INTERNAL=0 or MON_PROBE_DENY_INTERNAL=1
+// to enable. All resolved IPs are checked, which partially mitigates DNS
+// rebinding (a hostname returning multiple A records mixing public and
+// private addresses is rejected if any is private).
+func denyDestination(host string) error {
+	if host == "" {
+		return nil
+	}
+	allow := os.Getenv("MON_PROBE_ALLOW_INTERNAL")
+	deny := os.Getenv("MON_PROBE_DENY_INTERNAL")
+	// Default = allow. Only enforce when the operator opts in.
+	if !(allow == "0" || deny == "1") {
+		return nil
+	}
+
+	// Strip optional :port suffix. net.SplitHostPort fails on bare hosts,
+	// so try it but fall back to the raw string.
+	h := host
+	if hh, _, err := net.SplitHostPort(host); err == nil {
+		h = hh
+	}
+	// Strip IPv6 brackets if any survived.
+	h = strings.TrimPrefix(strings.TrimSuffix(h, "]"), "[")
+
+	var ips []net.IP
+	if ip := net.ParseIP(h); ip != nil {
+		ips = []net.IP{ip}
+	} else {
+		resolved, err := net.LookupIP(h)
+		if err != nil {
+			return fmt.Errorf("resolve %q: %w", h, err)
+		}
+		ips = resolved
+	}
+	for _, ip := range ips {
+		for _, n := range privateCIDRs {
+			if n.Contains(ip) {
+				return errors.New("destination is in a denied range")
+			}
+		}
+	}
+	return nil
+}
+
+// targetHost extracts a hostname (without port) from either a URL or a
+// host[:port] string. Returns "" when nothing usable is present.
+func targetHost(s string) string {
+	if s == "" {
+		return ""
+	}
+	if u, err := url.Parse(s); err == nil && u.Host != "" {
+		if h, _, err := net.SplitHostPort(u.Host); err == nil {
+			return h
+		}
+		return u.Host
+	}
+	if h, _, err := net.SplitHostPort(s); err == nil {
+		return h
+	}
+	return s
+}
+
 // --- TCP -------------------------------------------------------------------
 
 func runTCP(ctx context.Context, p Probe) Result {
+	if err := denyDestination(targetHost(p.Target)); err != nil {
+		return Result{Status: StatusFail, Detail: err.Error()}
+	}
 	var d net.Dialer
 	conn, err := d.DialContext(ctx, "tcp", p.Target)
 	if err != nil {
@@ -96,6 +194,9 @@ func runHTTP(ctx context.Context, p Probe) Result {
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return Result{Status: StatusFail, Detail: "url must be http(s)"}
 	}
+	if err := denyDestination(u.Hostname()); err != nil {
+		return Result{Status: StatusFail, Detail: err.Error()}
+	}
 
 	insecure := boolParam(p.Params, "insecure_skip_verify", false)
 	expected := intParam(p.Params, "expected_status", 200)
@@ -103,7 +204,7 @@ func runHTTP(ctx context.Context, p Probe) Result {
 
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: insecure, //nolint:gosec
+			InsecureSkipVerify: insecure, //nolint:gosec // opt-in via monitor params for self-signed targets
 			MinVersion:         tls.VersionTLS12,
 		},
 	}
@@ -139,6 +240,9 @@ func runCert(ctx context.Context, p Probe) Result {
 	host, _, err := net.SplitHostPort(p.Target)
 	if err != nil {
 		return Result{Status: StatusFail, Detail: "target must be host:port: " + err.Error()}
+	}
+	if err := denyDestination(host); err != nil {
+		return Result{Status: StatusFail, Detail: err.Error()}
 	}
 	if serverName == "" {
 		serverName = host
@@ -221,6 +325,9 @@ func runMySQL(ctx context.Context, p Probe) Result {
 	if !strings.Contains(target, ":") {
 		target += ":3306"
 	}
+	if err := denyDestination(targetHost(target)); err != nil {
+		return Result{Status: StatusFail, Detail: err.Error()}
+	}
 
 	var d net.Dialer
 	conn, err := d.DialContext(ctx, "tcp", target)
@@ -273,6 +380,9 @@ func runMongoDB(ctx context.Context, p Probe) Result {
 	}
 	if !strings.Contains(target, ":") {
 		target += ":27017"
+	}
+	if err := denyDestination(targetHost(target)); err != nil {
+		return Result{Status: StatusFail, Detail: err.Error()}
 	}
 
 	var d net.Dialer
@@ -334,13 +444,13 @@ func buildMongoHello() ([]byte, error) {
 	doc = append(doc, []byte("$db")...)
 	doc = append(doc, 0x00)
 	dbName := []byte("admin\x00")
-	doc = append(doc, byte(len(dbName)), 0, 0, 0)
+	doc = append(doc, byte(len(dbName)), 0, 0, 0) //nolint:gosec // BSON/OP_MSG little-endian length prefix; values bounded by hardcoded packet shape
 	doc = append(doc, dbName...)
 
 	docSize := 4 + len(doc) + 1
 	bson := make([]byte, 0, docSize)
 	bson = append(bson,
-		byte(docSize), byte(docSize>>8), byte(docSize>>16), byte(docSize>>24))
+		byte(docSize), byte(docSize>>8), byte(docSize>>16), byte(docSize>>24)) //nolint:gosec // BSON/OP_MSG little-endian length prefix; values bounded by hardcoded packet shape
 	bson = append(bson, doc...)
 	bson = append(bson, 0x00)
 
@@ -354,7 +464,7 @@ func buildMongoHello() ([]byte, error) {
 	body = append(body, bson...)
 
 	totalLen := 16 + len(body)
-	hdr := []byte{
+	hdr := []byte{ //nolint:gosec // BSON/OP_MSG little-endian length prefix; values bounded by hardcoded packet shape
 		byte(totalLen), byte(totalLen >> 8), byte(totalLen >> 16), byte(totalLen >> 24),
 		1, 0, 0, 0, // requestID
 		0, 0, 0, 0, // responseTo

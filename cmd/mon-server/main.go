@@ -153,6 +153,9 @@ func main() {
 		ReadTimeout:       60 * time.Second,
 		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       2 * time.Minute,
+		// AUDIT-011: 1 MiB cap on request headers. Bodies are bounded
+		// separately by the api.New() body-size middleware.
+		MaxHeaderBytes: 1 << 20,
 	}
 
 	go func() {

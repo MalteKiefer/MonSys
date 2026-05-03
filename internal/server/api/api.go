@@ -16,6 +16,7 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/httprate"
 	"github.com/google/uuid"
 
 	"github.com/pr0ph37/mon/internal/server/ingestlog"
@@ -25,6 +26,13 @@ import (
 	"github.com/pr0ph37/mon/internal/server/store"
 	"github.com/pr0ph37/mon/internal/shared/apitypes"
 	"github.com/pr0ph37/mon/internal/shared/version"
+)
+
+// Request body size caps. AUDIT-011: every endpoint must refuse oversized
+// payloads to keep a hostile client from exhausting memory.
+const (
+	defaultMaxBodyBytes = 1 << 20  // 1 MiB for everything except ingest
+	ingestMaxBodyBytes  = 32 << 20 // 32 MiB for /v1/ingest (large dpkg dumps)
 )
 
 type Server struct {
@@ -40,6 +48,15 @@ func New(s *store.Store) *Server {
 	r.Use(middleware.RealIP)
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Recoverer)
+	// AUDIT-011: clamp request body sizes immediately after Recoverer so the
+	// rest of the pipeline never sees oversized inputs.
+	r.Use(bodySizeLimiter)
+	// AUDIT-015 / AUDIT-048: security response headers applied globally.
+	r.Use(securityHeaders)
+	// AUDIT-012, 016, 070, 071: per-IP rate limits on auth-adjacent and
+	// ingest endpoints. Cheap routes like /healthz and /readyz are skipped
+	// inside the middleware itself.
+	r.Use(rateLimitByPath())
 	r.Use(middleware.Timeout(30 * time.Second))
 
 	cfg := huma.DefaultConfig("mon", version.Version)
@@ -49,8 +66,130 @@ func New(s *store.Store) *Server {
 	api := humachi.New(r, cfg)
 
 	srv := &Server{Store: s, Router: r, API: api}
+	// AUDIT-066: openapi/docs are session-protected. Wire the gate before
+	// route registration so chi's middleware chain captures /docs and
+	// /openapi.* requests.
+	r.Use(srv.requireSessionForDocs)
 	srv.registerRoutes()
 	return srv
+}
+
+// bodySizeLimiter wraps r.Body in an http.MaxBytesReader so handlers and
+// JSON decoders enforce a hard cap. /v1/ingest gets a higher cap to fit
+// large package inventories; everything else uses the conservative default.
+// AUDIT-011.
+func bodySizeLimiter(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Body != nil {
+			limit := int64(defaultMaxBodyBytes)
+			if r.URL.Path == "/v1/ingest" {
+				limit = int64(ingestMaxBodyBytes)
+			}
+			r.Body = http.MaxBytesReader(w, r.Body, limit)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// securityHeaders sets a hardened response-header set on every reply. The
+// CSP is locked down to self plus inline styles (Vite-built React requires
+// inline styles for code-split chunks); no script-src 'unsafe-inline'.
+// AUDIT-015 / AUDIT-048.
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		h.Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Content-Security-Policy",
+			"default-src 'self'; img-src 'self' data:; font-src 'self'; "+
+				"script-src 'self'; style-src 'self' 'unsafe-inline'; "+
+				"connect-src 'self'; frame-ancestors 'none'")
+		next.ServeHTTP(w, r)
+	})
+}
+
+// rateLimitByPath returns a chi middleware that applies one of two per-IP
+// httprate limiters based on the request path. /healthz, /readyz and the
+// SPA assets are exempt — those should never be rate-limited.
+//
+// Limits chosen for the audit:
+//   - login / 2fa-challenge / consume-reset / agents-register: 20 req/min
+//   - /v1/ingest: 600 req/min (10/s) — agents on noisy hosts spike briefly
+//
+// AUDIT-012, 016, 070, 071.
+func rateLimitByPath() func(http.Handler) http.Handler {
+	authLimiter := httprate.LimitByIP(20, time.Minute)
+	ingestLimiter := httprate.LimitByIP(600, time.Minute)
+
+	authPaths := map[string]struct{}{
+		"/v1/auth/login":         {},
+		"/v1/auth/2fa/challenge": {},
+		"/v1/auth/consume-reset": {},
+		"/v1/agents/register":    {},
+	}
+
+	return func(next http.Handler) http.Handler {
+		auth := authLimiter(next)
+		ingest := ingestLimiter(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			path := r.URL.Path
+			// Health probes must never be throttled.
+			if path == "/healthz" || path == "/readyz" {
+				next.ServeHTTP(w, r)
+				return
+			}
+			if _, ok := authPaths[path]; ok {
+				auth.ServeHTTP(w, r)
+				return
+			}
+			if path == "/v1/ingest" {
+				ingest.ServeHTTP(w, r)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// requireSessionForDocs hides /docs and /openapi.* behind a valid session
+// token. Without it any unauthenticated caller could enumerate the full API
+// surface from a public deployment. AUDIT-066.
+func (s *Server) requireSessionForDocs(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		gated := path == "/docs" ||
+			strings.HasPrefix(path, "/docs/") ||
+			strings.HasPrefix(path, "/openapi.")
+		if !gated {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if s.Store == nil {
+			http.NotFound(w, r)
+			return
+		}
+		tok, ok := bearer(r.Header.Get("Authorization"))
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		if _, err := s.Store.ValidateSession(r.Context(), tok); err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// internalErr is the helper for AUDIT-018 / AUDIT-065. It logs the raw
+// error against an operation tag and returns a generic 500 to the client
+// so internal details (SQL fragments, stack traces, etc.) never leak.
+func internalErr(ctx context.Context, op string, err error) error {
+	slog.ErrorContext(ctx, "internal error", "op", op, "err", err)
+	return huma.Error500InternalServerError("internal error")
 }
 
 func (s *Server) Handler() http.Handler { return s.Router }
@@ -660,7 +799,7 @@ func (s *Server) handleAgentRegister(ctx context.Context, in *registerInput) (*r
 			return nil, huma.Error401Unauthorized("bootstrap token invalid or expired")
 		}
 		slog.Error("agent register failed", "err", err, "hostname", in.Body.Hostname)
-		return nil, huma.Error500InternalServerError("registration failed", err)
+		return nil, internalErr(ctx, "registration failed", err)
 	}
 	slog.Info("agent registered",
 		"host_id", resp.AgentID,
@@ -698,7 +837,7 @@ func (s *Server) handleIngest(ctx context.Context, in *ingestInput) (*ingestOutp
 			slog.Warn("ingest: agent key rejected")
 			return nil, huma.Error401Unauthorized("agent key invalid")
 		}
-		return nil, huma.Error500InternalServerError("auth failed", err)
+		return nil, internalErr(ctx, "auth failed", err)
 	}
 
 	b := in.Body
@@ -716,7 +855,7 @@ func (s *Server) handleIngest(ctx context.Context, in *ingestInput) (*ingestOutp
 			"host_id", hostID.String(),
 			"err", err,
 			"snapshot_at", b.SnapshotAt)
-		return nil, huma.Error500InternalServerError("ingest persist failed", err)
+		return nil, internalErr(ctx, "ingest persist failed", err)
 	}
 
 	// Stash the canonical re-marshal in the ingest ring so admins can see
@@ -767,7 +906,7 @@ func (s *Server) handleListHosts(ctx context.Context, _ *struct{}) (*listHostsOu
 	}
 	hosts, err := s.Store.ListHosts(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("list hosts failed", err)
+		return nil, internalErr(ctx, "list hosts failed", err)
 	}
 	out := &listHostsOutput{}
 	out.Body.Hosts = hosts
@@ -827,7 +966,7 @@ func (s *Server) handleDiskMetrics(ctx context.Context, in *rangeMetricsInput) (
 		if errors.Is(err, store.ErrHostNotFound) {
 			return nil, huma.Error404NotFound("host not found")
 		}
-		return nil, huma.Error500InternalServerError("query failed", err)
+		return nil, internalErr(ctx, "query failed", err)
 	}
 	out := &diskMetricsOutput{}
 	out.Body.HostID = id.String()
@@ -866,7 +1005,7 @@ func (s *Server) handleNetMetrics(ctx context.Context, in *rangeMetricsInput) (*
 		if errors.Is(err, store.ErrHostNotFound) {
 			return nil, huma.Error404NotFound("host not found")
 		}
-		return nil, huma.Error500InternalServerError("query failed", err)
+		return nil, internalErr(ctx, "query failed", err)
 	}
 	out := &netMetricsOutput{}
 	out.Body.HostID = id.String()
@@ -907,7 +1046,7 @@ func (s *Server) handleSearchPackages(ctx context.Context, in *searchPackagesInp
 	}
 	results, total, err := s.Store.SearchPackages(ctx, in.Q, in.Manager, hostID, in.Limit, in.Offset)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("query failed", err)
+		return nil, internalErr(ctx, "query failed", err)
 	}
 	limit := in.Limit
 	if limit <= 0 {
@@ -963,7 +1102,7 @@ func (s *Server) handleListTags(ctx context.Context, _ *struct{}) (*listTagsOutp
 	out := &listTagsOutput{}
 	tags, err := s.Store.ListAllTags(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("query failed", err)
+		return nil, internalErr(ctx, "query failed", err)
 	}
 	for _, t := range tags {
 		out.Body.Tags = append(out.Body.Tags, struct {
@@ -983,7 +1122,7 @@ type listGroupsOutput struct {
 func (s *Server) handleListGroups(ctx context.Context, _ *struct{}) (*listGroupsOutput, error) {
 	groups, err := s.Store.ListGroups(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("query failed", err)
+		return nil, internalErr(ctx, "query failed", err)
 	}
 	out := &listGroupsOutput{}
 	out.Body.Groups = groups
@@ -1039,7 +1178,7 @@ func (s *Server) handleDeleteGroup(ctx context.Context, in *groupIDInput) (*empt
 		if errors.Is(err, store.ErrGroupNotFound) {
 			return nil, huma.Error404NotFound("group not found")
 		}
-		return nil, huma.Error500InternalServerError("delete failed", err)
+		return nil, internalErr(ctx, "delete failed", err)
 	}
 	out := &emptyOutput{}
 	out.Body.OK = true
@@ -1068,7 +1207,7 @@ func (s *Server) handleSetGroupMembers(ctx context.Context, in *setGroupMembersI
 		if errors.Is(err, store.ErrGroupNotFound) {
 			return nil, huma.Error404NotFound("group not found")
 		}
-		return nil, huma.Error500InternalServerError("update failed", err)
+		return nil, internalErr(ctx, "update failed", err)
 	}
 	out := &emptyOutput{}
 	out.Body.OK = true
@@ -1094,7 +1233,7 @@ func (s *Server) handleHostDetail(ctx context.Context, in *hostIDInput) (*hostDe
 		if errors.Is(err, store.ErrHostNotFound) {
 			return nil, huma.Error404NotFound("host not found")
 		}
-		return nil, huma.Error500InternalServerError("query failed", err)
+		return nil, internalErr(ctx, "query failed", err)
 	}
 	return &hostDetailOutput{Body: d}, nil
 }
@@ -1122,7 +1261,7 @@ func (s *Server) handleHostPackages(ctx context.Context, in *hostPackagesInput) 
 	}
 	pkgs, total, err := s.Store.ListHostPackages(ctx, id, in.Limit, in.Offset)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("query failed", err)
+		return nil, internalErr(ctx, "query failed", err)
 	}
 	out := &hostPackagesOutput{}
 	out.Body.Total = total
@@ -1148,7 +1287,7 @@ func (s *Server) handleHostPackageUpdates(ctx context.Context, in *hostIDInput) 
 	}
 	ups, err := s.Store.ListHostPackageUpdates(ctx, id)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("query failed", err)
+		return nil, internalErr(ctx, "query failed", err)
 	}
 	out := &hostPackageUpdatesOutput{}
 	out.Body.Updates = ups
@@ -1180,7 +1319,7 @@ func (s *Server) handleHostSecurity(ctx context.Context, in *hostIDInput) (*host
 	}
 	hs, err := s.Store.HostSecurity(ctx, hostID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("query failed", err)
+		return nil, internalErr(ctx, "query failed", err)
 	}
 	out := &hostSecurityOutput{}
 	out.Body.HostID = hostID.String()
@@ -1220,7 +1359,7 @@ func (s *Server) handleHostLogins(ctx context.Context, in *hostLoginsInput) (*ho
 	}
 	events, err := s.Store.ListHostLogins(ctx, hostID, since, in.Limit)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("query failed", err)
+		return nil, internalErr(ctx, "query failed", err)
 	}
 	out := &hostLoginsOutput{}
 	out.Body.HostID = hostID.String()
@@ -1253,7 +1392,7 @@ func (s *Server) handleSystemMetrics(ctx context.Context, in *sysMetricsInput) (
 		if errors.Is(err, store.ErrHostNotFound) {
 			return nil, huma.Error404NotFound("host not found")
 		}
-		return nil, huma.Error500InternalServerError("query failed", err)
+		return nil, internalErr(ctx, "query failed", err)
 	}
 	out := &sysMetricsOutput{}
 	out.Body.HostID = hostID.String()
@@ -1290,7 +1429,7 @@ func (s *Server) handleListRules(ctx context.Context, _ *struct{}) (*listRulesOu
 	}
 	rs, err := s.Store.ListRules(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("list failed", err)
+		return nil, internalErr(ctx, "list failed", err)
 	}
 	out := &listRulesOutput{}
 	out.Body.Rules = rs
@@ -1342,7 +1481,7 @@ func (s *Server) handleDeleteRule(ctx context.Context, in *ruleIDInput) (*emptyO
 		if errors.Is(err, store.ErrRuleNotFound) {
 			return nil, huma.Error404NotFound("rule not found")
 		}
-		return nil, huma.Error500InternalServerError("delete failed", err)
+		return nil, internalErr(ctx, "delete failed", err)
 	}
 	out := &emptyOutput{}
 	out.Body.OK = true
@@ -1369,7 +1508,7 @@ func (s *Server) handleAlertHistory(ctx context.Context, in *alertHistoryInput) 
 	}
 	alerts, err := s.Store.ListAlertHistory(ctx, since, in.Limit)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("query failed", err)
+		return nil, internalErr(ctx, "query failed", err)
 	}
 	out := &alertHistoryOutput{}
 	out.Body.Alerts = alerts
@@ -1394,7 +1533,7 @@ func (s *Server) handleListMonitors(ctx context.Context, _ *struct{}) (*listMoni
 	}
 	ms, err := s.Store.ListMonitors(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("list failed", err)
+		return nil, internalErr(ctx, "list failed", err)
 	}
 	out := &listMonitorsOutput{}
 	out.Body.Monitors = ms
@@ -1427,7 +1566,7 @@ func (s *Server) handleGetMonitor(ctx context.Context, in *monitorIDInput) (*mon
 		if errors.Is(err, store.ErrMonitorNotFound) {
 			return nil, huma.Error404NotFound("monitor not found")
 		}
-		return nil, huma.Error500InternalServerError("get failed", err)
+		return nil, internalErr(ctx, "get failed", err)
 	}
 	return &monitorOutput{Body: m}, nil
 }
@@ -1461,7 +1600,7 @@ func (s *Server) handleDeleteMonitor(ctx context.Context, in *monitorIDInput) (*
 		if errors.Is(err, store.ErrMonitorNotFound) {
 			return nil, huma.Error404NotFound("monitor not found")
 		}
-		return nil, huma.Error500InternalServerError("delete failed", err)
+		return nil, internalErr(ctx, "delete failed", err)
 	}
 	out := &emptyOutput{}
 	out.Body.OK = true
@@ -1491,7 +1630,7 @@ func (s *Server) handleMonitorResults(ctx context.Context, in *monitorResultsInp
 	}
 	rs, err := s.Store.MonitorResults(ctx, id, since, in.Limit)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("query failed", err)
+		return nil, internalErr(ctx, "query failed", err)
 	}
 	out := &monitorResultsOutput{}
 	out.Body.MonitorID = id.String()
@@ -1518,7 +1657,7 @@ func (s *Server) handleListChannels(ctx context.Context, _ *struct{}) (*listChan
 	u, _ := userFromContext(ctx)
 	cs, err := s.Store.ListChannels(ctx, u.ID, u.Role == "admin")
 	if err != nil {
-		return nil, huma.Error500InternalServerError("list failed", err)
+		return nil, internalErr(ctx, "list failed", err)
 	}
 	out := &listChannelsOutput{}
 	out.Body.Channels = cs
@@ -1563,7 +1702,7 @@ func (s *Server) handleGetChannel(ctx context.Context, in *channelIDInput) (*cha
 		if errors.Is(err, store.ErrChannelNotFound) {
 			return nil, huma.Error404NotFound("channel not found")
 		}
-		return nil, huma.Error500InternalServerError("get failed", err)
+		return nil, internalErr(ctx, "get failed", err)
 	}
 	// Hide channels owned by other users from non-admin callers.
 	if u.Role != "admin" && c.OwnerUserID != "" && c.OwnerUserID != u.ID.String() {
@@ -1607,7 +1746,7 @@ func (s *Server) handleDeleteChannel(ctx context.Context, in *channelIDInput) (*
 		if errors.Is(err, store.ErrChannelNotFound) {
 			return nil, huma.Error404NotFound("channel not found")
 		}
-		return nil, huma.Error500InternalServerError("delete failed", err)
+		return nil, internalErr(ctx, "delete failed", err)
 	}
 	out := &emptyOutput{}
 	out.Body.OK = true
@@ -1636,7 +1775,7 @@ func (s *Server) handleTestChannel(ctx context.Context, in *testChannelInput) (*
 			if errors.Is(err, store.ErrChannelNotFound) {
 				return nil, huma.Error404NotFound("channel not found")
 			}
-			return nil, huma.Error500InternalServerError("get failed", err)
+			return nil, internalErr(ctx, "get failed", err)
 		}
 		if c.OwnerUserID != u.ID.String() {
 			return nil, huma.Error404NotFound("channel not found")
@@ -1690,7 +1829,7 @@ func (s *Server) handleLogin(ctx context.Context, in *loginInput) (*loginOutput,
 		if errors.Is(err, store.ErrUserDisabled) {
 			return nil, huma.Error403Forbidden("user is disabled")
 		}
-		return nil, huma.Error500InternalServerError("login failed", err)
+		return nil, internalErr(ctx, "login failed", err)
 	}
 
 	// 2FA gate: if the user has TOTP enabled, defer the session issue until
@@ -1698,7 +1837,7 @@ func (s *Server) handleLogin(ctx context.Context, in *loginInput) (*loginOutput,
 	if u.TOTPActive {
 		challenge, err := s.Store.CreateActionToken(ctx, u.ID, "login_2fa", 5*time.Minute, nil, "")
 		if err != nil {
-			return nil, huma.Error500InternalServerError("challenge create failed", err)
+			return nil, internalErr(ctx, "challenge create failed", err)
 		}
 		out := &loginOutput{}
 		out.Body.NeedsTOTP = true
@@ -1712,7 +1851,7 @@ func (s *Server) handleLogin(ctx context.Context, in *loginInput) (*loginOutput,
 
 	token, err := s.Store.IssueSession(ctx, u, "", "", 0)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("session create failed", err)
+		return nil, internalErr(ctx, "session create failed", err)
 	}
 	out := &loginOutput{}
 	out.Body.Token = token
@@ -1748,11 +1887,11 @@ func (s *Server) handleTOTPChallenge(ctx context.Context, in *totpChallengeInput
 	}
 	u, err := s.Store.GetUser(ctx, userID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("user lookup failed", err)
+		return nil, internalErr(ctx, "user lookup failed", err)
 	}
 	token, err := s.Store.IssueSession(ctx, u, "", "", 0)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("session create failed", err)
+		return nil, internalErr(ctx, "session create failed", err)
 	}
 	out := &totpChallengeOutput{}
 	out.Body.Token = token
@@ -1784,7 +1923,7 @@ func (s *Server) handleChangePassword(ctx context.Context, in *changePasswordInp
 		if errors.Is(err, store.ErrPasswordMismatch) {
 			return nil, huma.Error401Unauthorized("current password is wrong")
 		}
-		return nil, huma.Error500InternalServerError("change password failed", err)
+		return nil, internalErr(ctx, "change password failed", err)
 	}
 	out := &emptyOutput{}
 	out.Body.OK = true
@@ -1827,7 +1966,7 @@ func (s *Server) handleTOTPSetup(ctx context.Context, _ *struct{}) (*totpSetupOu
 	}
 	resp, err := s.Store.StartTOTPSetup(ctx, u)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("totp setup failed", err)
+		return nil, internalErr(ctx, "totp setup failed", err)
 	}
 	return &totpSetupOutput{Body: resp}, nil
 }
@@ -1864,7 +2003,7 @@ func (s *Server) handleTOTPDisable(ctx context.Context, in *totpDisableInput) (*
 		return nil, huma.Error401Unauthorized("invalid password")
 	}
 	if err := s.Store.DisableTOTP(ctx, u.ID); err != nil {
-		return nil, huma.Error500InternalServerError("disable failed", err)
+		return nil, internalErr(ctx, "disable failed", err)
 	}
 	out := &emptyOutput{}
 	out.Body.OK = true
@@ -1901,7 +2040,7 @@ func (s *Server) handleMe(ctx context.Context, _ *emptyInput) (*meOutput, error)
 	// context is from session validation, where it was filled at login).
 	full, err := s.Store.GetUser(ctx, u.ID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("user fetch failed", err)
+		return nil, internalErr(ctx, "user fetch failed", err)
 	}
 	return &meOutput{Body: apitypes.CurrentUser{
 		ID:         full.ID.String(),
@@ -1991,7 +2130,7 @@ func (s *Server) handleConsumeReset(ctx context.Context, in *consumeResetInput) 
 		return nil, huma.Error401Unauthorized("token invalid or expired")
 	}
 	if err := s.Store.SetPasswordByAdmin(ctx, userID, in.Body.NewPassword); err != nil {
-		return nil, huma.Error500InternalServerError("set password failed", err)
+		return nil, internalErr(ctx, "set password failed", err)
 	}
 	out := &emptyOutput{}
 	out.Body.OK = true
@@ -2009,7 +2148,7 @@ type listUsersOutput struct {
 func (s *Server) handleListUsers(ctx context.Context, _ *struct{}) (*listUsersOutput, error) {
 	us, err := s.Store.ListUsers(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("list failed", err)
+		return nil, internalErr(ctx, "list failed", err)
 	}
 	out := &listUsersOutput{}
 	for _, u := range us {
@@ -2065,7 +2204,7 @@ func (s *Server) handleAdminCreateUser(ctx context.Context, in *adminCreateUserI
 	// never know, then issue an invite token.
 	tmp, err := randomPlaceholder()
 	if err != nil {
-		return nil, huma.Error500InternalServerError("invite failed", err)
+		return nil, internalErr(ctx, "invite failed", err)
 	}
 	u, err := s.Store.CreateUser(ctx, in.Body.Email, tmp, role)
 	if err != nil {
@@ -2078,7 +2217,7 @@ func (s *Server) handleAdminCreateUser(ctx context.Context, in *adminCreateUserI
 	actor, _ := userFromContext(ctx)
 	tok, err := s.Store.CreateActionToken(ctx, u.ID, "invite", 7*24*time.Hour, nil, actor.Email)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("invite token failed", err)
+		return nil, internalErr(ctx, "invite token failed", err)
 	}
 	out.Body.User = apitypes.AdminUserSummary{
 		ID: u.ID.String(), Email: u.Email, Role: u.Role, CreatedAt: u.CreatedAt,
@@ -2151,7 +2290,7 @@ func (s *Server) handleAdminDeleteUser(ctx context.Context, in *hostIDInput) (*e
 		if errors.Is(err, store.ErrUserNotFound) {
 			return nil, huma.Error404NotFound("user not found")
 		}
-		return nil, huma.Error500InternalServerError("delete failed", err)
+		return nil, internalErr(ctx, "delete failed", err)
 	}
 	out := &emptyOutput{}
 	out.Body.OK = true
@@ -2171,7 +2310,7 @@ func (s *Server) handleAdminLockUser(ctx context.Context, in *hostIDInput) (*emp
 		return nil, err
 	}
 	if err := s.Store.SetUserDisabled(ctx, id, true); err != nil {
-		return nil, huma.Error500InternalServerError("lock failed", err)
+		return nil, internalErr(ctx, "lock failed", err)
 	}
 	out := &emptyOutput{}
 	out.Body.OK = true
@@ -2187,14 +2326,14 @@ func (s *Server) refuseIfLastAdmin(ctx context.Context, target uuid.UUID, action
 		if errors.Is(err, store.ErrUserNotFound) {
 			return huma.Error404NotFound("user not found")
 		}
-		return huma.Error500InternalServerError("user fetch failed", err)
+		return internalErr(ctx, "user fetch failed", err)
 	}
 	if u.Role != "admin" {
 		return nil
 	}
 	last, err := s.Store.IsLastEnabledAdmin(ctx, target)
 	if err != nil {
-		return huma.Error500InternalServerError("admin check failed", err)
+		return internalErr(ctx, "admin check failed", err)
 	}
 	if last {
 		return huma.Error400BadRequest("cannot " + action + " the last enabled admin")
@@ -2208,7 +2347,7 @@ func (s *Server) handleAdminUnlockUser(ctx context.Context, in *hostIDInput) (*e
 		return nil, huma.Error400BadRequest("invalid id")
 	}
 	if err := s.Store.SetUserDisabled(ctx, id, false); err != nil {
-		return nil, huma.Error500InternalServerError("unlock failed", err)
+		return nil, internalErr(ctx, "unlock failed", err)
 	}
 	out := &emptyOutput{}
 	out.Body.OK = true
@@ -2229,12 +2368,12 @@ func (s *Server) handleAdminResetPassword(ctx context.Context, in *hostIDInput) 
 		if errors.Is(err, store.ErrUserNotFound) {
 			return nil, huma.Error404NotFound("user not found")
 		}
-		return nil, huma.Error500InternalServerError("user fetch failed", err)
+		return nil, internalErr(ctx, "user fetch failed", err)
 	}
 	actor, _ := userFromContext(ctx)
 	tok, err := s.Store.CreateActionToken(ctx, id, "password_reset", 24*time.Hour, nil, actor.Email)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("reset token failed", err)
+		return nil, internalErr(ctx, "reset token failed", err)
 	}
 	out := &adminResetPwOutput{}
 	out.Body.ResetURL = inviteURL(tok)
@@ -2250,7 +2389,7 @@ func (s *Server) handleAdminReset2FA(ctx context.Context, in *hostIDInput) (*emp
 		return nil, huma.Error400BadRequest("invalid id")
 	}
 	if err := s.Store.DisableTOTP(ctx, id); err != nil {
-		return nil, huma.Error500InternalServerError("reset 2fa failed", err)
+		return nil, internalErr(ctx, "reset 2fa failed", err)
 	}
 	out := &emptyOutput{}
 	out.Body.OK = true
@@ -2279,11 +2418,11 @@ func (s *Server) handleAgentConfigFetch(ctx context.Context, in *agentConfigFetc
 		if errors.Is(err, store.ErrAgentKeyInvalid) {
 			return nil, huma.Error401Unauthorized("agent key invalid")
 		}
-		return nil, huma.Error500InternalServerError("auth failed", err)
+		return nil, internalErr(ctx, "auth failed", err)
 	}
 	resolved, err := s.Store.ResolveAgentConfig(ctx, hostID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("resolve failed", err)
+		return nil, internalErr(ctx, "resolve failed", err)
 	}
 	return &agentConfigFetchOutput{Body: resolved}, nil
 }
@@ -2297,7 +2436,7 @@ type listAgentConfigsOutput struct {
 func (s *Server) handleListAgentConfigs(ctx context.Context, _ *struct{}) (*listAgentConfigsOutput, error) {
 	cs, err := s.Store.ListAgentConfigs(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("list failed", err)
+		return nil, internalErr(ctx, "list failed", err)
 	}
 	out := &listAgentConfigsOutput{}
 	out.Body.Configs = cs
@@ -2333,7 +2472,7 @@ func (s *Server) handleDeleteAgentConfig(ctx context.Context, in *agentConfigIDI
 		if errors.Is(err, store.ErrAgentConfigNotFound) {
 			return nil, huma.Error404NotFound("agent config not found")
 		}
-		return nil, huma.Error500InternalServerError("delete failed", err)
+		return nil, internalErr(ctx, "delete failed", err)
 	}
 	out := &emptyOutput{}
 	out.Body.OK = true
@@ -2354,7 +2493,7 @@ func (s *Server) handlePreviewAgentConfig(ctx context.Context, in *previewAgentC
 	}
 	resolved, err := s.Store.ResolveAgentConfig(ctx, id)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("resolve failed", err)
+		return nil, internalErr(ctx, "resolve failed", err)
 	}
 	return &previewAgentConfigOutput{Body: resolved}, nil
 }
@@ -2489,7 +2628,7 @@ type passwordPolicyOutput struct {
 func (s *Server) handleGetPasswordPolicy(ctx context.Context, _ *struct{}) (*passwordPolicyOutput, error) {
 	p, err := s.Store.GetPasswordPolicy(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("get policy failed", err)
+		return nil, internalErr(ctx, "get policy failed", err)
 	}
 	return &passwordPolicyOutput{Body: p}, nil
 }

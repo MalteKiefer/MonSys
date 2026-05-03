@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -13,9 +14,16 @@ import (
 )
 
 const (
-	sessionPrefix      = "mon_sess_"
-	defaultSessionTTL  = 12 * time.Hour
-	bcryptCost         = 12
+	sessionPrefix     = "mon_sess_"
+	defaultSessionTTL = 12 * time.Hour
+	bcryptCost        = 12
+
+	// AUDIT-013: failed-login lockout policy. After this many bad attempts
+	// inside the window, the account is locked for the duration. The window
+	// slides — clean attempts older than the window from the counter.
+	loginMaxFailedAttempts = 5
+	loginAttemptWindow     = 15 * time.Minute
+	loginLockoutDuration   = 15 * time.Minute
 )
 
 var (
@@ -24,7 +32,122 @@ var (
 	ErrUserDisabled     = errors.New("user disabled")
 	ErrPasswordMismatch = errors.New("password does not match")
 	ErrSessionInvalid   = errors.New("session token invalid or expired")
+	// ErrUserLockedOut signals AuthenticateUser refused due to a temporary
+	// lockout from too many failed attempts (AUDIT-013).
+	ErrUserLockedOut = errors.New("account temporarily locked")
 )
+
+// FailedLoginAttempts is an in-memory tracker for AUDIT-013. Keyed by
+// case-folded email so an attacker cannot toggle the lockout off by varying
+// case. Persisted to DB is intentionally out of scope for this commit; the
+// admin can simply restart to clear all lockouts in an emergency.
+type FailedLoginAttempts struct {
+	mu       sync.Mutex
+	attempts map[string][]time.Time
+	lockedAt map[string]time.Time
+}
+
+// NewFailedLoginAttempts builds an empty tracker.
+func NewFailedLoginAttempts() *FailedLoginAttempts {
+	return &FailedLoginAttempts{
+		attempts: make(map[string][]time.Time),
+		lockedAt: make(map[string]time.Time),
+	}
+}
+
+// failedLoginsSingleton holds the per-process tracker. The package
+// initializer guarantees it exists before any Store method is invoked, so
+// callers don't need to wire anything up. This is intentional: the spec
+// keeps the fix out of the DB schema and contained to a single file.
+var failedLoginsSingleton = NewFailedLoginAttempts()
+
+// FailedLogins returns the process-wide failed-login tracker. It is exposed
+// as a method (rather than a struct field on Store) so this audit fix
+// touches only userauth.go. AUDIT-013.
+func (s *Store) failedLogins() *FailedLoginAttempts { return failedLoginsSingleton }
+
+// RecordFailedLogin is the package-level helper documented by the audit
+// (AUDIT-013). It delegates to the in-memory tracker so callers don't need
+// to reach for the singleton directly.
+func (s *Store) RecordFailedLogin(_ context.Context, email string) {
+	s.failedLogins().RecordFailedLogin(email)
+}
+
+// IsLockedOut reports whether email is currently locked out and, if so, the
+// time at which the lock expires.
+func (s *Store) IsLockedOut(_ context.Context, email string) (bool, time.Time) {
+	return s.failedLogins().IsLockedOut(email)
+}
+
+// FailedLogins is the public accessor for the tracker. Tests can use this
+// to inspect or reset state.
+func (s *Store) FailedLoginsTracker() *FailedLoginAttempts { return s.failedLogins() }
+
+func emailKey(email string) string { return strings.ToLower(strings.TrimSpace(email)) }
+
+// IsLockedOut reports whether the account is currently locked, and if so the
+// time at which the lock expires. A zero time is returned when not locked.
+func (f *FailedLoginAttempts) IsLockedOut(email string) (bool, time.Time) {
+	if f == nil {
+		return false, time.Time{}
+	}
+	key := emailKey(email)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	until, ok := f.lockedAt[key]
+	if !ok {
+		return false, time.Time{}
+	}
+	if time.Now().After(until) {
+		// Expired — clear so the next failed attempt starts fresh.
+		delete(f.lockedAt, key)
+		delete(f.attempts, key)
+		return false, time.Time{}
+	}
+	return true, until
+}
+
+// RecordFailedLogin appends a failed attempt and engages the lockout if the
+// threshold is crossed inside the rolling window.
+func (f *FailedLoginAttempts) RecordFailedLogin(email string) {
+	if f == nil {
+		return
+	}
+	key := emailKey(email)
+	now := time.Now()
+	cutoff := now.Add(-loginAttemptWindow)
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	// Drop entries older than the sliding window.
+	prev := f.attempts[key]
+	kept := prev[:0]
+	for _, t := range prev {
+		if t.After(cutoff) {
+			kept = append(kept, t)
+		}
+	}
+	kept = append(kept, now)
+	f.attempts[key] = kept
+
+	if len(kept) >= loginMaxFailedAttempts {
+		f.lockedAt[key] = now.Add(loginLockoutDuration)
+	}
+}
+
+// ClearFailedLogins resets the counter and lockout for an email, called on
+// successful authentication.
+func (f *FailedLoginAttempts) ClearFailedLogins(email string) {
+	if f == nil {
+		return
+	}
+	key := emailKey(email)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.attempts, key)
+	delete(f.lockedAt, key)
+}
 
 // User mirrors the `users` row a session-aware caller actually needs. We
 // deliberately don't expose password_hash here.
@@ -73,7 +196,22 @@ func (s *Store) CreateUser(ctx context.Context, email, password, role string) (U
 // AuthenticateUser verifies email+password and returns the user. The
 // returned User has TOTPActive populated so callers can decide whether to
 // continue with the 2FA challenge step.
+//
+// AUDIT-013: the in-memory FailedLoginAttempts tracker is consulted before
+// the bcrypt compare. Bad passwords increment the counter; a successful auth
+// clears it. While a lockout is in effect we still execute a dummy bcrypt
+// compare so a timing observer cannot tell locked from not-locked.
 func (s *Store) AuthenticateUser(ctx context.Context, email, password string) (User, error) {
+	if tr := s.failedLogins(); tr != nil {
+		if locked, _ := tr.IsLockedOut(email); locked {
+			// Match dummy work of the not-found path so timing stays uniform.
+			_ = bcrypt.CompareHashAndPassword(
+				[]byte("$2a$12$DTH4XIQv0vP3AEIp0OPvO.8uDCCO7EM77NMwgVDkdcL3lKkNn7w8a"),
+				[]byte(password))
+			return User{}, ErrUserLockedOut
+		}
+	}
+
 	var (
 		u            User
 		passwordHash string
@@ -93,6 +231,9 @@ func (s *Store) AuthenticateUser(ctx context.Context, email, password string) (U
 		_ = bcrypt.CompareHashAndPassword(
 			[]byte("$2a$12$DTH4XIQv0vP3AEIp0OPvO.8uDCCO7EM77NMwgVDkdcL3lKkNn7w8a"),
 			[]byte(password))
+		// Count the attempt against the supplied email so an attacker
+		// guessing a valid user's address cannot hide behind unknown ones.
+		s.failedLogins().RecordFailedLogin(email)
 		return User{}, ErrUserNotFound
 	}
 	if err != nil {
@@ -103,8 +244,10 @@ func (s *Store) AuthenticateUser(ctx context.Context, email, password string) (U
 		return u, ErrUserDisabled
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(password)); err != nil {
+		s.failedLogins().RecordFailedLogin(email)
 		return User{}, ErrPasswordMismatch
 	}
+	s.failedLogins().ClearFailedLogins(email)
 	u.TOTPActive = totpEnabled != nil
 	return u, nil
 }

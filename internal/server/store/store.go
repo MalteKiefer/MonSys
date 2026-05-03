@@ -65,7 +65,7 @@ func withPasswordFile(dsn string) (string, error) {
 	if pwFile == "" {
 		return dsn, nil
 	}
-	b, err := os.ReadFile(pwFile)
+	b, err := os.ReadFile(pwFile) //nolint:gosec // pwFile sourced from MON_DSN_PASSWORD_FILE env, operator-controlled
 	if err != nil {
 		return "", fmt.Errorf("read password file: %w", err)
 	}
