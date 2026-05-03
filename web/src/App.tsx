@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Activity, Bell, ChevronDown, FileJson, FileText, LayoutDashboard, LogOut, Network, Package, Radio, Server, Settings, ShieldCheck, Sliders, UserCog, Users } from "lucide-react";
 import { Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 
+import { RequireAdmin } from "./components/RequireAdmin";
 import { AdminAgentConfig } from "./pages/AdminAgentConfig";
 import { AdminGroups } from "./pages/AdminGroups";
 import { AdminIngests } from "./pages/AdminIngests";
@@ -66,12 +67,12 @@ export function App() {
           <Route path="/admin/notifications" element={<Navigate to="/notifications" replace />} />
           <Route path="/monitors" element={<AdminMonitors />} />
           <Route path="/admin/monitors" element={<Navigate to="/monitors" replace />} />
-          <Route path="/admin/groups" element={<AdminGroups />} />
-          <Route path="/admin/logs" element={<AdminLogs />} />
-          <Route path="/admin/ingests" element={<AdminIngests />} />
-          <Route path="/admin/agent-config" element={<AdminAgentConfig />} />
-          <Route path="/admin/users" element={<AdminUsers />} />
-          <Route path="/admin/security" element={<AdminSecurity />} />
+          <Route path="/admin/groups" element={<RequireAdmin><AdminGroups /></RequireAdmin>} />
+          <Route path="/admin/logs" element={<RequireAdmin><AdminLogs /></RequireAdmin>} />
+          <Route path="/admin/ingests" element={<RequireAdmin><AdminIngests /></RequireAdmin>} />
+          <Route path="/admin/agent-config" element={<RequireAdmin><AdminAgentConfig /></RequireAdmin>} />
+          <Route path="/admin/users" element={<RequireAdmin><AdminUsers /></RequireAdmin>} />
+          <Route path="/admin/security" element={<RequireAdmin><AdminSecurity /></RequireAdmin>} />
           <Route path="/login" element={<Navigate to="/" replace />} />
           <Route path="/reset" element={<Reset />} />
           <Route path="*" element={<Navigate to="/" replace />} />
