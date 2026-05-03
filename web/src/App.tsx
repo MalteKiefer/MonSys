@@ -1,8 +1,9 @@
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, Bell, LayoutDashboard, LogOut, Package, Radio, Server, Settings, ShieldCheck, UserCog, Users } from "lucide-react";
-import { Link, Navigate, NavLink, Route, Routes } from "react-router-dom";
+import { Activity, Bell, ChevronDown, LayoutDashboard, LogOut, Network, Package, Radio, Server, Settings, ShieldCheck, UserCog, Users } from "lucide-react";
+import { Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 
+import { AdminGroups } from "./pages/AdminGroups";
 import { AdminMonitors } from "./pages/AdminMonitors";
 import { AdminNotifications } from "./pages/AdminNotifications";
 import { AdminSecurity } from "./pages/AdminSecurity";
@@ -61,6 +62,7 @@ export function App() {
           <Route path="/notifications" element={<AdminNotifications />} />
           <Route path="/admin/notifications" element={<Navigate to="/notifications" replace />} />
           <Route path="/admin/monitors" element={<AdminMonitors />} />
+          <Route path="/admin/groups" element={<AdminGroups />} />
           <Route path="/admin/users" element={<AdminUsers />} />
           <Route path="/admin/security" element={<AdminSecurity />} />
           <Route path="/login" element={<Navigate to="/" replace />} />
@@ -99,9 +101,7 @@ function Header() {
           {isAdmin && (
             <>
               <span className="mx-2 h-4 w-px bg-border" aria-hidden />
-              <NavItem to="/admin/monitors" icon={Radio}>Monitors</NavItem>
-              <NavItem to="/admin/users" icon={Users}>Users</NavItem>
-              <NavItem to="/admin/security" icon={ShieldCheck}>Security</NavItem>
+              <AdminMenu />
             </>
           )}
         </nav>
@@ -123,6 +123,79 @@ function Header() {
         </button>
       </div>
     </header>
+  );
+}
+
+const ADMIN_ITEMS = [
+  { to: "/admin/monitors", label: "Monitors", icon: Radio },
+  { to: "/admin/groups", label: "Groups", icon: Network },
+  { to: "/admin/users", label: "Users", icon: Users },
+  { to: "/admin/security", label: "Security", icon: ShieldCheck },
+];
+
+function AdminMenu() {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const loc = useLocation();
+
+  // Close on route change.
+  useEffect(() => {
+    setOpen(false);
+  }, [loc.pathname]);
+
+  // Close on outside click.
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  const insideAdmin = loc.pathname.startsWith("/admin");
+  const activeItem = ADMIN_ITEMS.find((i) => loc.pathname.startsWith(i.to));
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm transition-colors duration-150 ${
+          insideAdmin ? "bg-panel-2 text-fg shadow-panel" : "text-fg-muted hover:bg-panel hover:text-fg"
+        }`}
+      >
+        <ShieldCheck className="h-3.5 w-3.5" />
+        Admin
+        {activeItem && <span className="ml-1 text-fg-subtle">· {activeItem.label}</span>}
+        <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-150 ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 mt-1.5 min-w-[180px] overflow-hidden rounded-md border border-border bg-panel shadow-panel-strong"
+        >
+          {ADMIN_ITEMS.map(({ to, label, icon: Icon }) => (
+            <NavLink
+              key={to}
+              to={to}
+              role="menuitem"
+              className={({ isActive }) =>
+                `flex items-center gap-2 px-3 py-2 text-sm transition-colors ${
+                  isActive
+                    ? "bg-panel-2 text-fg"
+                    : "text-fg-muted hover:bg-panel-2 hover:text-fg"
+                }`
+              }
+            >
+              <Icon className="h-3.5 w-3.5" />
+              {label}
+            </NavLink>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

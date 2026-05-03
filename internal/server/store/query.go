@@ -22,9 +22,20 @@ func (s *Store) ListHosts(ctx context.Context) ([]apitypes.Host, error) {
 		       COALESCE(h.cpu_cores,0), COALESCE(h.ram_total_bytes,0),
 		       COALESCE(h.agent_version,''), h.first_seen_at, h.last_seen_at, h.labels,
 		       COALESCE(hs.status, 'unknown'),
-		       hs.since
+		       hs.since,
+		       COALESCE(t.tags, '{}') AS tags,
+		       COALESCE(g.groups, '{}'::jsonb) AS groups
 		FROM hosts h
 		LEFT JOIN host_status hs ON hs.host_id = h.id
+		LEFT JOIN LATERAL (
+			SELECT array_agg(tag ORDER BY tag) AS tags
+			FROM host_tags WHERE host_id = h.id
+		) t ON TRUE
+		LEFT JOIN LATERAL (
+			SELECT jsonb_agg(jsonb_build_object('id', hg.id, 'name', hg.name) ORDER BY hg.name) AS groups
+			FROM host_group_members m JOIN host_groups hg ON hg.id = m.group_id
+			WHERE m.host_id = h.id
+		) g ON TRUE
 		WHERE h.revoked_at IS NULL
 		ORDER BY h.hostname`)
 	if err != nil {
@@ -32,18 +43,23 @@ func (s *Store) ListHosts(ctx context.Context) ([]apitypes.Host, error) {
 	}
 	defer rows.Close()
 	out := []apitypes.Host{}
+	hostIDs := []uuid.UUID{}
 	for rows.Next() {
 		var (
 			h           apitypes.Host
+			id          uuid.UUID
 			labels      []byte
 			statusSince *time.Time
+			tags        []string
+			groupsRaw   []byte
 		)
-		if err := rows.Scan(&h.ID, &h.Hostname, &h.Distro, &h.Arch,
+		if err := rows.Scan(&id, &h.Hostname, &h.Distro, &h.Arch,
 			&h.CPUCores, &h.RAMTotalBytes, &h.AgentVersion,
 			&h.FirstSeenAt, &h.LastSeenAt, &labels,
-			&h.Status, &statusSince); err != nil {
+			&h.Status, &statusSince, &tags, &groupsRaw); err != nil {
 			return nil, err
 		}
+		h.ID = id.String()
 		if len(labels) > 0 {
 			_ = json.Unmarshal(labels, &h.Labels)
 		}
@@ -53,9 +69,157 @@ func (s *Store) ListHosts(ctx context.Context) ([]apitypes.Host, error) {
 		if statusSince != nil {
 			h.StatusSince = *statusSince
 		}
+		h.Tags = tags
+		if h.Tags == nil {
+			h.Tags = []string{}
+		}
+		h.Groups = []apitypes.HostGroupRef{}
+		if len(groupsRaw) > 0 && string(groupsRaw) != "{}" {
+			_ = json.Unmarshal(groupsRaw, &h.Groups)
+		}
+		h.DistroFamily = distroFamily(h.Distro)
 		out = append(out, h)
+		hostIDs = append(hostIDs, id)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Service detection from workloads: one query for all hosts.
+	if len(hostIDs) > 0 {
+		services, err := s.detectServices(ctx, hostIDs)
+		if err == nil {
+			for i := range out {
+				if v, ok := services[out[i].ID]; ok {
+					out[i].Services = v
+				}
+			}
+		}
+	}
+	return out, nil
+}
+
+// detectServices peeks at workloads to fingerprint well-known services per
+// host. The returned map keys are host UUIDs as strings (matching apitypes.Host.ID).
+func (s *Store) detectServices(ctx context.Context, hostIDs []uuid.UUID) (map[string][]string, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT host_id, lower(COALESCE(name,'')), lower(COALESCE(image,''))
+		FROM workloads WHERE host_id = ANY($1)`, hostIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	hits := map[string]map[string]struct{}{}
+	for rows.Next() {
+		var hid uuid.UUID
+		var name, image string
+		if err := rows.Scan(&hid, &name, &image); err != nil {
+			return nil, err
+		}
+		hay := name + " " + image
+		key := hid.String()
+		set, ok := hits[key]
+		if !ok {
+			set = map[string]struct{}{}
+			hits[key] = set
+		}
+		for _, m := range serviceMatchers {
+			if m.match(hay) {
+				set[m.name] = struct{}{}
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	out := map[string][]string{}
+	for k, v := range hits {
+		list := make([]string, 0, len(v))
+		for s := range v {
+			list = append(list, s)
+		}
+		// Stable order so the UI doesn't shuffle on every refetch.
+		for i := 0; i < len(list); i++ {
+			for j := i + 1; j < len(list); j++ {
+				if list[j] < list[i] {
+					list[i], list[j] = list[j], list[i]
+				}
+			}
+		}
+		out[k] = list
+	}
+	return out, nil
+}
+
+type serviceMatcher struct {
+	name     string
+	keywords []string
+}
+
+func (m serviceMatcher) match(hay string) bool {
+	for _, k := range m.keywords {
+		if strings.Contains(hay, k) {
+			return true
+		}
+	}
+	return false
+}
+
+// Order matters: more specific matchers first. "timescaledb" before
+// "postgres" so a TimescaleDB image is reported as both.
+var serviceMatchers = []serviceMatcher{
+	{"postgres", []string{"postgres", "timescaledb"}},
+	{"mariadb", []string{"mariadb", "mysql"}},
+	{"mongodb", []string{"mongo"}},
+	{"redis", []string{"redis"}},
+	{"valkey", []string{"valkey"}},
+	{"nginx", []string{"nginx"}},
+	{"caddy", []string{"caddy"}},
+	{"traefik", []string{"traefik"}},
+	{"haproxy", []string{"haproxy"}},
+	{"grafana", []string{"grafana"}},
+	{"prometheus", []string{"prom/prometheus", "prometheus"}},
+	{"loki", []string{"grafana/loki", "/loki"}},
+	{"elasticsearch", []string{"elasticsearch"}},
+	{"opensearch", []string{"opensearch"}},
+	{"rabbitmq", []string{"rabbitmq"}},
+	{"nats", []string{"nats:"}},
+	{"kafka", []string{"kafka"}},
+	{"vault", []string{"hashicorp/vault", "vault:"}},
+	{"keycloak", []string{"keycloak"}},
+	{"gitea", []string{"gitea"}},
+	{"forgejo", []string{"forgejo"}},
+	{"gitlab", []string{"gitlab"}},
+	{"nextcloud", []string{"nextcloud"}},
+	{"mon", []string{"mon-server"}},
+}
+
+// distroFamily collapses a /etc/os-release "PRETTY_NAME" string into one of a
+// short list of icon families the UI knows how to draw.
+func distroFamily(distro string) string {
+	d := strings.ToLower(distro)
+	switch {
+	case strings.Contains(d, "endeavour"), strings.Contains(d, "manjaro"), strings.Contains(d, "arch"):
+		return "arch"
+	case strings.Contains(d, "ubuntu"):
+		return "ubuntu"
+	case strings.Contains(d, "debian"):
+		return "debian"
+	case strings.Contains(d, "fedora"):
+		return "fedora"
+	case strings.Contains(d, "rocky"), strings.Contains(d, "alma"), strings.Contains(d, "centos"), strings.Contains(d, "rhel"), strings.Contains(d, "red hat"):
+		return "rhel"
+	case strings.Contains(d, "alpine"):
+		return "alpine"
+	case strings.Contains(d, "suse"), strings.Contains(d, "opensuse"):
+		return "suse"
+	case strings.Contains(d, "nixos"):
+		return "nixos"
+	case strings.Contains(d, "proxmox"):
+		return "debian"
+	}
+	return ""
 }
 
 func (s *Store) QuerySystemMetrics(ctx context.Context, hostID uuid.UUID, from, to time.Time) ([]apitypes.SystemSample, error) {

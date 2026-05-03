@@ -135,6 +135,66 @@ func (s *Server) registerRoutes() {
 	}, s.handleHostDetail)
 
 	huma.Register(s.API, huma.Operation{
+		OperationID: "host-set-tags",
+		Method:      http.MethodPut,
+		Path:        "/v1/hosts/{id}/tags",
+		Summary:     "Replace the host's tag set",
+		Tags:        []string{"hosts"},
+		Middlewares: protected,
+	}, s.handleSetHostTags)
+
+	huma.Register(s.API, huma.Operation{
+		OperationID: "list-tags",
+		Method:      http.MethodGet,
+		Path:        "/v1/tags",
+		Summary:     "List all tags in use with host counts",
+		Tags:        []string{"hosts"},
+		Middlewares: protected,
+	}, s.handleListTags)
+
+	// Host groups
+	huma.Register(s.API, huma.Operation{
+		OperationID: "list-groups",
+		Method:      http.MethodGet,
+		Path:        "/v1/groups",
+		Summary:     "List host groups with member ids",
+		Tags:        []string{"groups"},
+		Middlewares: protected,
+	}, s.handleListGroups)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "create-group",
+		Method:      http.MethodPost,
+		Path:        "/v1/groups",
+		Summary:     "Create a host group",
+		Tags:        []string{"groups"},
+		Middlewares: huma.Middlewares{s.requireUser, s.requireAdmin},
+	}, s.handleCreateGroup)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "update-group",
+		Method:      http.MethodPut,
+		Path:        "/v1/groups/{id}",
+		Summary:     "Update a host group",
+		Tags:        []string{"groups"},
+		Middlewares: huma.Middlewares{s.requireUser, s.requireAdmin},
+	}, s.handleUpdateGroup)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "delete-group",
+		Method:      http.MethodDelete,
+		Path:        "/v1/groups/{id}",
+		Summary:     "Delete a host group",
+		Tags:        []string{"groups"},
+		Middlewares: huma.Middlewares{s.requireUser, s.requireAdmin},
+	}, s.handleDeleteGroup)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "set-group-members",
+		Method:      http.MethodPut,
+		Path:        "/v1/groups/{id}/members",
+		Summary:     "Replace group membership",
+		Tags:        []string{"groups"},
+		Middlewares: huma.Middlewares{s.requireUser, s.requireAdmin},
+	}, s.handleSetGroupMembers)
+
+	huma.Register(s.API, huma.Operation{
 		OperationID: "host-system-metrics",
 		Method:      http.MethodGet,
 		Path:        "/v1/hosts/{id}/metrics/system",
@@ -729,6 +789,154 @@ func (s *Server) handleSearchPackages(ctx context.Context, in *searchPackagesInp
 			SourceRepo: r.SourceRepo, InstalledAt: r.InstalledAt,
 		})
 	}
+	return out, nil
+}
+
+// --- Tags + groups ---------------------------------------------------------
+
+type setHostTagsInput struct {
+	ID   string `path:"id"`
+	Body apitypes.HostTagsInput
+}
+
+func (s *Server) handleSetHostTags(ctx context.Context, in *setHostTagsInput) (*emptyOutput, error) {
+	id, err := uuid.Parse(in.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid host id")
+	}
+	if err := s.Store.ReplaceHostTags(ctx, id, in.Body.Tags); err != nil {
+		if errors.Is(err, store.ErrHostNotFound) {
+			return nil, huma.Error404NotFound("host not found")
+		}
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	out := &emptyOutput{}
+	out.Body.OK = true
+	return out, nil
+}
+
+type listTagsOutput struct {
+	Body struct {
+		Tags []struct {
+			Tag   string `json:"tag"`
+			Count int    `json:"count"`
+		} `json:"tags"`
+	}
+}
+
+func (s *Server) handleListTags(ctx context.Context, _ *struct{}) (*listTagsOutput, error) {
+	out := &listTagsOutput{}
+	tags, err := s.Store.ListAllTags(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("query failed", err)
+	}
+	for _, t := range tags {
+		out.Body.Tags = append(out.Body.Tags, struct {
+			Tag   string `json:"tag"`
+			Count int    `json:"count"`
+		}{Tag: t.Tag, Count: t.Count})
+	}
+	return out, nil
+}
+
+type listGroupsOutput struct {
+	Body struct {
+		Groups []apitypes.HostGroup `json:"groups"`
+	}
+}
+
+func (s *Server) handleListGroups(ctx context.Context, _ *struct{}) (*listGroupsOutput, error) {
+	groups, err := s.Store.ListGroups(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("query failed", err)
+	}
+	out := &listGroupsOutput{}
+	out.Body.Groups = groups
+	return out, nil
+}
+
+type createGroupInput struct {
+	Body apitypes.HostGroupInput
+}
+type groupOutput struct {
+	Body apitypes.HostGroup
+}
+
+func (s *Server) handleCreateGroup(ctx context.Context, in *createGroupInput) (*groupOutput, error) {
+	u, _ := userFromContext(ctx)
+	g, err := s.Store.CreateGroup(ctx, in.Body, u.Email)
+	if err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	return &groupOutput{Body: g}, nil
+}
+
+type updateGroupInput struct {
+	ID   string `path:"id"`
+	Body apitypes.HostGroupInput
+}
+
+func (s *Server) handleUpdateGroup(ctx context.Context, in *updateGroupInput) (*groupOutput, error) {
+	id, err := uuid.Parse(in.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid id")
+	}
+	g, err := s.Store.UpdateGroup(ctx, id, in.Body)
+	if err != nil {
+		if errors.Is(err, store.ErrGroupNotFound) {
+			return nil, huma.Error404NotFound("group not found")
+		}
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	return &groupOutput{Body: g}, nil
+}
+
+type groupIDInput struct {
+	ID string `path:"id"`
+}
+
+func (s *Server) handleDeleteGroup(ctx context.Context, in *groupIDInput) (*emptyOutput, error) {
+	id, err := uuid.Parse(in.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid id")
+	}
+	if err := s.Store.DeleteGroup(ctx, id); err != nil {
+		if errors.Is(err, store.ErrGroupNotFound) {
+			return nil, huma.Error404NotFound("group not found")
+		}
+		return nil, huma.Error500InternalServerError("delete failed", err)
+	}
+	out := &emptyOutput{}
+	out.Body.OK = true
+	return out, nil
+}
+
+type setGroupMembersInput struct {
+	ID   string `path:"id"`
+	Body apitypes.GroupMembersInput
+}
+
+func (s *Server) handleSetGroupMembers(ctx context.Context, in *setGroupMembersInput) (*emptyOutput, error) {
+	id, err := uuid.Parse(in.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid id")
+	}
+	hostIDs := make([]uuid.UUID, 0, len(in.Body.HostIDs))
+	for _, s := range in.Body.HostIDs {
+		hid, err := uuid.Parse(s)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid host id: " + s)
+		}
+		hostIDs = append(hostIDs, hid)
+	}
+	if err := s.Store.ReplaceGroupMembers(ctx, id, hostIDs); err != nil {
+		if errors.Is(err, store.ErrGroupNotFound) {
+			return nil, huma.Error404NotFound("group not found")
+		}
+		return nil, huma.Error500InternalServerError("update failed", err)
+	}
+	out := &emptyOutput{}
+	out.Body.OK = true
 	return out, nil
 }
 

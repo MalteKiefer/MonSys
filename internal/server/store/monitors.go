@@ -21,7 +21,8 @@ func (s *Store) ListMonitors(ctx context.Context) ([]apitypes.Monitor, error) {
 		SELECT id, type, name, target, params, interval_sec, enabled,
 		       created_at, COALESCE(created_by,''),
 		       last_check_at, COALESCE(last_status,''),
-		       COALESCE(last_latency_ms,0), COALESCE(last_detail,'')
+		       COALESCE(last_latency_ms,0), COALESCE(last_detail,''),
+		       COALESCE(target_tags, '{}'), COALESCE(target_group_ids, '{}')
 		FROM monitors ORDER BY name`)
 	if err != nil {
 		return nil, err
@@ -43,7 +44,8 @@ func (s *Store) GetMonitor(ctx context.Context, id uuid.UUID) (apitypes.Monitor,
 		SELECT id, type, name, target, params, interval_sec, enabled,
 		       created_at, COALESCE(created_by,''),
 		       last_check_at, COALESCE(last_status,''),
-		       COALESCE(last_latency_ms,0), COALESCE(last_detail,'')
+		       COALESCE(last_latency_ms,0), COALESCE(last_detail,''),
+		       COALESCE(target_tags, '{}'), COALESCE(target_group_ids, '{}')
 		FROM monitors WHERE id = $1`, id)
 	if err != nil {
 		return apitypes.Monitor{}, err
@@ -66,12 +68,18 @@ func (s *Store) CreateMonitor(ctx context.Context, in apitypes.MonitorInput, cre
 	if err != nil {
 		return apitypes.Monitor{}, err
 	}
+	groupIDs, err := parseGroupIDs(in.TargetGroupIDs)
+	if err != nil {
+		return apitypes.Monitor{}, err
+	}
 	var id uuid.UUID
 	err = s.Pool.QueryRow(ctx, `
-		INSERT INTO monitors (type, name, target, params, interval_sec, enabled, created_by)
-		VALUES ($1,$2,$3,$4,$5,$6,$7)
+		INSERT INTO monitors (type, name, target, params, interval_sec, enabled, created_by,
+		                      target_tags, target_group_ids)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
 		RETURNING id`,
 		in.Type, in.Name, in.Target, params, in.IntervalSec, in.Enabled, nullableString(createdBy),
+		orEmptyStrings(in.TargetTags), groupIDs,
 	).Scan(&id)
 	if err != nil {
 		if pgIsUniqueViolation(err) {
@@ -90,12 +98,18 @@ func (s *Store) UpdateMonitor(ctx context.Context, id uuid.UUID, in apitypes.Mon
 	if err != nil {
 		return apitypes.Monitor{}, err
 	}
+	groupIDs, err := parseGroupIDs(in.TargetGroupIDs)
+	if err != nil {
+		return apitypes.Monitor{}, err
+	}
 	tag, err := s.Pool.Exec(ctx, `
 		UPDATE monitors SET
 			type = $2, name = $3, target = $4, params = $5,
-			interval_sec = $6, enabled = $7
+			interval_sec = $6, enabled = $7,
+			target_tags = $8, target_group_ids = $9
 		WHERE id = $1`,
-		id, in.Type, in.Name, in.Target, params, in.IntervalSec, in.Enabled)
+		id, in.Type, in.Name, in.Target, params, in.IntervalSec, in.Enabled,
+		orEmptyStrings(in.TargetTags), groupIDs)
 	if err != nil {
 		if pgIsUniqueViolation(err) {
 			return apitypes.Monitor{}, errors.New("a monitor with this type+name already exists")
@@ -176,15 +190,25 @@ func (s *Store) MonitorResults(ctx context.Context, id uuid.UUID, since time.Tim
 
 func scanMonitor(scan func(...any) error) (apitypes.Monitor, error) {
 	var (
-		m            apitypes.Monitor
-		idVal        uuid.UUID
-		paramsRaw    []byte
-		lastCheckAt  *time.Time
+		m           apitypes.Monitor
+		idVal       uuid.UUID
+		paramsRaw   []byte
+		lastCheckAt *time.Time
+		targetTags  []string
+		targetGroup []uuid.UUID
 	)
 	if err := scan(&idVal, &m.Type, &m.Name, &m.Target, &paramsRaw, &m.IntervalSec, &m.Enabled,
 		&m.CreatedAt, &m.CreatedBy, &lastCheckAt, &m.LastStatus,
-		&m.LastLatencyMS, &m.LastDetail); err != nil {
+		&m.LastLatencyMS, &m.LastDetail, &targetTags, &targetGroup); err != nil {
 		return m, err
+	}
+	m.TargetTags = targetTags
+	if m.TargetTags == nil {
+		m.TargetTags = []string{}
+	}
+	m.TargetGroupIDs = make([]string, 0, len(targetGroup))
+	for _, g := range targetGroup {
+		m.TargetGroupIDs = append(m.TargetGroupIDs, g.String())
 	}
 	m.ID = idVal.String()
 	m.Params = map[string]any{}
@@ -204,7 +228,8 @@ func (s *Store) GetMonitorRaw(ctx context.Context, id uuid.UUID) (apitypes.Monit
 		SELECT id, type, name, target, params, interval_sec, enabled,
 		       created_at, COALESCE(created_by,''),
 		       last_check_at, COALESCE(last_status,''),
-		       COALESCE(last_latency_ms,0), COALESCE(last_detail,'')
+		       COALESCE(last_latency_ms,0), COALESCE(last_detail,''),
+		       COALESCE(target_tags, '{}'), COALESCE(target_group_ids, '{}')
 		FROM monitors WHERE id = $1`, id)
 	if err != nil {
 		return apitypes.Monitor{}, err
@@ -240,6 +265,28 @@ func redactDSN(s string) string {
 		creds = creds[:c+1] + "***"
 	}
 	return s[:scheme+3] + creds + rest[at:]
+}
+
+func parseGroupIDs(in []string) ([]uuid.UUID, error) {
+	out := make([]uuid.UUID, 0, len(in))
+	for _, s := range in {
+		if s == "" {
+			continue
+		}
+		u, err := uuid.Parse(s)
+		if err != nil {
+			return nil, fmt.Errorf("invalid group id %q: %w", s, err)
+		}
+		out = append(out, u)
+	}
+	return out, nil
+}
+
+func orEmptyStrings(in []string) []string {
+	if in == nil {
+		return []string{}
+	}
+	return in
 }
 
 func indexOf(s, sub string) int {

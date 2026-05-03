@@ -1,7 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Cpu, HardDrive, Network, Package, ShieldCheck, Users as UsersIcon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, Cpu, HardDrive, Network, Package, ShieldCheck, Tag, Users as UsersIcon, X } from "lucide-react";
+import { KeyboardEvent, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+
+import { DistroIcon } from "../components/icons/DistroIcon";
+import { ServiceBadges } from "../components/icons/ServiceIcon";
 
 import {
   ChartLine,
@@ -226,16 +229,20 @@ function Header({ detail }: { detail: HostDetailT }) {
       <div className="p-5">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <Link to="/" className="inline-flex items-center gap-1 text-xs text-fg-subtle hover:text-fg">
+            <Link to="/hosts" className="inline-flex items-center gap-1 text-xs text-fg-subtle hover:text-fg">
               <ArrowLeft className="h-3 w-3" /> Hosts
             </Link>
             <h1 className="mt-1.5 flex items-center gap-2.5 text-xl font-semibold tracking-tight">
+              <DistroIcon family={h.distro_family} size={20} />
               {h.hostname}
               <StatusPill status={h.status} />
             </h1>
             <p className="mt-1 text-sm text-fg-muted">
               {h.distro} · {h.arch} · agent <span className="font-mono text-xs">{h.agent_version}</span>
             </p>
+            {h.services && h.services.length > 0 && (
+              <div className="mt-2"><ServiceBadges services={h.services} max={12} /></div>
+            )}
           </div>
           <div className="text-right text-xs text-fg-subtle">
             <p>last_seen: <span className="text-fg-muted">{relativeTime(h.last_seen_at)}</span></p>
@@ -251,8 +258,22 @@ function Header({ detail }: { detail: HostDetailT }) {
           <StatCard label="Status since" value={h.status_since ? relativeTime(h.status_since) : "—"} />
         </div>
 
+        <div className="mt-4 flex flex-wrap items-start gap-3">
+          <TagsEditor hostID={h.id} initial={h.tags} />
+          {h.groups.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1">
+              <span className="text-[11px] font-medium uppercase tracking-wider text-fg-subtle">Groups:</span>
+              {h.groups.map((g) => (
+                <span key={g.id} className="rounded-md bg-info/10 px-2 py-0.5 text-[11px] font-mono text-info ring-1 ring-inset ring-info/30">
+                  {g.name}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
         {Object.keys(h.labels).length > 0 && (
-          <div className="mt-4 flex flex-wrap gap-1.5">
+          <div className="mt-3 flex flex-wrap gap-1.5">
             {Object.entries(h.labels).map(([k, v]) => (
               <span key={k} className="rounded-md bg-panel-2 px-2 py-0.5 text-[11px] font-mono text-fg-muted">
                 {k}={v}
@@ -262,6 +283,90 @@ function Header({ detail }: { detail: HostDetailT }) {
         )}
       </div>
     </Panel>
+  );
+}
+
+function TagsEditor({ hostID, initial }: { hostID: string; initial: string[] }) {
+  const qc = useQueryClient();
+  const [tags, setTags] = useState<string[]>(initial);
+  const [draft, setDraft] = useState("");
+  const [editing, setEditing] = useState(false);
+
+  const save = useMutation({
+    mutationFn: (next: string[]) =>
+      api(`/v1/hosts/${hostID}/tags`, { method: "PUT", body: JSON.stringify({ tags: next }) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["host", hostID] }),
+  });
+
+  function commit(next: string[]) {
+    setTags(next);
+    save.mutate(next);
+  }
+
+  function add() {
+    const t = draft.trim().toLowerCase();
+    if (!t) return;
+    if (tags.includes(t)) {
+      setDraft("");
+      return;
+    }
+    commit([...tags, t]);
+    setDraft("");
+  }
+
+  function onKey(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter" || e.key === ",") {
+      e.preventDefault();
+      add();
+    } else if (e.key === "Escape") {
+      setDraft("");
+      setEditing(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      <span className="text-[11px] font-medium uppercase tracking-wider text-fg-subtle">
+        <Tag className="mr-1 inline h-3 w-3" /> Tags:
+      </span>
+      {tags.map((t) => (
+        <span
+          key={t}
+          className="inline-flex items-center gap-0.5 rounded-md bg-panel-2 pl-1.5 pr-0.5 py-0.5 font-mono text-[10px] text-accent"
+        >
+          #{t}
+          <button
+            onClick={() => commit(tags.filter((x) => x !== t))}
+            className="rounded p-0.5 text-fg-subtle hover:bg-fail/20 hover:text-fail"
+            aria-label={`Remove tag ${t}`}
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </span>
+      ))}
+      {editing ? (
+        <input
+          autoFocus
+          value={draft}
+          onBlur={() => {
+            if (draft) add();
+            setEditing(false);
+          }}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={onKey}
+          placeholder="add tag…"
+          className="w-24 rounded-md border border-border bg-panel px-1.5 py-0.5 font-mono text-[10px] focus:border-accent focus:outline-none"
+        />
+      ) : (
+        <button
+          onClick={() => setEditing(true)}
+          className="rounded-md border border-dashed border-border px-2 py-0.5 text-[10px] text-fg-subtle hover:text-fg hover:border-border-strong"
+        >
+          + add tag
+        </button>
+      )}
+      {save.isError && <span className="text-[10px] text-fail">save failed</span>}
+    </div>
   );
 }
 

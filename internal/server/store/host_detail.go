@@ -74,7 +74,61 @@ func (s *Store) GetHostDetail(ctx context.Context, id uuid.UUID) (apitypes.HostD
 	if d.RepoStates, err = s.hostRepoStates(ctx, id); err != nil {
 		return d, fmt.Errorf("repo states: %w", err)
 	}
+
+	// Tags + groups + derived fields populate the embedded Host.
+	tags, gerr := s.hostTags(ctx, id)
+	if gerr == nil {
+		d.Host.Tags = tags
+	}
+	groups, gerr := s.hostGroups(ctx, id)
+	if gerr == nil {
+		d.Host.Groups = groups
+	}
+	d.Host.DistroFamily = distroFamily(d.Host.Distro)
+	if svc, serr := s.detectServices(ctx, []uuid.UUID{id}); serr == nil {
+		d.Host.Services = svc[id.String()]
+	}
 	return d, nil
+}
+
+func (s *Store) hostTags(ctx context.Context, hostID uuid.UUID) ([]string, error) {
+	rows, err := s.Pool.Query(ctx,
+		`SELECT tag FROM host_tags WHERE host_id = $1 ORDER BY tag`, hostID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) hostGroups(ctx context.Context, hostID uuid.UUID) ([]apitypes.HostGroupRef, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT g.id, g.name FROM host_group_members m
+		JOIN host_groups g ON g.id = m.group_id
+		WHERE m.host_id = $1 ORDER BY g.name`, hostID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []apitypes.HostGroupRef{}
+	for rows.Next() {
+		var r apitypes.HostGroupRef
+		var id uuid.UUID
+		if err := rows.Scan(&id, &r.Name); err != nil {
+			return nil, err
+		}
+		r.ID = id.String()
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }
 
 func (s *Store) hostDisks(ctx context.Context, id uuid.UUID) ([]apitypes.DiskRow, error) {

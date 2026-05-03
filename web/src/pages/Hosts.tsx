@@ -2,6 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Server } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
+import { DistroIcon } from "../components/icons/DistroIcon";
+import { ServiceBadges } from "../components/icons/ServiceIcon";
 import { Panel, SectionHeading, StatusPill, TBody, TD, TH, THead, Table } from "../components/ui";
 import { api } from "../lib/api";
 import { Host } from "../lib/types";
@@ -25,7 +27,7 @@ export function Hosts() {
   const hosts = data?.hosts ?? [];
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4 p-6">
+    <div className="mx-auto max-w-7xl space-y-4 p-6">
       <div className="flex items-center justify-between">
         <SectionHeading>Hosts</SectionHeading>
         <p className="text-xs text-fg-subtle tabular-nums">{hosts.length} known</p>
@@ -46,12 +48,12 @@ export function Hosts() {
             <THead>
               <tr>
                 <TH>Status</TH>
-                <TH>Hostname</TH>
+                <TH>Host</TH>
                 <TH>Distro</TH>
-                <TH>CPU</TH>
-                <TH>RAM</TH>
+                <TH>Services</TH>
+                <TH>Tags / Groups</TH>
+                <TH>CPU / RAM</TH>
                 <TH>Last seen</TH>
-                <TH>Agent</TH>
               </tr>
             </THead>
             <TBody>
@@ -62,12 +64,46 @@ export function Hosts() {
                   onClick={() => navigate(`/hosts/${h.id}`)}
                 >
                   <TD><StatusPill status={h.status} /></TD>
-                  <TD className="font-medium text-fg">{h.hostname}</TD>
-                  <TD className="text-fg-muted">{h.distro || "—"}</TD>
-                  <TD className="tabular-nums text-fg-muted">{h.cpu_cores} cores</TD>
-                  <TD className="tabular-nums text-fg-muted">{formatBytes(h.ram_total_bytes)}</TD>
-                  <TD className="text-fg-muted">{relativeTime(h.last_seen_at)}</TD>
-                  <TD className="font-mono text-xs text-fg-muted">{h.agent_version}</TD>
+                  <TD>
+                    <span className="font-medium text-fg">{h.hostname}</span>
+                    <span className="ml-2 font-mono text-[10px] text-fg-subtle">{h.arch}</span>
+                  </TD>
+                  <TD>
+                    <span className="inline-flex items-center gap-1.5">
+                      <DistroIcon family={h.distro_family} />
+                      <span className="text-fg-muted">{h.distro || "—"}</span>
+                    </span>
+                  </TD>
+                  <TD>
+                    <ServiceBadges services={h.services} />
+                    {(!h.services || h.services.length === 0) && (
+                      <span className="text-fg-subtle">—</span>
+                    )}
+                  </TD>
+                  <TD>
+                    <div className="flex flex-wrap items-center gap-1">
+                      {h.tags.map((t) => (
+                        <span key={t} className="rounded-md bg-panel-2 px-1.5 py-0.5 font-mono text-[10px] text-accent">
+                          #{t}
+                        </span>
+                      ))}
+                      {h.groups.map((g) => (
+                        <span
+                          key={g.id}
+                          className="rounded-md bg-info/10 px-1.5 py-0.5 font-mono text-[10px] text-info ring-1 ring-inset ring-info/30"
+                        >
+                          {g.name}
+                        </span>
+                      ))}
+                      {h.tags.length === 0 && h.groups.length === 0 && (
+                        <span className="text-fg-subtle">—</span>
+                      )}
+                    </div>
+                  </TD>
+                  <TD className="tabular-nums text-fg-muted whitespace-nowrap">
+                    {h.cpu_cores}c · {formatBytes(h.ram_total_bytes)}
+                  </TD>
+                  <TD className="text-fg-muted whitespace-nowrap">{relativeTime(h.last_seen_at)}</TD>
                 </tr>
               ))}
             </TBody>
@@ -99,4 +135,3 @@ function relativeTime(iso: string): string {
   if (diff < 86400) return `${Math.round(diff / 3600)}h ago`;
   return `${Math.round(diff / 86400)}d ago`;
 }
-

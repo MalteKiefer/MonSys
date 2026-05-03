@@ -656,6 +656,26 @@ components:
         - name
         - version
       type: object
+    GroupMembersInput:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/GroupMembersInput.json
+          format: uri
+          readOnly: true
+          type: string
+        host_ids:
+          description: Replaces the group's member set entirely
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+      required:
+        - host_ids
+      type: object
     Host:
       additionalProperties: false
       properties:
@@ -668,9 +688,19 @@ components:
           type: integer
         distro:
           type: string
+        distro_family:
+          description: arch/debian/ubuntu/fedora/rhel/alpine/suse — derived
+          type: string
         first_seen_at:
           format: date-time
           type: string
+        groups:
+          description: Groups this host belongs to
+          items:
+            $ref: "#/components/schemas/HostGroupRef"
+          type:
+            - array
+            - "null"
         hostname:
           type: string
         id:
@@ -685,6 +715,13 @@ components:
         ram_total_bytes:
           format: int64
           type: integer
+        services:
+          description: Detected services (postgres, redis, nginx, …)
+          items:
+            type: string
+          type:
+            - array
+            - "null"
         status:
           enum:
             - online
@@ -695,6 +732,13 @@ components:
         status_since:
           format: date-time
           type: string
+        tags:
+          description: Operator-set tags; managed via /v1/hosts/{id}/tags
+          items:
+            type: string
+          type:
+            - array
+            - "null"
       required:
         - id
         - hostname
@@ -707,6 +751,8 @@ components:
         - last_seen_at
         - status
         - labels
+        - tags
+        - groups
       type: object
     HostDetail:
       additionalProperties: false
@@ -766,6 +812,69 @@ components:
         - vms
         - users
         - repo_states
+      type: object
+    HostGroup:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/HostGroup.json
+          format: uri
+          readOnly: true
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        created_by:
+          type: string
+        description:
+          type: string
+        id:
+          type: string
+        member_ids:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        name:
+          type: string
+      required:
+        - id
+        - name
+        - created_at
+        - member_ids
+      type: object
+    HostGroupInput:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/HostGroupInput.json
+          format: uri
+          readOnly: true
+          type: string
+        description:
+          type: string
+        name:
+          maxLength: 100
+          minLength: 1
+          type: string
+      required:
+        - name
+      type: object
+    HostGroupRef:
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+      required:
+        - id
+        - name
       type: object
     HostLoginsOutputBody:
       additionalProperties: false
@@ -878,6 +987,26 @@ components:
         - firewalls
         - fail2ban
         - crowdsec
+      type: object
+    HostTagsInput:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/HostTagsInput.json
+          format: uri
+          readOnly: true
+          type: string
+        tags:
+          description: Replaces the host's tag set entirely
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+      required:
+        - tags
       type: object
     IngestRequest:
       additionalProperties: false
@@ -1052,6 +1181,18 @@ components:
         - cpu_cores
         - ram_total_bytes
       type: object
+    Item:
+      additionalProperties: false
+      properties:
+        count:
+          format: int64
+          type: integer
+        tag:
+          type: string
+      required:
+        - tag
+        - count
+      type: object
     ListChannelsOutputBody:
       additionalProperties: false
       properties:
@@ -1070,6 +1211,25 @@ components:
             - "null"
       required:
         - channels
+      type: object
+    ListGroupsOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/ListGroupsOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        groups:
+          items:
+            $ref: "#/components/schemas/HostGroup"
+          type:
+            - array
+            - "null"
+      required:
+        - groups
       type: object
     ListHostsOutputBody:
       additionalProperties: false
@@ -1127,6 +1287,25 @@ components:
             - "null"
       required:
         - rules
+      type: object
+    ListTagsOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/ListTagsOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        tags:
+          items:
+            $ref: "#/components/schemas/Item"
+          type:
+            - array
+            - "null"
+      required:
+        - tags
       type: object
     ListUsersOutputBody:
       additionalProperties: false
@@ -1264,6 +1443,20 @@ components:
         target:
           description: host:port (cert/tcp), URL (http), DSN (db)
           type: string
+        target_group_ids:
+          description: "Optional metadata: host groups this monitor relates to"
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        target_tags:
+          description: "Optional metadata: hosts with these tags this monitor relates to"
+          items:
+            type: string
+          type:
+            - array
+            - "null"
         type:
           enum:
             - cert
@@ -1280,6 +1473,8 @@ components:
         - target
         - interval_sec
         - enabled
+        - target_tags
+        - target_group_ids
         - created_at
       type: object
     MonitorInput:
@@ -1309,6 +1504,18 @@ components:
         target:
           minLength: 1
           type: string
+        target_group_ids:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        target_tags:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
         type:
           enum:
             - cert
@@ -2867,6 +3074,135 @@ paths:
       summary: Return the authenticated user
       tags:
         - auth
+  /v1/groups:
+    get:
+      operationId: list-groups
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListGroupsOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List host groups with member ids
+      tags:
+        - groups
+    post:
+      operationId: create-group
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HostGroupInput"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostGroup"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Create a host group
+      tags:
+        - groups
+  /v1/groups/{id}:
+    delete:
+      operationId: delete-group
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Delete a host group
+      tags:
+        - groups
+    put:
+      operationId: update-group
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HostGroupInput"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostGroup"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Update a host group
+      tags:
+        - groups
+  /v1/groups/{id}/members:
+    put:
+      operationId: set-group-members
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GroupMembersInput"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Replace group membership
+      tags:
+        - groups
   /v1/hosts:
     get:
       operationId: list-hosts
@@ -3168,6 +3504,37 @@ paths:
       summary: Latest firewall, fail2ban, and CrowdSec snapshot for a host
       tags:
         - security
+  /v1/hosts/{id}/tags:
+    put:
+      operationId: host-set-tags
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HostTagsInput"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Replace the host's tag set
+      tags:
+        - hosts
   /v1/ingest:
     post:
       description: "Agents push samples here. Auth: Authorization: Bearer <agent_key>."
@@ -3723,6 +4090,25 @@ paths:
       summary: Search installed packages across all hosts
       tags:
         - packages
+  /v1/tags:
+    get:
+      operationId: list-tags
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListTagsOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List all tags in use with host counts
+      tags:
+        - hosts
 servers:
   - description: current
     url: /

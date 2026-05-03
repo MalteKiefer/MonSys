@@ -21,7 +21,7 @@ import {
   TimeRangeSelector,
 } from "../components/ui";
 import { api, ApiError } from "../lib/api";
-import { Monitor, MonitorInput, MonitorResult } from "../lib/types";
+import { HostGroup, Monitor, MonitorInput, MonitorResult } from "../lib/types";
 
 const TYPES: Monitor["type"][] = ["cert", "postgres", "mysql", "mongodb", "http", "tcp"];
 
@@ -172,6 +172,14 @@ function MonitorForm({
   onCancel: () => void;
   onSaved: () => void;
 }) {
+  const tagsQuery = useQuery({
+    queryKey: ["tags"],
+    queryFn: () => api<{ tags: Array<{ tag: string; count: number }> }>("/v1/tags"),
+  });
+  const groupsQuery = useQuery({
+    queryKey: ["groups"],
+    queryFn: () => api<{ groups: HostGroup[] }>("/v1/groups"),
+  });
   const [type, setType] = useState<Monitor["type"]>(initial?.type ?? "http");
   const [name, setName] = useState(initial?.name ?? "");
   const [target, setTarget] = useState(initial?.target ?? "");
@@ -182,6 +190,8 @@ function MonitorForm({
     if (initial?.params) for (const [k, v] of Object.entries(initial.params)) out[k] = String(v ?? "");
     return out;
   });
+  const [tagsRaw, setTagsRaw] = useState((initial?.target_tags ?? []).join(", "));
+  const [groupIDs, setGroupIDs] = useState<string[]>(initial?.target_group_ids ?? []);
   const [error, setError] = useState<string | null>(null);
 
   const save = useMutation({
@@ -192,6 +202,10 @@ function MonitorForm({
         const n = Number(v);
         parsedParams[k] = Number.isFinite(n) && /^\d+$/.test(v) ? n : v;
       }
+      const tagList = tagsRaw
+        .split(",")
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean);
       const body: MonitorInput = {
         type,
         name,
@@ -199,6 +213,8 @@ function MonitorForm({
         interval_sec: intervalSec,
         enabled,
         params: parsedParams,
+        target_tags: tagList,
+        target_group_ids: groupIDs,
       };
       if (initial) {
         return api(`/v1/monitors/${initial.id}`, {
@@ -288,6 +304,40 @@ function MonitorForm({
               </label>
             </Field>
           </div>
+
+          <Field
+            label="Apply to tags (comma-separated)"
+            hint={
+              tagsQuery.data?.tags?.length
+                ? `Existing: ${tagsQuery.data.tags.map((t) => t.tag).join(", ")}`
+                : "No tags defined yet."
+            }
+          >
+            <TextInput
+              value={tagsRaw}
+              onChange={(e) => setTagsRaw(e.target.value)}
+              placeholder="prod, db"
+              className="font-mono"
+            />
+          </Field>
+
+          <Field label="Apply to groups (Ctrl/⌘ to multi-select)">
+            <select
+              multiple
+              size={Math.min(5, Math.max(2, groupsQuery.data?.groups.length ?? 2))}
+              value={groupIDs}
+              onChange={(e) =>
+                setGroupIDs(Array.from(e.target.selectedOptions).map((o) => o.value))
+              }
+              className="w-full rounded-md border border-border bg-panel px-3 py-2 text-sm"
+            >
+              {(groupsQuery.data?.groups ?? []).map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.name} ({g.member_ids.length})
+                </option>
+              ))}
+            </select>
+          </Field>
 
           {error && <ErrorBox>{error}</ErrorBox>}
 

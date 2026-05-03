@@ -288,28 +288,32 @@ type AlertHistoryEntry struct {
 // Active monitors (server-side periodic probes)
 
 type Monitor struct {
-	ID            string         `json:"id"`
-	Type          string         `json:"type"           enum:"cert,postgres,mysql,mongodb,http,tcp"`
-	Name          string         `json:"name"`
-	Target        string         `json:"target"         doc:"host:port (cert/tcp), URL (http), DSN (db)"`
-	Params        map[string]any `json:"params,omitempty"`
-	IntervalSec   int            `json:"interval_sec"`
-	Enabled       bool           `json:"enabled"`
-	CreatedAt     time.Time      `json:"created_at"`
-	CreatedBy     string         `json:"created_by,omitempty"`
-	LastCheckAt   *time.Time     `json:"last_check_at,omitempty"`
-	LastStatus    string         `json:"last_status,omitempty"  enum:"ok,warn,fail,unknown"`
-	LastLatencyMS int            `json:"last_latency_ms,omitempty"`
-	LastDetail    string         `json:"last_detail,omitempty"`
+	ID             string         `json:"id"`
+	Type           string         `json:"type"           enum:"cert,postgres,mysql,mongodb,http,tcp"`
+	Name           string         `json:"name"`
+	Target         string         `json:"target"         doc:"host:port (cert/tcp), URL (http), DSN (db)"`
+	Params         map[string]any `json:"params,omitempty"`
+	IntervalSec    int            `json:"interval_sec"`
+	Enabled        bool           `json:"enabled"`
+	TargetTags     []string       `json:"target_tags"     doc:"Optional metadata: hosts with these tags this monitor relates to"`
+	TargetGroupIDs []string       `json:"target_group_ids" doc:"Optional metadata: host groups this monitor relates to"`
+	CreatedAt      time.Time      `json:"created_at"`
+	CreatedBy      string         `json:"created_by,omitempty"`
+	LastCheckAt    *time.Time     `json:"last_check_at,omitempty"`
+	LastStatus     string         `json:"last_status,omitempty"  enum:"ok,warn,fail,unknown"`
+	LastLatencyMS  int            `json:"last_latency_ms,omitempty"`
+	LastDetail     string         `json:"last_detail,omitempty"`
 }
 
 type MonitorInput struct {
-	Type        string         `json:"type"        enum:"cert,postgres,mysql,mongodb,http,tcp"`
-	Name        string         `json:"name"        minLength:"1" maxLength:"100"`
-	Target      string         `json:"target"      minLength:"1"`
-	Params      map[string]any `json:"params,omitempty"`
-	IntervalSec int            `json:"interval_sec" minimum:"10" maximum:"86400"`
-	Enabled     bool           `json:"enabled"`
+	Type           string         `json:"type"        enum:"cert,postgres,mysql,mongodb,http,tcp"`
+	Name           string         `json:"name"        minLength:"1" maxLength:"100"`
+	Target         string         `json:"target"      minLength:"1"`
+	Params         map[string]any `json:"params,omitempty"`
+	IntervalSec    int            `json:"interval_sec" minimum:"10" maximum:"86400"`
+	Enabled        bool           `json:"enabled"`
+	TargetTags     []string       `json:"target_tags,omitempty"`
+	TargetGroupIDs []string       `json:"target_group_ids,omitempty"`
 }
 
 type MonitorResult struct {
@@ -576,4 +580,35 @@ type Host struct {
 	Status        string            `json:"status"      enum:"online,stale,offline,unknown"`
 	StatusSince   time.Time         `json:"status_since,omitempty"`
 	Labels        map[string]string `json:"labels"`
+	Tags          []string          `json:"tags"        doc:"Operator-set tags; managed via /v1/hosts/{id}/tags"`
+	Groups        []HostGroupRef    `json:"groups"      doc:"Groups this host belongs to"`
+	DistroFamily  string            `json:"distro_family,omitempty" doc:"arch/debian/ubuntu/fedora/rhel/alpine/suse — derived"`
+	Services      []string          `json:"services,omitempty"      doc:"Detected services (postgres, redis, nginx, …)"`
+}
+
+type HostGroupRef struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type HostGroup struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	CreatedBy   string    `json:"created_by,omitempty"`
+	MemberIDs   []string  `json:"member_ids"`
+}
+
+type HostGroupInput struct {
+	Name        string `json:"name"        minLength:"1" maxLength:"100"`
+	Description string `json:"description,omitempty"`
+}
+
+type HostTagsInput struct {
+	Tags []string `json:"tags" doc:"Replaces the host's tag set entirely"`
+}
+
+type GroupMembersInput struct {
+	HostIDs []string `json:"host_ids" doc:"Replaces the group's member set entirely"`
 }

@@ -1,6 +1,8 @@
 // Mirrors of apitypes the UI consumes. Hand-typed for now; future iteration
 // could code-gen from /docs/openapi.yaml so they stay in sync automatically.
 
+export type HostGroupRef = { id: string; name: string };
+
 export type Host = {
   id: string;
   hostname: string;
@@ -14,6 +16,19 @@ export type Host = {
   status: "online" | "stale" | "offline" | "unknown";
   status_since?: string;
   labels: Record<string, string>;
+  tags: string[];
+  groups: HostGroupRef[];
+  distro_family?: string;
+  services?: string[];
+};
+
+export type HostGroup = {
+  id: string;
+  name: string;
+  description?: string;
+  created_at: string;
+  created_by?: string;
+  member_ids: string[];
 };
 
 export type CurrentUser = {
@@ -285,6 +300,8 @@ export type Monitor = {
   params?: Record<string, unknown>;
   interval_sec: number;
   enabled: boolean;
+  target_tags: string[];
+  target_group_ids: string[];
   created_at: string;
   created_by?: string;
   last_check_at?: string | null;
@@ -300,6 +317,8 @@ export type MonitorInput = {
   params?: Record<string, unknown>;
   interval_sec: number;
   enabled: boolean;
+  target_tags?: string[];
+  target_group_ids?: string[];
 };
 
 export type MonitorResult = {
