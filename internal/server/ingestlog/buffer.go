@@ -43,7 +43,9 @@ func New(size, maxBytes int) *Buffer {
 // truncated; UI shows the truncation flag implicitly via SizeBytes vs
 // len(Payload).
 func (b *Buffer) Append(hostID uuid.UUID, hostname string, payload []byte) {
-	cp := payload
+	originalSize := len(payload)
+	redacted := Redact(payload)
+	cp := redacted
 	if len(cp) > b.maxBytes {
 		cp = cp[:b.maxBytes]
 	}
@@ -55,7 +57,7 @@ func (b *Buffer) Append(hostID uuid.UUID, hostname string, payload []byte) {
 		Time:      time.Now().UTC(),
 		HostID:    hostID.String(),
 		Hostname:  hostname,
-		SizeBytes: len(payload),
+		SizeBytes: originalSize,
 		Payload:   stored,
 	}
 	b.idx = (b.idx + 1) % b.size
