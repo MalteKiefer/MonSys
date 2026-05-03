@@ -21,6 +21,19 @@ type Config struct {
 	Proxmox            ProxmoxConfig     `yaml:"proxmox"`
 	DockerEndpoint     string            `yaml:"docker_endpoint"`
 	Packages           PackagesConfig    `yaml:"packages"`
+	Redact             RedactConfig      `yaml:"redact"`
+}
+
+// RedactConfig controls agent-side PII filtering applied before payloads ever
+// leave the host. This is defence-in-depth: the server also redacts on
+// ingest, but operators in regulated environments may want sensitive fields
+// scrubbed at the source so they never traverse the wire. All toggles default
+// off so existing deployments see no behaviour change.
+type RedactConfig struct {
+	Enabled   bool `yaml:"enabled"`
+	Shells    bool `yaml:"shells"`     // mask shell paths in observed users
+	Homes     bool `yaml:"homes"`      // mask home directories
+	SourceIPs bool `yaml:"source_ips"` // hash source_ip in login events (sha256, first 8 hex)
 }
 
 type TLSConfig struct {

@@ -15,6 +15,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net"
 	"os"
@@ -22,20 +24,33 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pr0ph37/mon/internal/agent/config"
 	"github.com/pr0ph37/mon/internal/agent/safeexec"
 	"github.com/pr0ph37/mon/internal/shared/apitypes"
 )
 
+// redactMask is the placeholder substituted for shell/home paths when the
+// corresponding redact toggle is on. Single constant so consumers can grep.
+const redactMask = "***"
+
 // Collector implements collector.Source and collector.InventoryProvider.
 type Collector struct {
 	cursor time.Time // emit only events newer than this
+	redact config.RedactConfig
 }
 
-func New() *Collector {
+// New constructs a Collector. The RedactConfig is applied at the source — if
+// Enabled is false (default), the collector behaves exactly as before. We
+// thread config in at construction rather than via a global so tests can
+// exercise both modes deterministically.
+func New(redact config.RedactConfig) *Collector {
 	// Default cursor = now-2m so the first tick captures recent events but
 	// doesn't dump months of history. The cursor is advanced each tick to
 	// the latest event we successfully observed.
-	return &Collector{cursor: time.Now().Add(-2 * time.Minute).UTC()}
+	return &Collector{
+		cursor: time.Now().Add(-2 * time.Minute).UTC(),
+		redact: redact,
+	}
 }
 
 func (c *Collector) Name() string { return "identity" }
@@ -51,6 +66,18 @@ func (c *Collector) Inventory(_ context.Context, snap *apitypes.InventorySnap) e
 			users[i].IsSudoer = true
 		}
 		users[i].IsSystem = users[i].UID < 1000
+		// Defence-in-depth PII redaction. Applied per-field so operators can
+		// keep e.g. shells (useful for "is this a real login account?") while
+		// dropping homes (often contain usernames mirrored from corp
+		// directories).
+		if c.redact.Enabled {
+			if c.redact.Shells {
+				users[i].Shell = redactMask
+			}
+			if c.redact.Homes {
+				users[i].Home = redactMask
+			}
+		}
 	}
 	snap.Users = users
 	return nil
@@ -70,11 +97,30 @@ func (c *Collector) Collect(ctx context.Context, batch *apitypes.IngestRequest) 
 	if len(events) == 0 {
 		return nil
 	}
+	// Hash source IPs before they enter the outbound batch. We use the first
+	// 8 hex chars of sha256 — enough to correlate repeat offenders (same IP
+	// across events) without disclosing the address itself. Empty IPs stay
+	// empty so the dashboard's "no source recorded" state is preserved.
+	if c.redact.Enabled && c.redact.SourceIPs {
+		for i := range events {
+			if events[i].SourceIP != "" {
+				events[i].SourceIP = hashIP(events[i].SourceIP)
+			}
+		}
+	}
 	batch.Logins = append(batch.Logins, events...)
 	if latest.After(c.cursor) {
 		c.cursor = latest
 	}
 	return nil
+}
+
+// hashIP returns the first 8 hex chars of sha256(ip). Short enough to keep
+// the field human-glanceable in logs while one-way enough to defeat casual
+// rainbow-table attacks against the much larger search space of public IPs.
+func hashIP(ip string) string {
+	sum := sha256.Sum256([]byte(ip))
+	return hex.EncodeToString(sum[:])[:8]
 }
 
 // --- /etc/passwd parser ---------------------------------------------------
