@@ -20,8 +20,11 @@ import (
 
 func main() {
 	var (
-		showVersion = flag.Bool("version", false, "print version and exit")
-		dumpOpenAPI = flag.String("dump-openapi", "", "write OpenAPI spec to this path (YAML by extension or JSON) and exit")
+		showVersion       = flag.Bool("version", false, "print version and exit")
+		dumpOpenAPI       = flag.String("dump-openapi", "", "write OpenAPI spec to this path (YAML by extension or JSON) and exit")
+		newToken          = flag.Bool("new-token", false, "issue a new bootstrap token, print it, and exit")
+		newTokenDesc      = flag.String("token-description", "", "description for the new bootstrap token")
+		newTokenTTLString = flag.String("token-ttl", "24h", "lifetime of the new bootstrap token")
 	)
 	flag.Parse()
 
@@ -70,6 +73,21 @@ func main() {
 	if err := st.MigrateUp(openCtx); err != nil {
 		slog.Error("migrations", "err", err)
 		os.Exit(1)
+	}
+
+	if *newToken {
+		ttl, err := time.ParseDuration(*newTokenTTLString)
+		if err != nil {
+			slog.Error("invalid --token-ttl", "value", *newTokenTTLString, "err", err)
+			os.Exit(2)
+		}
+		plaintext, err := st.CreateBootstrapToken(openCtx, *newTokenDesc, ttl, "cli")
+		if err != nil {
+			slog.Error("create token", "err", err)
+			os.Exit(1)
+		}
+		_, _ = os.Stdout.WriteString(plaintext + "\n")
+		return
 	}
 
 	s := api.New(st)

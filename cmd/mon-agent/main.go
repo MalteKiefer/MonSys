@@ -2,13 +2,15 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
+	"github.com/pr0ph37/mon/internal/agent"
+	"github.com/pr0ph37/mon/internal/agent/config"
 	"github.com/pr0ph37/mon/internal/shared/version"
 )
 
@@ -16,32 +18,57 @@ func main() {
 	var (
 		showVersion = flag.Bool("version", false, "print version and exit")
 		configPath  = flag.String("config", "/etc/mon-agent/config.yaml", "path to config file")
+		bootstrap   = flag.String("bootstrap-token", "", "one-time token for first registration; takes precedence over MON_BOOTSTRAP_TOKEN")
 	)
 	flag.Parse()
 
 	if *showVersion {
-		os.Stdout.WriteString(version.String() + "\n")
+		_, _ = os.Stdout.WriteString(version.String() + "\n")
 		return
 	}
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
 
-	slog.Info("mon-agent starting", "version", version.String(), "config", *configPath)
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		slog.Error("config load", "err", err)
+		os.Exit(2)
+	}
+
+	a, err := agent.New(cfg)
+	if err != nil {
+		slog.Error("agent init", "err", err)
+		os.Exit(1)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	t := time.NewTicker(15 * time.Second)
-	defer t.Stop()
+	token := firstNonEmpty(*bootstrap, os.Getenv("MON_BOOTSTRAP_TOKEN"))
+	if token != "" {
+		if err := a.Bootstrap(ctx, token); err != nil {
+			slog.Error("bootstrap failed", "err", err)
+			os.Exit(1)
+		}
+		// Best-effort wipe of the in-memory token.
+		token = ""
+		_ = os.Unsetenv("MON_BOOTSTRAP_TOKEN")
+	}
 
-	for {
-		select {
-		case <-ctx.Done():
-			slog.Info("mon-agent shutting down")
-			return
-		case <-t.C:
-			slog.Info("tick: collectors not implemented yet (M2)")
+	slog.Info("mon-agent running", "version", version.String(), "server", cfg.ServerURL, "interval", cfg.Interval())
+
+	if err := a.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+		slog.Error("agent stopped", "err", err)
+		os.Exit(1)
+	}
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
 		}
 	}
+	return ""
 }

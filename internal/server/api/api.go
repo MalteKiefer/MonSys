@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -43,12 +44,15 @@ func New(s *store.Store) *Server {
 func (s *Server) Handler() http.Handler { return s.Router }
 
 func (s *Server) registerRoutes() {
-	// Liveness / readiness — outside huma so they stay tiny and never validate.
 	s.Router.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok\n"))
 	})
 	s.Router.Get("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		if s.Store == nil {
+			http.Error(w, "no store", http.StatusServiceUnavailable)
+			return
+		}
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()
 		if err := s.Store.Pool.Ping(ctx); err != nil {
@@ -59,7 +63,6 @@ func (s *Server) registerRoutes() {
 		_, _ = w.Write([]byte("ready\n"))
 	})
 
-	// Agent registration: trades a bootstrap token for an agent_key.
 	huma.Register(s.API, huma.Operation{
 		OperationID: "agent-register",
 		Method:      http.MethodPost,
@@ -69,7 +72,6 @@ func (s *Server) registerRoutes() {
 		Tags:        []string{"agents"},
 	}, s.handleAgentRegister)
 
-	// Ingest: agent pushes batch of inventory + metric samples.
 	huma.Register(s.API, huma.Operation{
 		OperationID: "ingest",
 		Method:      http.MethodPost,
@@ -84,6 +86,7 @@ func (s *Server) registerRoutes() {
 
 type registerInput struct {
 	Authorization string `header:"Authorization" required:"true" doc:"Bearer <bootstrap-token>"`
+	RawHost       string `header:"X-Forwarded-For" doc:"caller IP, set by reverse proxy"`
 	Body          apitypes.AgentRegisterRequest
 }
 
@@ -91,12 +94,22 @@ type registerOutput struct {
 	Body apitypes.AgentRegisterResponse
 }
 
-func (s *Server) handleAgentRegister(_ context.Context, in *registerInput) (*registerOutput, error) {
-	if !hasBearer(in.Authorization) {
+func (s *Server) handleAgentRegister(ctx context.Context, in *registerInput) (*registerOutput, error) {
+	token, ok := bearer(in.Authorization)
+	if !ok {
 		return nil, huma.Error401Unauthorized("missing bootstrap token")
 	}
-	// M1 stub: real exchange happens in M2; surface contract is stable.
-	return nil, huma.Error501NotImplemented("agent registration not yet implemented (M2)")
+	if s.Store == nil {
+		return nil, huma.Error503ServiceUnavailable("server has no store configured")
+	}
+	resp, err := s.Store.RegisterAgent(ctx, token, in.Body, in.RawHost)
+	if err != nil {
+		if errors.Is(err, store.ErrTokenInvalid) {
+			return nil, huma.Error401Unauthorized("bootstrap token invalid or expired")
+		}
+		return nil, huma.Error500InternalServerError("registration failed", err)
+	}
+	return &registerOutput{Body: resp}, nil
 }
 
 // --- Ingest -----------------------------------------------------------------
@@ -110,21 +123,33 @@ type ingestOutput struct {
 	Body apitypes.IngestResponse
 }
 
-func (s *Server) handleIngest(_ context.Context, in *ingestInput) (*ingestOutput, error) {
-	if !hasBearer(in.Authorization) {
+func (s *Server) handleIngest(ctx context.Context, in *ingestInput) (*ingestOutput, error) {
+	key, ok := bearer(in.Authorization)
+	if !ok {
 		return nil, huma.Error401Unauthorized("missing agent key")
 	}
-	// M1 stub: accept-and-discard so agents under development don't error.
+	if s.Store == nil {
+		return nil, huma.Error503ServiceUnavailable("server has no store configured")
+	}
+	hostID, err := s.Store.AuthenticateAgent(ctx, key)
+	if err != nil {
+		if errors.Is(err, store.ErrAgentKeyInvalid) {
+			return nil, huma.Error401Unauthorized("agent key invalid")
+		}
+		return nil, huma.Error500InternalServerError("auth failed", err)
+	}
+	_ = hostID // M3 will persist samples; M2 just acknowledges receipt.
 	return &ingestOutput{Body: apitypes.IngestResponse{
 		Accepted:   true,
 		ServerTime: time.Now().UTC(),
 	}}, nil
 }
 
-func hasBearer(h string) bool {
+func bearer(h string) (string, bool) {
 	const p = "Bearer "
-	return len(h) > len(p) && h[:len(p)] == p
+	if !strings.HasPrefix(h, p) {
+		return "", false
+	}
+	t := strings.TrimSpace(h[len(p):])
+	return t, t != ""
 }
-
-// Errors helper kept to avoid unused-import drift if huma is touched.
-var _ = errors.New
