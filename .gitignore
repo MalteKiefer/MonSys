@@ -1,0 +1,12 @@
+bin/
+*.exe
+*.test
+*.out
+coverage.*
+.env
+.env.local
+deploy/secrets/
+deploy/certs/
+*.swp
+.idea/
+.vscode/

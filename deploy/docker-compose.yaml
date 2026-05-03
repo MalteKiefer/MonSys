@@ -1,0 +1,60 @@
+name: mon
+
+services:
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mon
+      POSTGRES_USER: mon
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_pw
+    volumes:
+      - tsdb:/var/lib/postgresql/data
+    secrets:
+      - db_pw
+    networks:
+      - mon-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mon -d mon"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mon-server:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.server
+    restart: unless-stopped
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    environment:
+      MON_LISTEN_ADDR: ":8080"
+      MON_DSN: "postgres://mon@timescaledb:5432/mon?sslmode=disable"
+      MON_DSN_PASSWORD_FILE: /run/secrets/db_pw
+    secrets:
+      - db_pw
+    ports:
+      - "8080:8080"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - mon-internal
+      - mon-public
+
+volumes:
+  tsdb:
+
+networks:
+  mon-internal:
+    internal: true
+  mon-public:
+
+secrets:
+  db_pw:
+    file: ./secrets/db_pw

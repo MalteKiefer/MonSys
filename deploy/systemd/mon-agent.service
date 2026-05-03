@@ -1,0 +1,51 @@
+[Unit]
+Description=mon agent (read-only host monitor)
+Documentation=https://github.com/pr0ph37/mon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=monagent
+Group=monagent
+ExecStart=/usr/local/bin/mon-agent --config=/etc/mon-agent/config.yaml
+
+# Filesystem
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/mon-agent /var/log/mon-agent
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectHostname=yes
+ProtectClock=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+ProcSubset=pid
+
+# Privileges
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources @mount @swap @reboot @raw-io @debug @cpu-emulation @obsolete
+
+UMask=0077
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=15s
+
+# Watchdog: agent pings systemd
+WatchdogSec=60s
+
+[Install]
+WantedBy=multi-user.target
