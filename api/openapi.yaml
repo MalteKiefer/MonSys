@@ -94,6 +94,66 @@ components:
         - agent_id
         - agent_key
       type: object
+    AlertHistoryEntry:
+      additionalProperties: false
+      properties:
+        at:
+          format: date-time
+          type: string
+        body:
+          type: string
+        dedup_key:
+          type: string
+        delivered_to:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        delivery_errors:
+          additionalProperties: {}
+          type: object
+        id:
+          format: int64
+          type: integer
+        rule_id:
+          type: string
+        rule_name:
+          type: string
+        severity:
+          type: string
+        subject:
+          type: string
+      required:
+        - id
+        - at
+        - rule_name
+        - severity
+        - subject
+        - body
+        - dedup_key
+        - delivered_to
+        - delivery_errors
+      type: object
+    AlertHistoryOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/AlertHistoryOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        alerts:
+          items:
+            $ref: "#/components/schemas/AlertHistoryEntry"
+          type:
+            - array
+            - "null"
+      required:
+        - alerts
+      type: object
     CrowdsecDecision:
       additionalProperties: false
       properties:
@@ -687,6 +747,25 @@ components:
       required:
         - monitors
       type: object
+    ListRulesOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/ListRulesOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        rules:
+          items:
+            $ref: "#/components/schemas/NotificationRule"
+          type:
+            - array
+            - "null"
+      required:
+        - rules
+      type: object
     LoginEvent:
       additionalProperties: false
       properties:
@@ -1038,6 +1117,117 @@ components:
         - name
         - enabled
         - config
+      type: object
+    NotificationRule:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/NotificationRule.json
+          format: uri
+          readOnly: true
+          type: string
+        channel_ids:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        condition_params:
+          additionalProperties: {}
+          type: object
+        condition_type:
+          enum:
+            - host_offline
+            - monitor_failed
+            - cert_expiring
+            - login_failed_threshold
+            - security_updates_pending
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        created_by:
+          type: string
+        enabled:
+          type: boolean
+        id:
+          type: string
+        name:
+          type: string
+        severity:
+          enum:
+            - info
+            - warning
+            - critical
+          type: string
+        throttle_sec:
+          description: 0 disables throttling
+          format: int64
+          minimum: 0
+          type: integer
+      required:
+        - id
+        - name
+        - enabled
+        - condition_type
+        - channel_ids
+        - severity
+        - throttle_sec
+        - created_at
+      type: object
+    NotificationRuleInput:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - //schemas/NotificationRuleInput.json
+          format: uri
+          readOnly: true
+          type: string
+        channel_ids:
+          items:
+            type: string
+          minItems: 1
+          type:
+            - array
+            - "null"
+        condition_params:
+          additionalProperties: {}
+          type: object
+        condition_type:
+          enum:
+            - host_offline
+            - monitor_failed
+            - cert_expiring
+            - login_failed_threshold
+            - security_updates_pending
+          type: string
+        enabled:
+          type: boolean
+        name:
+          maxLength: 100
+          minLength: 1
+          type: string
+        severity:
+          enum:
+            - info
+            - warning
+            - critical
+          type: string
+        throttle_sec:
+          format: int64
+          minimum: 0
+          type: integer
+      required:
+        - name
+        - enabled
+        - condition_type
+        - channel_ids
+        - severity
+        - throttle_sec
       type: object
     NotificationTestRequest:
       additionalProperties: false
@@ -1857,6 +2047,42 @@ paths:
       summary: Recent results for a monitor
       tags:
         - monitors
+  /v1/notifications/alerts:
+    get:
+      operationId: alert-history
+      parameters:
+        - description: earliest alert timestamp; default = now-24h
+          explode: false
+          in: query
+          name: since
+          schema:
+            description: earliest alert timestamp; default = now-24h
+            format: date-time
+            type: string
+        - description: max entries (1..1000); default 200
+          explode: false
+          in: query
+          name: limit
+          schema:
+            description: max entries (1..1000); default 200
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertHistoryOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Recent alert history
+      tags:
+        - notifications
   /v1/notifications/channels:
     get:
       operationId: list-channels
@@ -2012,6 +2238,106 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Send a test message through a channel
+      tags:
+        - notifications
+  /v1/notifications/rules:
+    get:
+      operationId: list-rules
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListRulesOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List notification rules
+      tags:
+        - notifications
+    post:
+      operationId: create-rule
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationRuleInput"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationRule"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Create a notification rule
+      tags:
+        - notifications
+  /v1/notifications/rules/{id}:
+    delete:
+      operationId: delete-rule
+      parameters:
+        - description: Rule UUID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Rule UUID
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Delete a notification rule
+      tags:
+        - notifications
+    put:
+      operationId: update-rule
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationRuleInput"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationRule"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Replace a notification rule
       tags:
         - notifications
 servers:

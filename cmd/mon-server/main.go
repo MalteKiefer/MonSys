@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/pr0ph37/mon/internal/server/alerts"
 	"github.com/pr0ph37/mon/internal/server/api"
 	"github.com/pr0ph37/mon/internal/server/liveness"
 	"github.com/pr0ph37/mon/internal/server/probe"
@@ -120,31 +121,19 @@ func main() {
 	}
 
 	// Background liveness watcher: every 30s, derives host_status from
-	// last_seen_at. Drains transitions so the channel doesn't fill up; the
-	// rules engine will subscribe in M8d.
+	// last_seen_at. Channel forwards transitions to the alerts engine.
 	lw := liveness.New(st.Pool)
 	go lw.Run(ctx)
-	go func() {
-		for tr := range lw.Out {
-			slog.Info("host status changed",
-				"host_id", tr.HostID, "hostname", tr.Hostname,
-				"from", tr.From, "to", tr.To)
-		}
-	}()
 
 	// Active monitors scheduler.
 	sched := probe.NewScheduler(st.Pool)
 	go sched.Run(ctx)
-	go func() {
-		for ev := range sched.Out {
-			if ev.Result.Status != probe.StatusOK {
-				slog.Warn("monitor non-ok",
-					"id", ev.MonitorID, "type", ev.Type, "name", ev.Name,
-					"status", ev.Result.Status, "detail", ev.Result.Detail,
-					"latency_ms", ev.Result.LatencyMS)
-			}
-		}
-	}()
+
+	// Alerts engine: subscribes to liveness + monitor events and runs
+	// stateful checks (failed-login threshold, security updates) on a
+	// 60s tick.
+	eng := alerts.New(st.Pool, lw.Out, sched.Out)
+	go eng.Run(ctx)
 
 	s := api.New(st)
 

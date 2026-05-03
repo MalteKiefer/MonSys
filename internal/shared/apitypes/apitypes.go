@@ -247,6 +247,44 @@ type PackageSummary struct {
 	MetadataAgeSec  int64 `json:"metadata_age_seconds"`
 }
 
+// Notification rules
+
+type NotificationRule struct {
+	ID              string         `json:"id"`
+	Name            string         `json:"name"`
+	Enabled         bool           `json:"enabled"`
+	ConditionType   string         `json:"condition_type"   enum:"host_offline,monitor_failed,cert_expiring,login_failed_threshold,security_updates_pending"`
+	ConditionParams map[string]any `json:"condition_params,omitempty"`
+	ChannelIDs      []string       `json:"channel_ids"`
+	Severity        string         `json:"severity"         enum:"info,warning,critical"`
+	ThrottleSec     int            `json:"throttle_sec"     minimum:"0" doc:"0 disables throttling"`
+	CreatedAt       time.Time      `json:"created_at"`
+	CreatedBy       string         `json:"created_by,omitempty"`
+}
+
+type NotificationRuleInput struct {
+	Name            string         `json:"name"            minLength:"1" maxLength:"100"`
+	Enabled         bool           `json:"enabled"`
+	ConditionType   string         `json:"condition_type"  enum:"host_offline,monitor_failed,cert_expiring,login_failed_threshold,security_updates_pending"`
+	ConditionParams map[string]any `json:"condition_params,omitempty"`
+	ChannelIDs      []string       `json:"channel_ids"     minItems:"1"`
+	Severity        string         `json:"severity"        enum:"info,warning,critical"`
+	ThrottleSec     int            `json:"throttle_sec"    minimum:"0"`
+}
+
+type AlertHistoryEntry struct {
+	ID             int64          `json:"id"`
+	At             time.Time      `json:"at"`
+	RuleID         string         `json:"rule_id,omitempty"`
+	RuleName       string         `json:"rule_name"`
+	Severity       string         `json:"severity"`
+	Subject        string         `json:"subject"`
+	Body           string         `json:"body"`
+	DedupKey       string         `json:"dedup_key"`
+	DeliveredTo    []string       `json:"delivered_to"`
+	DeliveryErrors map[string]any `json:"delivery_errors"`
+}
+
 // Active monitors (server-side periodic probes)
 
 type Monitor struct {

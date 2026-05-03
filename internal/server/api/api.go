@@ -248,6 +248,48 @@ func (s *Server) registerRoutes() {
 		Tags:        []string{"monitors"},
 		Middlewares: protected,
 	}, s.handleMonitorResults)
+
+	// Notification rules + alert history
+	huma.Register(s.API, huma.Operation{
+		OperationID: "list-rules",
+		Method:      http.MethodGet,
+		Path:        "/v1/notifications/rules",
+		Summary:     "List notification rules",
+		Tags:        []string{"notifications"},
+		Middlewares: protected,
+	}, s.handleListRules)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "create-rule",
+		Method:      http.MethodPost,
+		Path:        "/v1/notifications/rules",
+		Summary:     "Create a notification rule",
+		Tags:        []string{"notifications"},
+		Middlewares: protected,
+	}, s.handleCreateRule)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "update-rule",
+		Method:      http.MethodPut,
+		Path:        "/v1/notifications/rules/{id}",
+		Summary:     "Replace a notification rule",
+		Tags:        []string{"notifications"},
+		Middlewares: protected,
+	}, s.handleUpdateRule)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "delete-rule",
+		Method:      http.MethodDelete,
+		Path:        "/v1/notifications/rules/{id}",
+		Summary:     "Delete a notification rule",
+		Tags:        []string{"notifications"},
+		Middlewares: protected,
+	}, s.handleDeleteRule)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "alert-history",
+		Method:      http.MethodGet,
+		Path:        "/v1/notifications/alerts",
+		Summary:     "Recent alert history",
+		Tags:        []string{"notifications"},
+		Middlewares: protected,
+	}, s.handleAlertHistory)
 }
 
 // --- Register ---------------------------------------------------------------
@@ -468,6 +510,110 @@ func bearer(h string) (string, bool) {
 	}
 	t := strings.TrimSpace(h[len(p):])
 	return t, t != ""
+}
+
+// --- Notification rules + alert history ------------------------------------
+
+type ruleIDInput struct {
+	ID string `path:"id" doc:"Rule UUID"`
+}
+
+type listRulesOutput struct {
+	Body struct {
+		Rules []apitypes.NotificationRule `json:"rules"`
+	}
+}
+
+func (s *Server) handleListRules(ctx context.Context, _ *struct{}) (*listRulesOutput, error) {
+	if s.Store == nil {
+		return nil, huma.Error503ServiceUnavailable("server has no store configured")
+	}
+	rs, err := s.Store.ListRules(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("list failed", err)
+	}
+	out := &listRulesOutput{}
+	out.Body.Rules = rs
+	return out, nil
+}
+
+type createRuleInput struct {
+	Body apitypes.NotificationRuleInput
+}
+type ruleOutput struct {
+	Body apitypes.NotificationRule
+}
+
+func (s *Server) handleCreateRule(ctx context.Context, in *createRuleInput) (*ruleOutput, error) {
+	u, _ := userFromContext(ctx)
+	r, err := s.Store.CreateRule(ctx, in.Body, u.Email)
+	if err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	return &ruleOutput{Body: r}, nil
+}
+
+type updateRuleInput struct {
+	ID   string `path:"id"`
+	Body apitypes.NotificationRuleInput
+}
+
+func (s *Server) handleUpdateRule(ctx context.Context, in *updateRuleInput) (*ruleOutput, error) {
+	id, err := uuid.Parse(in.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid id")
+	}
+	r, err := s.Store.UpdateRule(ctx, id, in.Body)
+	if err != nil {
+		if errors.Is(err, store.ErrRuleNotFound) {
+			return nil, huma.Error404NotFound("rule not found")
+		}
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	return &ruleOutput{Body: r}, nil
+}
+
+func (s *Server) handleDeleteRule(ctx context.Context, in *ruleIDInput) (*emptyOutput, error) {
+	id, err := uuid.Parse(in.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid id")
+	}
+	if err := s.Store.DeleteRule(ctx, id); err != nil {
+		if errors.Is(err, store.ErrRuleNotFound) {
+			return nil, huma.Error404NotFound("rule not found")
+		}
+		return nil, huma.Error500InternalServerError("delete failed", err)
+	}
+	out := &emptyOutput{}
+	out.Body.OK = true
+	return out, nil
+}
+
+type alertHistoryInput struct {
+	Since time.Time `query:"since" doc:"earliest alert timestamp; default = now-24h"`
+	Limit int       `query:"limit" doc:"max entries (1..1000); default 200"`
+}
+type alertHistoryOutput struct {
+	Body struct {
+		Alerts []apitypes.AlertHistoryEntry `json:"alerts"`
+	}
+}
+
+func (s *Server) handleAlertHistory(ctx context.Context, in *alertHistoryInput) (*alertHistoryOutput, error) {
+	if s.Store == nil {
+		return nil, huma.Error503ServiceUnavailable("server has no store configured")
+	}
+	since := in.Since
+	if since.IsZero() {
+		since = time.Now().Add(-24 * time.Hour).UTC()
+	}
+	alerts, err := s.Store.ListAlertHistory(ctx, since, in.Limit)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("query failed", err)
+	}
+	out := &alertHistoryOutput{}
+	out.Body.Alerts = alerts
+	return out, nil
 }
 
 // --- Active monitors --------------------------------------------------------
