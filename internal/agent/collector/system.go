@@ -40,7 +40,7 @@ func (s *System) Inventory(ctx context.Context, snap *apitypes.InventorySnap) er
 	snap.CPUCores = runtime.NumCPU()
 
 	if vm, err := mem.VirtualMemoryWithContext(ctx); err == nil {
-		snap.RAMTotalBytes = int64(vm.Total)
+		snap.RAMTotalBytes = int64(vm.Total) //nolint:gosec // uint64 from gopsutil/docker; bytes/packets fit in int64
 	}
 	return nil
 }
@@ -58,7 +58,7 @@ func (s *System) Collect(ctx context.Context, batch *apitypes.IngestRequest) err
 	sample := apitypes.SystemSample{
 		Time:       now,
 		CPUPerCore: perCore,
-		UptimeSec:  int64(uptime),
+		UptimeSec:  int64(uptime), //nolint:gosec // uint64 from gopsutil/docker; bytes/packets fit in int64
 	}
 	if len(pct) > 0 {
 		sample.CPUUsagePct = pct[0]
@@ -69,11 +69,11 @@ func (s *System) Collect(ctx context.Context, batch *apitypes.IngestRequest) err
 		sample.Load15 = la.Load15
 	}
 	if vm != nil {
-		sample.RAMUsedBytes = int64(vm.Used)
-		sample.RAMAvailBytes = int64(vm.Available)
+		sample.RAMUsedBytes = int64(vm.Used)       //nolint:gosec // uint64 from gopsutil/docker; bytes/packets fit in int64
+		sample.RAMAvailBytes = int64(vm.Available) //nolint:gosec // uint64 from gopsutil/docker; bytes/packets fit in int64
 	}
 	if sm != nil {
-		sample.SwapUsedBytes = int64(sm.Used)
+		sample.SwapUsedBytes = int64(sm.Used) //nolint:gosec // uint64 from gopsutil/docker; bytes/packets fit in int64
 	}
 
 	batch.System = append(batch.System, sample)

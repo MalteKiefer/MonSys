@@ -47,7 +47,7 @@ func (Disk) Inventory(ctx context.Context, snap *apitypes.InventorySnap) error {
 		usage, _ := disk.UsageWithContext(ctx, p.Mountpoint)
 		var size int64
 		if usage != nil {
-			size = int64(usage.Total)
+			size = int64(usage.Total) //nolint:gosec // uint64 from gopsutil/docker; bytes/packets fit in int64
 		}
 		snap.Disks = append(snap.Disks, apitypes.DiskInfo{
 			Device:     p.Device,
@@ -82,21 +82,21 @@ func (Disk) Collect(ctx context.Context, batch *apitypes.IngestRequest) error {
 			Time:       now,
 			Device:     p.Device,
 			Mountpoint: p.Mountpoint,
-			UsedBytes:  int64(usage.Used),
-			FreeBytes:  int64(usage.Free),
-			InodesUsed: int64(usage.InodesUsed),
-			InodesFree: int64(usage.InodesFree),
+			UsedBytes:  int64(usage.Used),       //nolint:gosec // uint64 from gopsutil/docker; bytes/packets fit in int64
+			FreeBytes:  int64(usage.Free),       //nolint:gosec // uint64 from gopsutil/docker; bytes/packets fit in int64
+			InodesUsed: int64(usage.InodesUsed), //nolint:gosec // uint64 from gopsutil/docker; bytes/packets fit in int64
+			InodesFree: int64(usage.InodesFree), //nolint:gosec // uint64 from gopsutil/docker; bytes/packets fit in int64
 		}
 
 		// IO counters are keyed by the bare device name (e.g. "sda" or "nvme0n1").
 		// gopsutil already strips the /dev/ prefix in IOCounters but not partition suffix;
 		// look up by basename of p.Device.
 		if dev, ok := io[basename(p.Device)]; ok {
-			s.ReadBytes = int64(dev.ReadBytes)
-			s.WriteBytes = int64(dev.WriteBytes)
-			s.ReadOps = int64(dev.ReadCount)
-			s.WriteOps = int64(dev.WriteCount)
-			s.IOTimeMS = int64(dev.IoTime)
+			s.ReadBytes = int64(dev.ReadBytes)   //nolint:gosec // uint64 from gopsutil/docker; bytes/packets fit in int64
+			s.WriteBytes = int64(dev.WriteBytes) //nolint:gosec // uint64 from gopsutil/docker; bytes/packets fit in int64
+			s.ReadOps = int64(dev.ReadCount)     //nolint:gosec // uint64 from gopsutil/docker; bytes/packets fit in int64
+			s.WriteOps = int64(dev.WriteCount)   //nolint:gosec // uint64 from gopsutil/docker; bytes/packets fit in int64
+			s.IOTimeMS = int64(dev.IoTime)       //nolint:gosec // uint64 from gopsutil/docker; bytes/packets fit in int64
 		}
 		batch.Disks = append(batch.Disks, s)
 	}

@@ -61,14 +61,14 @@ func (Net) Collect(ctx context.Context, batch *apitypes.IngestRequest) error {
 		batch.Nics = append(batch.Nics, apitypes.NetSample{
 			Time:    now,
 			NicName: s.Name,
-			RxBytes: int64(s.BytesRecv),
-			TxBytes: int64(s.BytesSent),
-			RxPkts:  int64(s.PacketsRecv),
-			TxPkts:  int64(s.PacketsSent),
-			RxErrs:  int64(s.Errin),
-			TxErrs:  int64(s.Errout),
-			RxDrops: int64(s.Dropin),
-			TxDrops: int64(s.Dropout),
+			RxBytes: int64(s.BytesRecv),   //nolint:gosec // uint64 from gopsutil/docker; bytes/packets fit in int64
+			TxBytes: int64(s.BytesSent),   //nolint:gosec // uint64 from gopsutil/docker; bytes/packets fit in int64
+			RxPkts:  int64(s.PacketsRecv), //nolint:gosec // uint64 from gopsutil/docker; bytes/packets fit in int64
+			TxPkts:  int64(s.PacketsSent), //nolint:gosec // uint64 from gopsutil/docker; bytes/packets fit in int64
+			RxErrs:  int64(s.Errin),       //nolint:gosec // uint64 from gopsutil/docker; bytes/packets fit in int64
+			TxErrs:  int64(s.Errout),      //nolint:gosec // uint64 from gopsutil/docker; bytes/packets fit in int64
+			RxDrops: int64(s.Dropin),      //nolint:gosec // uint64 from gopsutil/docker; bytes/packets fit in int64
+			TxDrops: int64(s.Dropout),     //nolint:gosec // uint64 from gopsutil/docker; bytes/packets fit in int64
 		})
 	}
 	return nil

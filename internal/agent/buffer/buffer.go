@@ -29,6 +29,13 @@ func New(dir string, maxBytes int64) (*Spool, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
+	// MkdirAll is a no-op on existing directories and will not tighten
+	// looser pre-existing permissions. Explicitly chmod to 0700 to close
+	// a TOCTOU window where the spool dir could have been created earlier
+	// with broader access (AUDIT-033).
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return nil, err
+	}
 	return &Spool{dir: dir, maxBytes: maxBytes}, nil
 }
 
@@ -40,6 +47,7 @@ func (s *Spool) Append(payload any) error {
 	tmp := filepath.Join(s.dir, name+".tmp")
 	final := filepath.Join(s.dir, name)
 
+	//nolint:gosec // path is agent-config-controlled, not user-tainted
 	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
@@ -76,6 +84,7 @@ func (s *Spool) Drain(fn func(raw []byte) error) error {
 	}
 	for _, e := range entries {
 		full := filepath.Join(s.dir, e.Name())
+		//nolint:gosec // path is agent-config-controlled, not user-tainted
 		raw, err := os.ReadFile(full)
 		if err != nil {
 			return err

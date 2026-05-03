@@ -88,7 +88,7 @@ func New(cfg config.Config) (*Agent, error) {
 		collectors = append(collectors, v)
 	}
 
-	id := identity.New()
+	id := identity.New(cfg.Redact)
 	inventory = append(inventory, id)
 	collectors = append(collectors, id)
 
@@ -144,7 +144,7 @@ func (a *Agent) Bootstrap(ctx context.Context, token string) error {
 }
 
 func (a *Agent) loadKey() error {
-	b, err := os.ReadFile(a.Cfg.KeyFile)
+	b, err := os.ReadFile(a.Cfg.KeyFile) //nolint:gosec // path from agent config / fixed-by-design
 	if err != nil {
 		return err
 	}
@@ -363,7 +363,7 @@ func writeKeyFile(path, content string) error {
 }
 
 func readFile(p string) string {
-	b, err := os.ReadFile(p)
+	b, err := os.ReadFile(p) //nolint:gosec // path from agent config / fixed-by-design
 	if err != nil {
 		return ""
 	}

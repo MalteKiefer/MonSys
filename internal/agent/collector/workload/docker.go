@@ -110,8 +110,8 @@ func (d *Docker) Collect(ctx context.Context, batch *apitypes.IngestRequest) err
 			Kind:            "docker",
 			ExternalID:      c.ID,
 			CPUUsagePct:     cpuPercent(s),
-			MemUsedBytes:    int64(s.MemoryStats.Usage),
-			MemLimitBytes:   int64(s.MemoryStats.Limit),
+			MemUsedBytes:    int64(s.MemoryStats.Usage), //nolint:gosec // uint64 from gopsutil/docker; bytes/packets fit in int64
+			MemLimitBytes:   int64(s.MemoryStats.Limit), //nolint:gosec // uint64 from gopsutil/docker; bytes/packets fit in int64
 			NetRxBytes:      sumRx(s.Networks),
 			NetTxBytes:      sumTx(s.Networks),
 			BlockReadBytes:  blockIO(s.BlkioStats.IOServiceBytesRecursive, "Read"),
@@ -268,7 +268,7 @@ func sumRx(m map[string]netStats) int64 {
 	for _, n := range m {
 		total += n.RxBytes
 	}
-	return int64(total)
+	return int64(total) //nolint:gosec // uint64 from gopsutil/docker; bytes/packets fit in int64
 }
 
 func sumTx(m map[string]netStats) int64 {
@@ -276,7 +276,7 @@ func sumTx(m map[string]netStats) int64 {
 	for _, n := range m {
 		total += n.TxBytes
 	}
-	return int64(total)
+	return int64(total) //nolint:gosec // uint64 from gopsutil/docker; bytes/packets fit in int64
 }
 
 func blockIO(entries []blkioEntry, op string) int64 {
@@ -286,7 +286,7 @@ func blockIO(entries []blkioEntry, op string) int64 {
 			total += e.Value
 		}
 	}
-	return int64(total)
+	return int64(total) //nolint:gosec // uint64 from gopsutil/docker; bytes/packets fit in int64
 }
 
 func firstName(names []string) string {

@@ -13,11 +13,15 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/pr0ph37/mon/internal/shared/apitypes"
 )
+
+// pinHexRe matches a 64-char lowercase hex string (sha256 digest).
+var pinHexRe = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 type Client struct {
 	BaseURL string
@@ -49,14 +53,28 @@ func WithCAFile(path string) Option {
 
 func WithPin(hexSha256 string) Option {
 	return func(c *Client) error {
-		c.pin = strings.ToLower(strings.TrimSpace(hexSha256))
-		if c.pin == "" {
+		pin := strings.ToLower(strings.TrimSpace(hexSha256))
+		if pin == "" {
 			return nil
 		}
+		// Validate the pin format: must be a 64-char lowercase hex sha256 digest.
+		if !pinHexRe.MatchString(pin) {
+			return fmt.Errorf("invalid pin: expected 64-char lowercase hex sha256, got %q", hexSha256)
+		}
+		c.pin = pin
 		tr, ok := c.HTTP.Transport.(*http.Transport)
 		if !ok {
 			tr = defaultTransport()
 		}
+		// Pin replaces chain validation entirely. Server cert sha256 must match the configured pin.
+		// InsecureSkipVerify disables Go's default chain check so the pin check is the sole authority;
+		// without this, self-signed servers fail standard chain validation BEFORE the pin check runs.
+		tr.TLSClientConfig.InsecureSkipVerify = true
+		// Disable TLS session resumption: resumed sessions skip certificate verification callbacks,
+		// allowing a previously-pinned cert's identity to persist past rotation. We require the
+		// pin check to run on every connection.
+		tr.TLSClientConfig.SessionTicketsDisabled = true
+		tr.TLSClientConfig.ClientSessionCache = nil
 		tr.TLSClientConfig.VerifyPeerCertificate = func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
 			if len(rawCerts) == 0 {
 				return errors.New("no peer certs")
@@ -90,7 +108,14 @@ func defaultTransport() *http.Transport {
 		ForceAttemptHTTP2: true,
 		MaxIdleConns:      4,
 		IdleConnTimeout:   60 * time.Second,
-		TLSClientConfig:   &tls.Config{MinVersion: tls.VersionTLS12},
+		// Disable TLS session resumption: resumed handshakes bypass VerifyPeerCertificate,
+		// which would defeat any custom verification (including pinning). Force a full
+		// handshake on every connection so cert checks always run.
+		TLSClientConfig: &tls.Config{
+			MinVersion:             tls.VersionTLS12,
+			SessionTicketsDisabled: true,
+			ClientSessionCache:     nil,
+		},
 	}
 }
 
