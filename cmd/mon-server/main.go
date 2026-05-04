@@ -16,6 +16,7 @@ import (
 
 	"github.com/pr0ph37/mon/internal/server/alerts"
 	"github.com/pr0ph37/mon/internal/server/api"
+	"github.com/pr0ph37/mon/internal/server/housekeeping"
 	"github.com/pr0ph37/mon/internal/server/ingestlog"
 	"github.com/pr0ph37/mon/internal/server/liveness"
 	"github.com/pr0ph37/mon/internal/server/probe"
@@ -141,6 +142,12 @@ func main() {
 	// 60s tick.
 	eng := alerts.New(st.Pool, lw.Out, sched.Out)
 	go eng.Run(ctx)
+
+	// Housekeeping reaper: bounds tables that don't have a Timescale
+	// retention policy (user_sessions, user_action_tokens) and the
+	// in-memory failed-login tracker.
+	reaper := housekeeping.New(st.Pool, st.FailedLoginsTracker())
+	go reaper.Run(ctx)
 
 	s := api.New(st)
 	s.LogBuffer = logBuf
