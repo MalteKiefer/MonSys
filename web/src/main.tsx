@@ -5,6 +5,11 @@ import { BrowserRouter } from "react-router-dom";
 
 import { App } from "./App";
 import "./index.css";
+import { applyTheme, resolveInitialTheme } from "./lib/theme";
+
+// Apply the persisted (or system-preferred) theme before React mounts so
+// the first paint already has the correct palette — no flash on load.
+applyTheme(resolveInitialTheme());
 
 const qc = new QueryClient({
   defaultOptions: {

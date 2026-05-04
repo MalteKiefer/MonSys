@@ -5,6 +5,10 @@ import { api, ApiError } from "../lib/api";
 import { PasswordPolicy } from "../lib/types";
 import { Card } from "./Profile";
 
+// TODO(theme): this page still uses raw `zinc-*` Tailwind classes which
+// don't follow the dark/light palette. Migrate to semantic tokens
+// (text-fg-muted, bg-panel, border-border, …) in a follow-up.
+
 export function AdminSecurity() {
   const qc = useQueryClient();
   const policy = useQuery({

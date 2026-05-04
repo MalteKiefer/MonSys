@@ -5,6 +5,10 @@ import { api, ApiError } from "../lib/api";
 import { AdminCreateUserResponse, AdminUser } from "../lib/types";
 import { Card, Input } from "./Profile";
 
+// TODO(theme): this page still uses raw `zinc-*` Tailwind classes which
+// don't follow the dark/light palette. Migrate to semantic tokens
+// (text-fg-muted, bg-panel, border-border, …) in a follow-up.
+
 type ListResponse = { users: AdminUser[] };
 
 export function AdminUsers() {
