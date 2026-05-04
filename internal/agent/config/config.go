@@ -22,6 +22,22 @@ type Config struct {
 	DockerEndpoint     string            `yaml:"docker_endpoint"`
 	Packages           PackagesConfig    `yaml:"packages"`
 	Redact             RedactConfig      `yaml:"redact"`
+	AutoUpdate         AutoUpdateConfig  `yaml:"auto_update"`
+}
+
+// AutoUpdateConfig opts an agent in or out of the timer-driven self-updater.
+// Default Enabled=true so freshly installed agents pick up patches without
+// operator intervention; locked-down fleets can flip to false in the YAML.
+type AutoUpdateConfig struct {
+	Enabled *bool `yaml:"enabled"`
+}
+
+// AutoUpdateEnabled returns true unless the operator explicitly set false.
+func (c Config) AutoUpdateEnabled() bool {
+	if c.AutoUpdate.Enabled == nil {
+		return true
+	}
+	return *c.AutoUpdate.Enabled
 }
 
 // RedactConfig controls agent-side PII filtering applied before payloads ever

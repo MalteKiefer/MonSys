@@ -24,7 +24,18 @@ import (
 // SafePath is a fixed lookup path for resolving binaries. We do not inherit the
 // caller's $PATH because the agent runs as a long-lived service and may have a
 // $PATH set by an operator/systemd unit that we don't want to trust.
-var SafePath = []string{"/usr/bin", "/bin", "/usr/sbin", "/sbin"}
+// /usr/local/{bin,sbin} are included because operator-installed tools like
+// cscli (CrowdSec curl-based installer) land there on many distros; without
+// them the crowdsec collector silently degrades to "not active" on hosts
+// where the daemon is in fact running.
+var SafePath = []string{
+	"/usr/local/sbin",
+	"/usr/local/bin",
+	"/usr/sbin",
+	"/usr/bin",
+	"/sbin",
+	"/bin",
+}
 
 // MaxOutputBytes caps how much stdout we keep. Tools that exceed it return a
 // truncation error so the caller can decide how to handle it.

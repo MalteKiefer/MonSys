@@ -42,6 +42,10 @@ func main() {
 	}
 
 	if *selfUpdate {
+		if !cfg.AutoUpdateEnabled() {
+			slog.Info("self-update: disabled in config (auto_update.enabled=false); exiting")
+			return
+		}
 		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 		defer stop()
 		res, err := updater.Run(ctx, updater.Options{
