@@ -10,7 +10,7 @@ import {
   Trash2,
   XCircle,
 } from "lucide-react";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, KeyboardEvent, useMemo, useRef, useState } from "react";
 
 import {
   Button,
@@ -65,9 +65,21 @@ export function AdminNotifications() {
         <Tabs tab={tab} onChange={setTab} visible={visibleTabs} />
       </header>
 
-      {tab === "channels" && <ChannelsPanel isAdmin={!!isAdmin} myID={user?.id ?? ""} />}
-      {isAdmin && tab === "rules" && <RulesPanel />}
-      {tab === "alerts" && <AlertsPanel />}
+      {tab === "channels" && (
+        <div role="tabpanel" id="panel-channels" aria-labelledby="tab-channels">
+          <ChannelsPanel isAdmin={!!isAdmin} myID={user?.id ?? ""} />
+        </div>
+      )}
+      {isAdmin && tab === "rules" && (
+        <div role="tabpanel" id="panel-rules" aria-labelledby="tab-rules">
+          <RulesPanel />
+        </div>
+      )}
+      {tab === "alerts" && (
+        <div role="tabpanel" id="panel-alerts" aria-labelledby="tab-alerts">
+          <AlertsPanel />
+        </div>
+      )}
     </div>
   );
 }
@@ -79,15 +91,40 @@ function Tabs({ tab, onChange, visible }: { tab: Tab; onChange: (t: Tab) => void
     { key: "alerts", label: "Alerts", icon: History },
   ];
   const items = allItems.filter((i) => visible.includes(i.key));
+  const tablistRef = useRef<HTMLDivElement | null>(null);
+
+  function onKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    const idx = items.findIndex((i) => i.key === tab);
+    if (idx < 0 || items.length === 0) return;
+    const delta = e.key === "ArrowRight" ? 1 : -1;
+    const next = items[(idx + delta + items.length) % items.length];
+    onChange(next.key);
+    const root = tablistRef.current;
+    if (root) {
+      const btn = root.querySelector<HTMLButtonElement>(`#tab-${next.key}`);
+      btn?.focus();
+    }
+  }
+
   return (
-    <div role="tablist" className="inline-flex rounded-md border border-border bg-panel p-0.5">
+    <div
+      ref={tablistRef}
+      role="tablist"
+      onKeyDown={onKeyDown}
+      className="inline-flex rounded-md border border-border bg-panel p-0.5"
+    >
       {items.map(({ key, label, icon: Icon }) => {
         const active = tab === key;
         return (
           <button
             key={key}
+            id={`tab-${key}`}
             role="tab"
             aria-selected={active}
+            aria-controls={`panel-${key}`}
+            tabIndex={active ? 0 : -1}
             onClick={() => onChange(key)}
             className={`inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors duration-150 ${
               active ? "bg-panel-2 text-fg shadow-panel" : "text-fg-subtle hover:text-fg"
@@ -499,6 +536,7 @@ function RulesPanel() {
     <div className="space-y-5">
       {(creating || editing) && (
         <RuleForm
+          key={editing?.id ?? "new"}
           initial={editing}
           channels={channels.data?.channels ?? []}
           onCancel={() => {
