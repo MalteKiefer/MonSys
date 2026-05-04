@@ -499,6 +499,17 @@ type ConsumeResetTokenRequest struct {
 	NewPassword string `json:"new_password"`
 }
 
+// AuditEntry is a row from the audit_log table, surfaced via
+// GET /v1/admin/audit. Detail is the marshaled JSON detail blob (free-form).
+type AuditEntry struct {
+	ID     int64     `json:"id"`
+	Actor  string    `json:"actor"`
+	Action string    `json:"action"`
+	Target string    `json:"target"`
+	Detail string    `json:"detail"`
+	At     time.Time `json:"at"`
+}
+
 // Public read APIs (used by future UI)
 
 // Host detail (single-host view)

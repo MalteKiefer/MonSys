@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, Bell, ChevronDown, FileJson, FileText, LayoutDashboard, LogOut, Mail, Network, Package, Radio, Server, Settings, ShieldCheck, Sliders, UserCog, Users } from "lucide-react";
+import { Activity, Bell, ChevronDown, ClipboardList, FileJson, FileText, LayoutDashboard, LogOut, Mail, Network, Package, Radio, Server, Settings, ShieldCheck, Sliders, UserCog, Users } from "lucide-react";
 import { Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 
 import { RequireAdmin } from "./components/RequireAdmin";
 import { AdminAgentConfig } from "./pages/AdminAgentConfig";
+import { AdminAudit } from "./pages/AdminAudit";
 import { AdminGroups } from "./pages/AdminGroups";
 import { AdminIngests } from "./pages/AdminIngests";
 import { AdminLogs } from "./pages/AdminLogs";
@@ -75,6 +76,7 @@ export function App() {
           <Route path="/admin/mail" element={<RequireAdmin><AdminMail /></RequireAdmin>} />
           <Route path="/admin/users" element={<RequireAdmin><AdminUsers /></RequireAdmin>} />
           <Route path="/admin/security" element={<RequireAdmin><AdminSecurity /></RequireAdmin>} />
+          <Route path="/admin/audit" element={<RequireAdmin><AdminAudit /></RequireAdmin>} />
           <Route path="/login" element={<Navigate to="/" replace />} />
           <Route path="/reset" element={<Reset />} />
           <Route path="*" element={<Navigate to="/" replace />} />
@@ -145,6 +147,7 @@ const ADMIN_ITEMS = [
   { to: "/admin/logs", label: "Server logs", icon: FileText },
   { to: "/admin/ingests", label: "Agent ingests", icon: FileJson },
   { to: "/admin/security", label: "Security", icon: ShieldCheck },
+  { to: "/admin/audit", label: "Audit log", icon: ClipboardList },
 ];
 
 function AdminMenu() {
