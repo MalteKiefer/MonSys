@@ -38,6 +38,14 @@ export type CurrentUser = {
   totp_active: boolean;
 };
 
+// Server-wide auth/notification readiness flags surfaced to any logged-in
+// user (mirrors apitypes.AuthConfig). Used by non-admins to gate UI hints
+// without exposing admin-only settings.
+export type AuthConfig = {
+  sso_enabled: boolean;
+  smtp_configured: boolean;
+};
+
 export type LoginResponse = {
   needs_totp: boolean;
   challenge_token?: string;

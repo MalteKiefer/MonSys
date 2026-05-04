@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/pr0ph37/mon/internal/shared/apitypes"
 )
@@ -131,17 +132,47 @@ func (s *Store) DeleteRule(ctx context.Context, id uuid.UUID) error {
 }
 
 // ListAlertHistory returns alerts since the given timestamp.
-func (s *Store) ListAlertHistory(ctx context.Context, since time.Time, limit int) ([]apitypes.AlertHistoryEntry, error) {
+//
+// restrictedToChannels limits the result to alerts where at least one of the
+// caller's channel UUIDs appears in delivered_to (Postgres array overlap).
+// Pass nil for the unfiltered admin view; an empty (non-nil) slice means
+// "the caller owns no channels" and yields zero rows. Channel UUIDs are
+// stringified — alert_history.delivered_to stores them as text.
+func (s *Store) ListAlertHistory(ctx context.Context, since time.Time, limit int, restrictedToChannels []uuid.UUID) ([]apitypes.AlertHistoryEntry, error) {
 	if limit <= 0 || limit > 1000 {
 		limit = 200
 	}
-	rows, err := s.Pool.Query(ctx, `
-		SELECT id, at, rule_id, COALESCE(rule_name, ''), severity, subject, body,
-		       dedup_key, COALESCE(delivered_to, '{}'), delivery_errors
-		FROM alert_history
-		WHERE at >= $1
-		ORDER BY at DESC
-		LIMIT $2`, since, limit)
+	// Caller has no channels at all → short-circuit; the SQL would otherwise
+	// need an empty array literal which pgx struggles to type-infer.
+	if restrictedToChannels != nil && len(restrictedToChannels) == 0 {
+		return []apitypes.AlertHistoryEntry{}, nil
+	}
+	var (
+		rows pgx.Rows
+		err  error
+	)
+	if restrictedToChannels == nil {
+		rows, err = s.Pool.Query(ctx, `
+			SELECT id, at, rule_id, COALESCE(rule_name, ''), severity, subject, body,
+			       dedup_key, COALESCE(delivered_to, '{}'), delivery_errors
+			FROM alert_history
+			WHERE at >= $1
+			ORDER BY at DESC
+			LIMIT $2`, since, limit)
+	} else {
+		channelStrs := make([]string, len(restrictedToChannels))
+		for i, c := range restrictedToChannels {
+			channelStrs[i] = c.String()
+		}
+		rows, err = s.Pool.Query(ctx, `
+			SELECT id, at, rule_id, COALESCE(rule_name, ''), severity, subject, body,
+			       dedup_key, COALESCE(delivered_to, '{}'), delivery_errors
+			FROM alert_history
+			WHERE at >= $1
+			  AND delivered_to && $3::text[]
+			ORDER BY at DESC
+			LIMIT $2`, since, limit, channelStrs)
+	}
 	if err != nil {
 		return nil, err
 	}
