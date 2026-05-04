@@ -106,6 +106,7 @@ export type NicRow = {
   name: string;
   mac: string;
   speed_mbps: number;
+  addrs: string[];
   last_seen_at: string;
   latest_time?: string;
   rx_bytes: number;

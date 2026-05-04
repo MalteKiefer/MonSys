@@ -167,7 +167,9 @@ func (s *Store) hostDisks(ctx context.Context, id uuid.UUID) ([]apitypes.DiskRow
 
 func (s *Store) hostNics(ctx context.Context, id uuid.UUID) ([]apitypes.NicRow, error) {
 	rows, err := s.Pool.Query(ctx, `
-		SELECT n.id, n.name, COALESCE(n.mac,''), COALESCE(n.speed_mbps,0), n.last_seen_at,
+		SELECT n.id, n.name, COALESCE(n.mac,''), COALESCE(n.speed_mbps,0),
+		       COALESCE(n.addrs, '{}'::text[]),
+		       n.last_seen_at,
 		       m.time, COALESCE(m.rx_bytes,0), COALESCE(m.tx_bytes,0)
 		FROM nics n
 		LEFT JOIN LATERAL (
@@ -186,7 +188,7 @@ func (s *Store) hostNics(ctx context.Context, id uuid.UUID) ([]apitypes.NicRow, 
 	for rows.Next() {
 		var r apitypes.NicRow
 		var idVal uuid.UUID
-		if err := rows.Scan(&idVal, &r.Name, &r.MAC, &r.SpeedMbps, &r.LastSeenAt,
+		if err := rows.Scan(&idVal, &r.Name, &r.MAC, &r.SpeedMbps, &r.Addrs, &r.LastSeenAt,
 			&r.LatestTime, &r.RxBytes, &r.TxBytes); err != nil {
 			return nil, err
 		}

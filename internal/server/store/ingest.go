@@ -200,14 +200,19 @@ func saveInventoryTx(ctx context.Context, tx pgx.Tx, hostID uuid.UUID, snap apit
 		if n.Name == "" {
 			continue
 		}
+		addrs := n.Addrs
+		if addrs == nil {
+			addrs = []string{}
+		}
 		_, err := tx.Exec(ctx, `
-			INSERT INTO nics (host_id, name, mac, speed_mbps)
-			VALUES ($1,$2,$3,$4)
+			INSERT INTO nics (host_id, name, mac, speed_mbps, addrs)
+			VALUES ($1,$2,$3,$4,$5)
 			ON CONFLICT (host_id, name) DO UPDATE SET
 				mac          = EXCLUDED.mac,
 				speed_mbps   = EXCLUDED.speed_mbps,
+				addrs        = EXCLUDED.addrs,
 				last_seen_at = now()`,
-			hostID, n.Name, n.MAC, n.SpeedMbps)
+			hostID, n.Name, n.MAC, n.SpeedMbps, addrs)
 		if err != nil {
 			return fmt.Errorf("nics upsert: %w", err)
 		}

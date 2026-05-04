@@ -40,9 +40,17 @@ func (Net) Inventory(ctx context.Context, snap *apitypes.InventorySnap) error {
 		if skipNic(ifc.Name) {
 			continue
 		}
+		addrs := make([]string, 0, len(ifc.Addrs))
+		for _, a := range ifc.Addrs {
+			if a.Addr == "" {
+				continue
+			}
+			addrs = append(addrs, a.Addr)
+		}
 		snap.Nics = append(snap.Nics, apitypes.NicInfo{
-			Name: ifc.Name,
-			MAC:  ifc.HardwareAddr,
+			Name:  ifc.Name,
+			MAC:   ifc.HardwareAddr,
+			Addrs: addrs,
 		})
 	}
 	return nil

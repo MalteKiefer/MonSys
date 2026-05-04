@@ -616,18 +616,37 @@ function NicsTable({ rows }: { rows: HostDetailT["nics"] }) {
   return (
     <Table>
       <THead>
-        <tr><TH>Name</TH><TH>MAC</TH><TH>Speed</TH><TH>RX total</TH><TH>TX total</TH></tr>
+        <tr><TH>Name</TH><TH>MAC</TH><TH>Addresses</TH><TH>Speed</TH><TH>RX total</TH><TH>TX total</TH></tr>
       </THead>
       <TBody>
-        {rows.map((n) => (
-          <tr key={n.id} className="hover:bg-panel-2">
-            <TD className="font-mono text-xs">{n.name}</TD>
-            <TD className="font-mono text-xs text-fg-muted">{n.mac || "—"}</TD>
-            <TD className="text-fg-muted">{n.speed_mbps ? `${n.speed_mbps} Mb/s` : "—"}</TD>
-            <TD className="tabular-nums">{formatBytes(n.rx_bytes)}</TD>
-            <TD className="tabular-nums">{formatBytes(n.tx_bytes)}</TD>
-          </tr>
-        ))}
+        {rows.map((n) => {
+          const addrs = (n.addrs ?? []).filter(Boolean);
+          const v4 = addrs.filter((a) => !a.includes(":"));
+          const v6 = addrs.filter((a) => a.includes(":"));
+          return (
+            <tr key={n.id} className="hover:bg-panel-2 align-top">
+              <TD className="font-mono text-xs">{n.name}</TD>
+              <TD className="font-mono text-xs text-fg-muted">{n.mac || "—"}</TD>
+              <TD className="font-mono text-xs">
+                {addrs.length === 0 ? (
+                  <span className="text-fg-subtle">—</span>
+                ) : (
+                  <div className="space-y-0.5">
+                    {v4.map((a) => (
+                      <div key={a} title="IPv4">{a}</div>
+                    ))}
+                    {v6.map((a) => (
+                      <div key={a} className="text-fg-muted" title="IPv6">{a}</div>
+                    ))}
+                  </div>
+                )}
+              </TD>
+              <TD className="text-fg-muted">{n.speed_mbps ? `${n.speed_mbps} Mb/s` : "—"}</TD>
+              <TD className="tabular-nums">{formatBytes(n.rx_bytes)}</TD>
+              <TD className="tabular-nums">{formatBytes(n.tx_bytes)}</TD>
+            </tr>
+          );
+        })}
       </TBody>
     </Table>
   );

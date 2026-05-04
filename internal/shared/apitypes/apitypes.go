@@ -136,9 +136,10 @@ type DiskInfo struct {
 }
 
 type NicInfo struct {
-	Name      string `json:"name"`
-	MAC       string `json:"mac"`
-	SpeedMbps int    `json:"speed_mbps"`
+	Name      string   `json:"name"`
+	MAC       string   `json:"mac"`
+	SpeedMbps int      `json:"speed_mbps"`
+	Addrs     []string `json:"addrs,omitempty"     doc:"IPv4 + IPv6 addresses with prefix length, e.g. 10.0.0.5/24, fe80::1/64"`
 }
 
 type WorkloadInfo struct {
@@ -576,6 +577,7 @@ type NicRow struct {
 	Name       string     `json:"name"`
 	MAC        string     `json:"mac"`
 	SpeedMbps  int        `json:"speed_mbps"`
+	Addrs      []string   `json:"addrs"`
 	LastSeenAt time.Time  `json:"last_seen_at"`
 	LatestTime *time.Time `json:"latest_time,omitempty"`
 	RxBytes    int64      `json:"rx_bytes"`
