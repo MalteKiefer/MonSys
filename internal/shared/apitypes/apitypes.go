@@ -383,6 +383,30 @@ type SmtpTestRequest struct {
 	To string `json:"to" minLength:"3" maxLength:"255" doc:"Recipient address for the test mail"`
 }
 
+// NotificationSettings is the admin-managed singleton describing global
+// outbound-alert behavior. Currently it only carries the quiet-hour window:
+// when active, the alerts engine records the alert in alert_history (audit
+// trail intact) but emits zero channel deliveries with a synthetic
+// {"_quiet_hours":"suppressed"} marker.
+type NotificationSettings struct {
+	QuietEnabled bool      `json:"quiet_enabled"`
+	QuietStart   string    `json:"quiet_start" doc:"HH:MM, 24h, in QuietTZ" example:"22:00"`
+	QuietEnd     string    `json:"quiet_end"   doc:"HH:MM, 24h, in QuietTZ" example:"06:00"`
+	QuietDays    []int     `json:"quiet_days"  doc:"0=Sun..6=Sat. Empty array means no day matches; default = every day"`
+	QuietTZ      string    `json:"quiet_tz"    doc:"IANA name, e.g. UTC, Europe/Berlin" example:"UTC"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	UpdatedBy    string    `json:"updated_by"`
+}
+
+// NotificationSettingsInput is the admin-only PUT payload.
+type NotificationSettingsInput struct {
+	QuietEnabled bool   `json:"quiet_enabled"`
+	QuietStart   string `json:"quiet_start" pattern:"^([01]?[0-9]|2[0-3]):[0-5][0-9]$" example:"22:00"`
+	QuietEnd     string `json:"quiet_end"   pattern:"^([01]?[0-9]|2[0-3]):[0-5][0-9]$" example:"06:00"`
+	QuietDays    []int  `json:"quiet_days"  doc:"0=Sun..6=Sat. Each entry must be in 0..6"`
+	QuietTZ      string `json:"quiet_tz"    minLength:"1" maxLength:"64" example:"UTC"`
+}
+
 type NotificationTestRequest struct {
 	Subject string `json:"subject,omitempty" doc:"Optional override; default 'mon test'"`
 	Body    string `json:"body,omitempty"    doc:"Optional override; default identifies channel"`
