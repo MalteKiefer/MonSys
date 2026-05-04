@@ -10,6 +10,7 @@ name: mon
 services:
   timescaledb:
     # digest-pinned for supply-chain integrity; refresh via dependabot or manual review
+    # Resolved version unknown — pin via digest. Run 'SELECT extversion FROM pg_extension WHERE extname=''timescaledb'';' on a running container to confirm. Compatible with add_retention_policy(if_not_exists=>TRUE) since TS 2.3+.
     image: timescale/timescaledb:latest-pg16@sha256:15e00162766bd6f0019afaad4e57b850dcf882de5909bd7633899eebd4c03d57
     restart: unless-stopped
     environment:
