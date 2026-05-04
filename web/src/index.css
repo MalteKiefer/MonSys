@@ -30,6 +30,11 @@
     --color-offline: 113 113 122;
     --color-critical: 220 38 38;
     --color-info: 37 99 235;
+
+    /* Sticky-offset for bars below the header (Tabs etc.). Single source of
+       truth for the header's effective height — adjust here, all dependents
+       follow. */
+    --header-h: 49px;
   }
 
   /* Dark palette — exact preservation of the previous hard-dark values so
