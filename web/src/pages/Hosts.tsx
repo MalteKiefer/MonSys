@@ -1,14 +1,35 @@
 import { useQuery } from "@tanstack/react-query";
 import { Server } from "lucide-react";
+import { KeyboardEvent, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { DistroIcon } from "../components/icons/DistroIcon";
 import { ServiceBadges } from "../components/icons/ServiceIcon";
-import { Panel, SectionHeading, StatusPill, TBody, TD, TH, THead, Table } from "../components/ui";
+import {
+  Field,
+  Panel,
+  SectionHeading,
+  StatusPill,
+  TBody,
+  TD,
+  TH,
+  THead,
+  Table,
+  TextInput,
+} from "../components/ui";
 import { api } from "../lib/api";
 import { Host } from "../lib/types";
 
 type HostsResponse = { hosts: Host[] };
+
+type StatusFilter = "all" | "online" | "stale" | "offline";
+
+const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "online", label: "Online" },
+  { key: "stale", label: "Stale" },
+  { key: "offline", label: "Offline" },
+];
 
 export function Hosts() {
   const navigate = useNavigate();
@@ -18,20 +39,88 @@ export function Hosts() {
     refetchInterval: 15_000,
   });
 
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+
+  const hosts = data?.hosts ?? [];
+
+  const filtered = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return hosts.filter((h) => {
+      if (statusFilter !== "all" && h.status !== statusFilter) return false;
+      if (needle === "") return true;
+      if (h.hostname.toLowerCase().includes(needle)) return true;
+      if (h.tags.some((t) => t.toLowerCase().includes(needle))) return true;
+      return false;
+    });
+  }, [hosts, search, statusFilter]);
+
   if (isLoading) {
     return <p className="p-6 text-sm text-fg-muted">Loading hosts…</p>;
   }
   if (error) {
     return <p className="p-6 text-sm text-fail">{(error as Error).message}</p>;
   }
-  const hosts = data?.hosts ?? [];
+
+  const onRowKeyDown = (e: KeyboardEvent<HTMLTableRowElement>, id: string) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      navigate(`/hosts/${id}`);
+    }
+  };
 
   return (
     <div className="mx-auto max-w-7xl space-y-4 p-6">
       <div className="flex items-center justify-between">
         <SectionHeading>Hosts</SectionHeading>
-        <p className="text-xs text-fg-subtle tabular-nums">{hosts.length} known</p>
+        <p className="text-xs text-fg-subtle tabular-nums">
+          {filtered.length === hosts.length
+            ? `${hosts.length} known`
+            : `${filtered.length} of ${hosts.length}`}
+        </p>
       </div>
+
+      {hosts.length > 0 && (
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
+          <div className="flex-1">
+            <Field label="Search" hint="Matches hostname or tag (case-insensitive).">
+              <TextInput
+                type="search"
+                placeholder="hostname or #tag…"
+                value={search}
+                onChange={(e) => setSearch(e.currentTarget.value)}
+                aria-label="Search hosts"
+              />
+            </Field>
+          </div>
+          <div>
+            <Field label="Status">
+              <div
+                role="group"
+                aria-label="Filter by status"
+                className="inline-flex rounded-md border border-border bg-panel p-0.5"
+              >
+                {STATUS_FILTERS.map(({ key, label }) => {
+                  const active = key === statusFilter;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => setStatusFilter(key)}
+                      className={`rounded px-2.5 py-1 text-xs font-medium transition-colors duration-150 ${
+                        active ? "bg-panel-2 text-fg shadow-panel" : "text-fg-subtle hover:text-fg"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            </Field>
+          </div>
+        </div>
+      )}
 
       <Panel>
         {hosts.length === 0 ? (
@@ -42,6 +131,11 @@ export function Hosts() {
               Issue a bootstrap token via <code className="font-mono text-fg-muted">mon-server --new-token</code>
               {" "}then run mon-agent.
             </p>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="flex flex-col items-center gap-3 px-6 py-12 text-center">
+            <Server className="h-10 w-10 text-fg-subtle" />
+            <p className="text-sm text-fg-muted">No hosts match your filter.</p>
           </div>
         ) : (
           <Table>
@@ -57,11 +151,15 @@ export function Hosts() {
               </tr>
             </THead>
             <TBody>
-              {hosts.map((h) => (
+              {filtered.map((h) => (
                 <tr
                   key={h.id}
-                  className="cursor-pointer transition-colors duration-100 hover:bg-panel-2"
+                  role="link"
+                  tabIndex={0}
+                  aria-label={`Open host ${h.hostname}`}
+                  className="cursor-pointer transition-colors duration-100 hover:bg-panel-2 focus:outline-none focus-visible:bg-panel-2 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/50"
                   onClick={() => navigate(`/hosts/${h.id}`)}
+                  onKeyDown={(e) => onRowKeyDown(e, h.id)}
                 >
                   <TD><StatusPill status={h.status} /></TD>
                   <TD>
