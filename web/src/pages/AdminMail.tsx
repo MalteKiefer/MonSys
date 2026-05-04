@@ -18,6 +18,14 @@ import type { SmtpSettings, SmtpSettingsInput } from "../lib/types";
 
 type Msg = { kind: "ok" | "err"; text: string } | null;
 
+type EncryptionMode = "none" | "starttls" | "tls";
+
+function deriveEncryption(starttls: boolean, tls: boolean): EncryptionMode {
+  if (tls) return "tls";
+  if (starttls) return "starttls";
+  return "none";
+}
+
 export function AdminMail() {
   const qc = useQueryClient();
   const myEmail = useAuth((s) => s.user?.email ?? "");
@@ -61,18 +69,21 @@ function SettingsForm({ initial, onSaved }: { initial: SmtpSettings; onSaved: ()
   const [password, setPassword] = useState("");
   const [clearPassword, setClearPassword] = useState(false);
   const [fromAddress, setFromAddress] = useState(initial.from_address);
-  const [starttls, setStarttls] = useState(initial.starttls);
-  const [tls, setTls] = useState(initial.tls);
+  const [encryption, setEncryption] = useState<EncryptionMode>(
+    deriveEncryption(initial.starttls, initial.tls),
+  );
   const [insecureSkipVerify, setInsecureSkipVerify] = useState(initial.insecure_skip_verify);
   const [msg, setMsg] = useState<Msg>(null);
+
+  const starttls = encryption === "starttls";
+  const tls = encryption === "tls";
 
   useEffect(() => {
     setHost(initial.host);
     setPort(initial.port || 587);
     setUsername(initial.username);
     setFromAddress(initial.from_address);
-    setStarttls(initial.starttls);
-    setTls(initial.tls);
+    setEncryption(deriveEncryption(initial.starttls, initial.tls));
     setInsecureSkipVerify(initial.insecure_skip_verify);
   }, [initial]);
 
@@ -106,6 +117,12 @@ function SettingsForm({ initial, onSaved }: { initial: SmtpSettings; onSaved: ()
 
   function submit(e: FormEvent) {
     e.preventDefault();
+    if (clearPassword && password === "") {
+      const ok = window.confirm(
+        "Wipe the stored SMTP password? Outbound mail will fail until you set a new one.",
+      );
+      if (!ok) return;
+    }
     setMsg(null);
     save.mutate();
   }
@@ -185,17 +202,42 @@ function SettingsForm({ initial, onSaved }: { initial: SmtpSettings; onSaved: ()
           <fieldset className="space-y-2 rounded-md border border-border p-3 text-sm">
             <legend className="px-1 text-xs uppercase tracking-wide text-fg-muted">Encryption</legend>
             <label className="flex items-center gap-2">
-              <input type="checkbox" checked={starttls} onChange={(e) => setStarttls(e.target.checked)} />
-              STARTTLS (port 587 default)
-            </label>
-            <label className="flex items-center gap-2">
-              <input type="checkbox" checked={tls} onChange={(e) => setTls(e.target.checked)} />
-              Implicit TLS (port 465)
+              <input
+                type="radio"
+                name="encryption"
+                value="none"
+                checked={encryption === "none"}
+                onChange={() => setEncryption("none")}
+              />
+              None
             </label>
             <label className="flex items-center gap-2">
               <input
+                type="radio"
+                name="encryption"
+                value="starttls"
+                checked={encryption === "starttls"}
+                onChange={() => setEncryption("starttls")}
+              />
+              STARTTLS (port 587)
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                name="encryption"
+                value="tls"
+                checked={encryption === "tls"}
+                onChange={() => setEncryption("tls")}
+              />
+              Implicit TLS (port 465)
+            </label>
+            <label
+              className={`flex items-center gap-2 ${encryption === "none" ? "opacity-50" : ""}`}
+            >
+              <input
                 type="checkbox"
                 checked={insecureSkipVerify}
+                disabled={encryption === "none"}
                 onChange={(e) => setInsecureSkipVerify(e.target.checked)}
               />
               <span>
@@ -203,6 +245,9 @@ function SettingsForm({ initial, onSaved }: { initial: SmtpSettings; onSaved: ()
                 <span className="text-fail">(dangerous; only for self-signed dev mailservers)</span>
               </span>
             </label>
+            <p className="px-1 text-xs text-fg-muted">
+              Only relevant for STARTTLS or Implicit TLS modes.
+            </p>
           </fieldset>
 
           {msg &&
