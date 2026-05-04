@@ -47,6 +47,7 @@ export function AdminAgentConfig() {
 
   const [editing, setEditing] = useState<AgentConfigEntry | null>(null);
   const [creating, setCreating] = useState(false);
+  const [selectedHostID, setSelectedHostID] = useState<string>("");
   const [previewHost, setPreviewHost] = useState<Host | null>(null);
 
   return (
@@ -87,11 +88,8 @@ export function AdminAgentConfig() {
           </div>
           <div className="flex items-center gap-2">
             <select
-              onChange={(e) => {
-                const h = (hosts.data?.hosts ?? []).find((x) => x.id === e.target.value);
-                if (h) setPreviewHost(h);
-              }}
-              defaultValue=""
+              value={selectedHostID}
+              onChange={(e) => setSelectedHostID(e.target.value)}
               className="rounded-md border border-border bg-panel px-2 py-1 text-xs"
             >
               <option value="">Preview merged config…</option>
@@ -99,6 +97,15 @@ export function AdminAgentConfig() {
                 <option key={h.id} value={h.id}>{h.hostname}</option>
               ))}
             </select>
+            <Button
+              disabled={!selectedHostID}
+              onClick={() => {
+                const h = (hosts.data?.hosts ?? []).find((x) => x.id === selectedHostID);
+                if (h) setPreviewHost(h);
+              }}
+            >
+              <Eye className="h-3.5 w-3.5" /> Preview
+            </Button>
             <Button variant="primary" onClick={() => setCreating(true)}>
               <Plus className="h-3.5 w-3.5" /> New
             </Button>
