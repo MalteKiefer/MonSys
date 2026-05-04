@@ -1,26 +1,35 @@
 /** @type {import('tailwindcss').Config} */
+
+// Color tokens are defined as CSS custom properties in src/index.css under
+// :root (light) and .dark (dark). Each variable holds an RGB triplet (e.g.
+// "9 9 11") so Tailwind's `<alpha-value>` placeholder still works for
+// modifiers like `bg-ok/10`. Toggling the `dark` class on <html> swaps every
+// token in one paint.
+const withAlpha = (cssVar) => `rgb(var(${cssVar}) / <alpha-value>)`;
+
 export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
+  darkMode: "class",
   theme: {
     extend: {
       colors: {
-        bg: "#09090b",
-        panel: "#18181b",
-        "panel-2": "#1c1c1f",
-        border: "#27272a",
-        "border-strong": "#3f3f46",
-        fg: "#fafafa",
-        "fg-muted": "#a1a1aa",
-        "fg-subtle": "#71717a",
-        accent: "#10b981",
-        "accent-hover": "#34d399",
-        ok: "#10b981",
-        warn: "#f59e0b",
-        fail: "#ef4444",
-        stale: "#f59e0b",
-        offline: "#71717a",
-        critical: "#ef4444",
-        info: "#60a5fa",
+        bg: withAlpha("--color-bg"),
+        panel: withAlpha("--color-panel"),
+        "panel-2": withAlpha("--color-panel-2"),
+        border: withAlpha("--color-border"),
+        "border-strong": withAlpha("--color-border-strong"),
+        fg: withAlpha("--color-fg"),
+        "fg-muted": withAlpha("--color-fg-muted"),
+        "fg-subtle": withAlpha("--color-fg-subtle"),
+        accent: withAlpha("--color-accent"),
+        "accent-hover": withAlpha("--color-accent-hover"),
+        ok: withAlpha("--color-ok"),
+        warn: withAlpha("--color-warn"),
+        fail: withAlpha("--color-fail"),
+        stale: withAlpha("--color-stale"),
+        offline: withAlpha("--color-offline"),
+        critical: withAlpha("--color-critical"),
+        info: withAlpha("--color-info"),
       },
       fontFamily: {
         sans: ['"Inter Variable"', "ui-sans-serif", "system-ui", "sans-serif"],
