@@ -34,6 +34,8 @@ import {
   AlertHistoryEntry,
   AuthConfig,
   ChannelType,
+  Host,
+  HostGroup,
   NotificationChannel,
   NotificationChannelInput,
   NotificationRule,
@@ -650,6 +652,19 @@ function RuleForm({
   onCancel: () => void;
   onSaved: () => void;
 }) {
+  const tagsQuery = useQuery({
+    queryKey: ["tags"],
+    queryFn: () => api<{ tags: Array<{ tag: string; count: number }> }>("/v1/tags"),
+  });
+  const groupsQuery = useQuery({
+    queryKey: ["groups"],
+    queryFn: () => api<{ groups: HostGroup[] }>("/v1/groups"),
+  });
+  const hostsQuery = useQuery({
+    queryKey: ["hosts"],
+    queryFn: () => api<{ hosts: Host[] }>("/v1/hosts"),
+  });
+
   const [name, setName] = useState(initial?.name ?? "");
   const [enabled, setEnabled] = useState(initial?.enabled ?? true);
   const [conditionType, setConditionType] = useState<NotificationRule["condition_type"]>(
@@ -657,6 +672,9 @@ function RuleForm({
   );
   const [severity, setSeverity] = useState<NotificationRule["severity"]>(initial?.severity ?? "warning");
   const [throttleSec, setThrottleSec] = useState(initial?.throttle_sec ?? 300);
+  const [tagsRaw, setTagsRaw] = useState((initial?.target_tags ?? []).join(", "));
+  const [groupIDs, setGroupIDs] = useState<string[]>(initial?.target_group_ids ?? []);
+  const [hostIDs, setHostIDs] = useState<string[]>(initial?.target_host_ids ?? []);
   const [paramsRaw, setParamsRaw] = useState(
     JSON.stringify(initial?.condition_params ?? {}, null, 2),
   );
@@ -686,6 +704,10 @@ function RuleForm({
       if (channelIDs.length === 0) {
         throw new Error("Pick at least one channel");
       }
+      const tagList = tagsRaw
+        .split(",")
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean);
       const body: NotificationRuleInput = {
         name,
         enabled,
@@ -694,6 +716,9 @@ function RuleForm({
         channel_ids: channelIDs,
         severity,
         throttle_sec: throttleSec,
+        target_host_ids: hostIDs,
+        target_tags: tagList,
+        target_group_ids: groupIDs,
       };
       if (initial) {
         return api(`/v1/notifications/rules/${initial.id}`, {
@@ -804,6 +829,67 @@ function RuleForm({
                 On
               </label>
             </Field>
+          </div>
+
+          <div className="rounded-md border border-border bg-panel-2/40 p-3">
+            <p className="mb-3 text-xs text-fg-subtle">
+              <strong className="text-fg-muted">Targets.</strong> Empty selectors = applies to every host.
+              Otherwise the rule fires when a host matches <em>any</em> selected host, tag, or group.
+            </p>
+
+            <Field label="Apply to hosts (Ctrl/⌘ to multi-select)">
+              <select
+                multiple
+                size={Math.min(8, Math.max(3, hostsQuery.data?.hosts.length ?? 3))}
+                value={hostIDs}
+                onChange={(e) =>
+                  setHostIDs(Array.from(e.target.selectedOptions).map((o) => o.value))
+                }
+                className="w-full rounded-md border border-border bg-panel px-3 py-2 text-sm"
+              >
+                {(hostsQuery.data?.hosts ?? []).map((h) => (
+                  <option key={h.id} value={h.id}>
+                    {h.hostname}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <Field
+                label="Tags (comma-separated)"
+                hint={
+                  tagsQuery.data?.tags?.length
+                    ? `Existing: ${tagsQuery.data.tags.map((t) => t.tag).join(", ")}`
+                    : "No tags defined yet."
+                }
+              >
+                <TextInput
+                  value={tagsRaw}
+                  onChange={(e) => setTagsRaw(e.target.value)}
+                  placeholder="prod, db"
+                  className="font-mono"
+                />
+              </Field>
+
+              <Field label="Groups (Ctrl/⌘ to multi-select)">
+                <select
+                  multiple
+                  size={Math.min(5, Math.max(2, groupsQuery.data?.groups.length ?? 2))}
+                  value={groupIDs}
+                  onChange={(e) =>
+                    setGroupIDs(Array.from(e.target.selectedOptions).map((o) => o.value))
+                  }
+                  className="w-full rounded-md border border-border bg-panel px-3 py-2 text-sm"
+                >
+                  {(groupsQuery.data?.groups ?? []).map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.name} ({g.member_ids.length})
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
           </div>
 
           {error && <ErrorBox>{error}</ErrorBox>}

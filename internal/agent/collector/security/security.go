@@ -272,33 +272,62 @@ func atoi(s string) int {
 
 // --- crowdsec -------------------------------------------------------------
 
-type cscliDecision struct {
+// cscli decisions list -o json emits a nested shape:
+//
+//	[{
+//	  "created_at": "2026-05-04T16:16:48Z",
+//	  "decisions": [
+//	    {"id": 21046401, "origin": "crowdsec", "type": "ban",
+//	     "scope": "Ip", "value": "1.2.3.4",
+//	     "scenario": "crowdsecurity/ssh-bf",
+//	     "duration": "10m0s"}
+//	  ],
+//	  "events": [...],
+//	  ...
+//	}, ...]
+//
+// Older versions sometimes emit a flat array of decisions with an "until"
+// field instead of "duration"; we support both.
+type cscliDecisionItem struct {
 	ID       int    `json:"id"`
 	Origin   string `json:"origin"`
 	Type     string `json:"type"`
 	Scope    string `json:"scope"`
 	Value    string `json:"value"`
 	Scenario string `json:"scenario"`
+	Duration string `json:"duration"`
 	Until    string `json:"until"`
+}
+
+type cscliAlert struct {
+	CreatedAt string              `json:"created_at"`
+	Decisions []cscliDecisionItem `json:"decisions"`
 }
 
 func (c *Collector) crowdsecDecisions(ctx context.Context) []apitypes.CrowdsecDecision {
 	if !safeexec.Available("cscli") {
 		return nil
 	}
-	// `cscli decisions list -o json` returns an array of decisions. Empty
-	// array is a valid result on a clean host.
 	out, err := safeexec.RunWithTimeout(ctx, 6*time.Second, "cscli", "decisions", "list", "-o", "json")
 	if err != nil {
 		return nil
 	}
-	var raw []cscliDecision
-	if err := json.Unmarshal(out, &raw); err != nil {
-		return nil
+
+	// Try nested shape first; fall back to the flat one.
+	var alerts []cscliAlert
+	flat := false
+	if err := json.Unmarshal(out, &alerts); err != nil || (len(alerts) > 0 && alerts[0].Decisions == nil && alerts[0].CreatedAt == "") {
+		flat = true
 	}
-	decisions := make([]apitypes.CrowdsecDecision, 0, len(raw))
-	for _, d := range raw {
-		until, _ := time.Parse(time.RFC3339, d.Until)
+	var rawFlat []cscliDecisionItem
+	if flat {
+		if err := json.Unmarshal(out, &rawFlat); err != nil {
+			return nil
+		}
+	}
+
+	decisions := make([]apitypes.CrowdsecDecision, 0, 8)
+	add := func(d cscliDecisionItem, parentCreatedAt string) {
 		decisions = append(decisions, apitypes.CrowdsecDecision{
 			DecisionID: strconv.Itoa(d.ID),
 			Origin:     d.Origin,
@@ -306,8 +335,45 @@ func (c *Collector) crowdsecDecisions(ctx context.Context) []apitypes.CrowdsecDe
 			Target:     d.Value,
 			Type:       d.Type,
 			Reason:     d.Scenario,
-			Until:      until,
+			Until:      computeUntil(d, parentCreatedAt),
 		})
 	}
+	if flat {
+		for _, d := range rawFlat {
+			add(d, "")
+		}
+	} else {
+		for _, a := range alerts {
+			for _, d := range a.Decisions {
+				add(d, a.CreatedAt)
+			}
+		}
+	}
 	return decisions
+}
+
+// computeUntil resolves the decision's expiry to an absolute timestamp.
+// Preference order: explicit "until" RFC3339 → parent created_at + duration
+// → time.Now() + duration. Returns the zero time when none parse, which the
+// frontend renders as a dash.
+func computeUntil(d cscliDecisionItem, parentCreatedAt string) time.Time {
+	if d.Until != "" {
+		if t, err := time.Parse(time.RFC3339, d.Until); err == nil {
+			return t
+		}
+	}
+	if d.Duration == "" {
+		return time.Time{}
+	}
+	dur, err := time.ParseDuration(d.Duration)
+	if err != nil {
+		return time.Time{}
+	}
+	base := time.Now().UTC()
+	if parentCreatedAt != "" {
+		if t, err := time.Parse(time.RFC3339, parentCreatedAt); err == nil {
+			base = t
+		}
+	}
+	return base.Add(dur)
 }

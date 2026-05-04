@@ -19,7 +19,9 @@ var ErrRuleNotFound = errors.New("notification rule not found")
 func (s *Store) ListRules(ctx context.Context) ([]apitypes.NotificationRule, error) {
 	rows, err := s.Pool.Query(ctx, `
 		SELECT id, name, enabled, condition_type, condition_params,
-		       channel_ids, severity, throttle_sec, created_at, COALESCE(created_by,'')
+		       channel_ids, severity, throttle_sec,
+		       target_host_ids, target_tags, target_group_ids,
+		       created_at, COALESCE(created_by,'')
 		FROM notification_rules ORDER BY name`)
 	if err != nil {
 		return nil, err
@@ -39,7 +41,9 @@ func (s *Store) ListRules(ctx context.Context) ([]apitypes.NotificationRule, err
 func (s *Store) GetRule(ctx context.Context, id uuid.UUID) (apitypes.NotificationRule, error) {
 	rows, err := s.Pool.Query(ctx, `
 		SELECT id, name, enabled, condition_type, condition_params,
-		       channel_ids, severity, throttle_sec, created_at, COALESCE(created_by,'')
+		       channel_ids, severity, throttle_sec,
+		       target_host_ids, target_tags, target_group_ids,
+		       created_at, COALESCE(created_by,'')
 		FROM notification_rules WHERE id = $1`, id)
 	if err != nil {
 		return apitypes.NotificationRule{}, err
@@ -71,14 +75,26 @@ func (s *Store) CreateRule(ctx context.Context, in apitypes.NotificationRuleInpu
 		in.ThrottleSec = 0
 	}
 
+	hostIDs, err := parseChannelIDs(in.TargetHostIDs)
+	if err != nil {
+		return apitypes.NotificationRule{}, fmt.Errorf("target_host_ids: %w", err)
+	}
+	groupIDs, err := parseChannelIDs(in.TargetGroupIDs)
+	if err != nil {
+		return apitypes.NotificationRule{}, fmt.Errorf("target_group_ids: %w", err)
+	}
+	tags := orEmptyStrings(in.TargetTags)
+
 	var id uuid.UUID
 	err = s.Pool.QueryRow(ctx, `
 		INSERT INTO notification_rules (name, enabled, condition_type, condition_params,
-		                                channel_ids, severity, throttle_sec, created_by)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+		                                channel_ids, severity, throttle_sec,
+		                                target_host_ids, target_tags, target_group_ids,
+		                                created_by)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
 		RETURNING id`,
 		in.Name, in.Enabled, in.ConditionType, params, channels, severity,
-		in.ThrottleSec, nullableString(createdBy),
+		in.ThrottleSec, hostIDs, tags, groupIDs, nullableString(createdBy),
 	).Scan(&id)
 	if err != nil {
 		if pgIsUniqueViolation(err) {
@@ -102,13 +118,25 @@ func (s *Store) UpdateRule(ctx context.Context, id uuid.UUID, in apitypes.Notifi
 	if severity == "" {
 		severity = "warning"
 	}
+	hostIDs, err := parseChannelIDs(in.TargetHostIDs)
+	if err != nil {
+		return apitypes.NotificationRule{}, fmt.Errorf("target_host_ids: %w", err)
+	}
+	groupIDs, err := parseChannelIDs(in.TargetGroupIDs)
+	if err != nil {
+		return apitypes.NotificationRule{}, fmt.Errorf("target_group_ids: %w", err)
+	}
+	tags := orEmptyStrings(in.TargetTags)
+
 	tag, err := s.Pool.Exec(ctx, `
 		UPDATE notification_rules SET
 			name = $2, enabled = $3, condition_type = $4, condition_params = $5,
-			channel_ids = $6, severity = $7, throttle_sec = $8
+			channel_ids = $6, severity = $7, throttle_sec = $8,
+			target_host_ids = $9, target_tags = $10, target_group_ids = $11
 		WHERE id = $1`,
 		id, in.Name, in.Enabled, in.ConditionType, params,
-		channels, severity, in.ThrottleSec)
+		channels, severity, in.ThrottleSec,
+		hostIDs, tags, groupIDs)
 	if err != nil {
 		if pgIsUniqueViolation(err) {
 			return apitypes.NotificationRule{}, errors.New("a rule with this name already exists")
@@ -203,13 +231,18 @@ func (s *Store) ListAlertHistory(ctx context.Context, since time.Time, limit int
 
 func scanRule(scan func(...any) error) (apitypes.NotificationRule, error) {
 	var (
-		r           apitypes.NotificationRule
-		idVal       uuid.UUID
-		paramsRaw   []byte
-		channelIDs  []uuid.UUID
+		r          apitypes.NotificationRule
+		idVal      uuid.UUID
+		paramsRaw  []byte
+		channelIDs []uuid.UUID
+		hostIDs    []uuid.UUID
+		groupIDs   []uuid.UUID
+		tags       []string
 	)
 	if err := scan(&idVal, &r.Name, &r.Enabled, &r.ConditionType, &paramsRaw,
-		&channelIDs, &r.Severity, &r.ThrottleSec, &r.CreatedAt, &r.CreatedBy); err != nil {
+		&channelIDs, &r.Severity, &r.ThrottleSec,
+		&hostIDs, &tags, &groupIDs,
+		&r.CreatedAt, &r.CreatedBy); err != nil {
 		return r, err
 	}
 	r.ID = idVal.String()
@@ -220,8 +253,21 @@ func scanRule(scan func(...any) error) (apitypes.NotificationRule, error) {
 			r.ConditionParams = map[string]any{}
 		}
 	}
+	r.ChannelIDs = []string{}
 	for _, u := range channelIDs {
 		r.ChannelIDs = append(r.ChannelIDs, u.String())
+	}
+	r.TargetHostIDs = []string{}
+	for _, u := range hostIDs {
+		r.TargetHostIDs = append(r.TargetHostIDs, u.String())
+	}
+	r.TargetGroupIDs = []string{}
+	for _, u := range groupIDs {
+		r.TargetGroupIDs = append(r.TargetGroupIDs, u.String())
+	}
+	r.TargetTags = tags
+	if r.TargetTags == nil {
+		r.TargetTags = []string{}
 	}
 	return r, nil
 }

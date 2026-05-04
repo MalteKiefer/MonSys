@@ -93,7 +93,11 @@ func (e *Engine) handleLiveness(ctx context.Context, tr liveness.Transition) {
 		slog.Warn("alerts: load host_offline rules", "err", err)
 		return
 	}
+	tags, groupIDs := e.fetchHostScope(ctx, tr.HostID)
 	for _, r := range rules {
+		if !r.matchesHost(tr.HostID, tags, groupIDs) {
+			continue
+		}
 		// Only fire on transitions to states the rule cares about. Default
 		// reaction is on "offline"; rule can override via params.match_states.
 		states := stringSliceParam(r.ConditionParams, "match_states", []string{"offline"})
@@ -213,6 +217,10 @@ func (e *Engine) evalLoginFailed(ctx context.Context, r ruleRow) {
 		if err := rows.Scan(&id, &hostname, &n); err != nil {
 			continue
 		}
+		tags, groupIDs := e.fetchHostScope(ctx, id)
+		if !r.matchesHost(id, tags, groupIDs) {
+			continue
+		}
 		dedup := fmt.Sprintf("login_failed:%s", id)
 		subj := fmt.Sprintf("[mon] %s: %d failed logins in %ds", hostname, n, windowSec)
 		body := fmt.Sprintf("Host %s observed %d failed login attempts within the last %d seconds (threshold %d).",
@@ -244,6 +252,10 @@ func (e *Engine) evalSecurityUpdates(ctx context.Context, r ruleRow) {
 			continue
 		}
 		if sec < threshold {
+			continue
+		}
+		tags, groupIDs := e.fetchHostScope(ctx, id)
+		if !r.matchesHost(id, tags, groupIDs) {
 			continue
 		}
 		dedup := fmt.Sprintf("security_updates:%s", id)
@@ -730,11 +742,45 @@ type ruleRow struct {
 	ChannelIDs      []string
 	Severity        string
 	ThrottleSec     int
+	TargetHostIDs   []uuid.UUID
+	TargetTags      []string
+	TargetGroupIDs  []uuid.UUID
+}
+
+// matchesHost decides whether a rule applies to a specific host. All-empty
+// target sets behave as a wildcard (the historical "applies everywhere"
+// behaviour). When any of the three target slices is non-empty the rule
+// matches only when the host is referenced by at least one of them.
+func (r ruleRow) matchesHost(hostID uuid.UUID, tags []string, groupIDs []uuid.UUID) bool {
+	if len(r.TargetHostIDs) == 0 && len(r.TargetTags) == 0 && len(r.TargetGroupIDs) == 0 {
+		return true
+	}
+	for _, id := range r.TargetHostIDs {
+		if id == hostID {
+			return true
+		}
+	}
+	for _, want := range r.TargetTags {
+		for _, have := range tags {
+			if want == have {
+				return true
+			}
+		}
+	}
+	for _, want := range r.TargetGroupIDs {
+		for _, have := range groupIDs {
+			if want == have {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (e *Engine) loadRules(ctx context.Context, conditionType string) ([]ruleRow, error) {
 	rows, err := e.Pool.Query(ctx, `
-		SELECT id, name, condition_params, channel_ids, severity, throttle_sec
+		SELECT id, name, condition_params, channel_ids, severity, throttle_sec,
+		       target_host_ids, target_tags, target_group_ids
 		FROM notification_rules
 		WHERE enabled = TRUE AND condition_type = $1`, conditionType)
 	if err != nil {
@@ -746,7 +792,8 @@ func (e *Engine) loadRules(ctx context.Context, conditionType string) ([]ruleRow
 		var r ruleRow
 		var paramsRaw []byte
 		var channelUUIDs []uuid.UUID
-		if err := rows.Scan(&r.ID, &r.Name, &paramsRaw, &channelUUIDs, &r.Severity, &r.ThrottleSec); err != nil {
+		if err := rows.Scan(&r.ID, &r.Name, &paramsRaw, &channelUUIDs, &r.Severity, &r.ThrottleSec,
+			&r.TargetHostIDs, &r.TargetTags, &r.TargetGroupIDs); err != nil {
 			return nil, err
 		}
 		r.ConditionParams = map[string]any{}
@@ -767,6 +814,25 @@ func (e *Engine) loadRules(ctx context.Context, conditionType string) ([]ruleRow
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+// fetchHostScope returns the tag list and host_group ids the host belongs
+// to, used by ruleRow.matchesHost. Empty results on any error so an
+// observability glitch never silently kills alerts; the caller treats
+// "(nil, nil)" the same as "host has no scope" — only rules with empty
+// targets will match.
+func (e *Engine) fetchHostScope(ctx context.Context, hostID uuid.UUID) ([]string, []uuid.UUID) {
+	var tags []string
+	var groupIDs []uuid.UUID
+	if err := e.Pool.QueryRow(ctx, `
+		SELECT
+		  COALESCE((SELECT array_agg(tag)         FROM host_tags          WHERE host_id = $1), '{}'),
+		  COALESCE((SELECT array_agg(group_id)    FROM host_group_members WHERE host_id = $1), '{}')
+	`, hostID).Scan(&tags, &groupIDs); err != nil {
+		slog.Warn("alerts: fetch host scope", "host_id", hostID, "err", err)
+		return nil, nil
+	}
+	return tags, groupIDs
 }
 
 // --- helpers ---------------------------------------------------------------

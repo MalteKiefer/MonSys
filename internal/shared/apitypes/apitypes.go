@@ -259,6 +259,9 @@ type NotificationRule struct {
 	ChannelIDs      []string       `json:"channel_ids"`
 	Severity        string         `json:"severity"         enum:"info,warning,critical"`
 	ThrottleSec     int            `json:"throttle_sec"     minimum:"0" doc:"0 disables throttling"`
+	TargetHostIDs   []string       `json:"target_host_ids"  doc:"empty = all hosts"`
+	TargetTags      []string       `json:"target_tags"      doc:"empty = ignore tag filter"`
+	TargetGroupIDs  []string       `json:"target_group_ids" doc:"empty = ignore group filter"`
 	CreatedAt       time.Time      `json:"created_at"`
 	CreatedBy       string         `json:"created_by,omitempty"`
 }
@@ -271,6 +274,9 @@ type NotificationRuleInput struct {
 	ChannelIDs      []string       `json:"channel_ids"     minItems:"1"`
 	Severity        string         `json:"severity"        enum:"info,warning,critical"`
 	ThrottleSec     int            `json:"throttle_sec"    minimum:"0"`
+	TargetHostIDs   []string       `json:"target_host_ids,omitempty"`
+	TargetTags      []string       `json:"target_tags,omitempty"`
+	TargetGroupIDs  []string       `json:"target_group_ids,omitempty"`
 }
 
 type AlertHistoryEntry struct {
