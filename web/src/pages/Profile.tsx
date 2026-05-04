@@ -1,13 +1,20 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { FormEvent, useState } from "react";
+import { ChangeEvent, FormEvent, ReactNode, useState } from "react";
 
+import {
+  Button,
+  ErrorBox,
+  Field,
+  Panel,
+  PanelBody,
+  PanelHeader,
+  SuccessBox,
+  TextInput,
+} from "../components/ui";
 import { api, ApiError } from "../lib/api";
 import { CurrentUser, TOTPSetup } from "../lib/types";
 
-// TODO(theme): this page (and the shared Card/Input it exports) still uses
-// raw `zinc-*` Tailwind classes which don't follow the dark/light palette.
-// Migrate to semantic tokens (text-fg-muted, bg-panel, border-border, …)
-// in a follow-up.
+type Msg = { kind: "ok" | "err"; text: string } | null;
 
 export function Profile() {
   const qc = useQueryClient();
@@ -16,16 +23,16 @@ export function Profile() {
     queryFn: () => api<CurrentUser>("/v1/auth/me"),
   });
 
-  if (me.isLoading) return <p className="p-6 text-sm text-zinc-400">Loading…</p>;
+  if (me.isLoading) return <p className="p-6 text-sm text-fg-muted">Loading…</p>;
   if (me.error) return <p className="p-6 text-sm text-fail">{(me.error as Error).message}</p>;
   const user = me.data!;
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8 p-6">
+    <div className="mx-auto max-w-3xl space-y-6 p-6">
       <header>
-        <h2 className="text-lg font-semibold">Profile</h2>
-        <p className="text-sm text-zinc-400">
-          Signed in as <span className="text-zinc-200">{user.email}</span> ({user.role})
+        <h2 className="text-lg font-semibold text-fg">Profile</h2>
+        <p className="text-sm text-fg-muted">
+          Signed in as <span className="text-fg">{user.email}</span> ({user.role})
         </p>
       </header>
 
@@ -36,10 +43,21 @@ export function Profile() {
   );
 }
 
+function ProfilePanel({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <Panel>
+      <PanelHeader>
+        <h3 className="text-sm font-semibold text-fg">{title}</h3>
+      </PanelHeader>
+      <PanelBody>{children}</PanelBody>
+    </Panel>
+  );
+}
+
 function ChangeEmailCard({ onSuccess }: { onSuccess: () => void }) {
   const [pw, setPw] = useState("");
   const [email, setEmail] = useState("");
-  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [msg, setMsg] = useState<Msg>(null);
   const [busy, setBusy] = useState(false);
 
   async function submit(e: FormEvent) {
@@ -63,20 +81,34 @@ function ChangeEmailCard({ onSuccess }: { onSuccess: () => void }) {
   }
 
   return (
-    <Card title="Change email">
+    <ProfilePanel title="Change email">
       <form onSubmit={submit} className="space-y-3">
-        <Input label="Current password" type="password" value={pw} onChange={setPw} />
-        <Input label="New email" type="email" value={email} onChange={setEmail} />
+        <Field label="Current password">
+          <TextInput
+            type="password"
+            required
+            value={pw}
+            onChange={(e: ChangeEvent<HTMLInputElement>) => setPw(e.target.value)}
+          />
+        </Field>
+        <Field label="New email">
+          <TextInput
+            type="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+        </Field>
         <FormFooter busy={busy} idle="Update email" busyLabel="Updating…" msg={msg} />
       </form>
-    </Card>
+    </ProfilePanel>
   );
 }
 
 function ChangePasswordCard() {
   const [cur, setCur] = useState("");
   const [next, setNext] = useState("");
-  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [msg, setMsg] = useState<Msg>(null);
   const [busy, setBusy] = useState(false);
 
   async function submit(e: FormEvent) {
@@ -99,13 +131,17 @@ function ChangePasswordCard() {
   }
 
   return (
-    <Card title="Change password">
+    <ProfilePanel title="Change password">
       <form onSubmit={submit} className="space-y-3">
-        <Input label="Current password" type="password" value={cur} onChange={setCur} />
-        <Input label="New password" type="password" value={next} onChange={setNext} />
+        <Field label="Current password">
+          <TextInput type="password" required value={cur} onChange={(e) => setCur(e.target.value)} />
+        </Field>
+        <Field label="New password">
+          <TextInput type="password" required value={next} onChange={(e) => setNext(e.target.value)} />
+        </Field>
         <FormFooter busy={busy} idle="Update password" busyLabel="Updating…" msg={msg} />
       </form>
-    </Card>
+    </ProfilePanel>
   );
 }
 
@@ -113,7 +149,7 @@ function TwoFactorCard({ active, onSuccess }: { active: boolean; onSuccess: () =
   const [setup, setSetup] = useState<TOTPSetup | null>(null);
   const [code, setCode] = useState("");
   const [pw, setPw] = useState("");
-  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [msg, setMsg] = useState<Msg>(null);
   const [busy, setBusy] = useState(false);
 
   async function startSetup() {
@@ -169,112 +205,74 @@ function TwoFactorCard({ active, onSuccess }: { active: boolean; onSuccess: () =
   }
 
   return (
-    <Card title={`Two-factor authentication (${active ? "active" : "off"})`}>
+    <ProfilePanel title={`Two-factor authentication (${active ? "active" : "off"})`}>
       {active ? (
         <form onSubmit={disable} className="space-y-3">
-          <p className="text-sm text-zinc-400">
-            TOTP is active. To remove, confirm your password.
-          </p>
-          <Input label="Password" type="password" value={pw} onChange={setPw} />
+          <p className="text-sm text-fg-muted">TOTP is active. To remove, confirm your password.</p>
+          <Field label="Password">
+            <TextInput type="password" required value={pw} onChange={(e) => setPw(e.target.value)} />
+          </Field>
           <FormFooter busy={busy} idle="Disable 2FA" busyLabel="Disabling…" msg={msg} variant="danger" />
         </form>
       ) : !setup ? (
         <div className="space-y-3">
-          <p className="text-sm text-zinc-400">
+          <p className="text-sm text-fg-muted">
             Add a second factor by scanning a QR code in your authenticator (Aegis, 1Password, etc.).
           </p>
-          <button
-            onClick={startSetup}
-            disabled={busy}
-            className="rounded bg-zinc-100 px-3 py-1.5 text-sm font-medium text-zinc-900 hover:bg-white disabled:opacity-50"
-          >
+          <Button variant="primary" onClick={startSetup} disabled={busy}>
             {busy ? "Generating…" : "Begin setup"}
-          </button>
+          </Button>
           {msg && <Message msg={msg} />}
         </div>
       ) : (
         <div className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2">
             <div>
-              <p className="mb-2 text-xs uppercase tracking-wider text-zinc-400">Scan with authenticator</p>
+              <p className="mb-2 text-xs uppercase tracking-wider text-fg-muted">Scan with authenticator</p>
               <img
                 src={`data:image/png;base64,${setup.qr_png_base64}`}
                 alt="TOTP QR code"
-                className="rounded border border-zinc-700 bg-white p-2"
+                className="rounded border border-border bg-white p-2"
               />
-              <p className="mt-2 text-xs text-zinc-500">
+              <p className="mt-2 text-xs text-fg-subtle">
                 Or enter the secret manually:
-                <code className="ml-1 select-all rounded bg-zinc-800 px-1 py-0.5 font-mono text-xs text-zinc-300">
+                <code className="ml-1 select-all rounded bg-panel-2 px-1 py-0.5 font-mono text-xs text-fg">
                   {setup.secret_b32}
                 </code>
               </p>
             </div>
             <div>
-              <p className="mb-2 text-xs uppercase tracking-wider text-zinc-400">Backup codes (save once!)</p>
-              <ul className="grid grid-cols-2 gap-1 rounded border border-zinc-700 bg-zinc-950 p-3 font-mono text-xs">
+              <p className="mb-2 text-xs uppercase tracking-wider text-fg-muted">Backup codes (save once!)</p>
+              <ul className="grid grid-cols-2 gap-1 rounded border border-border bg-bg p-3 font-mono text-xs text-fg">
                 {setup.backup_codes.map((c) => (
-                  <li key={c} className="select-all">{c}</li>
+                  <li key={c} className="select-all">
+                    {c}
+                  </li>
                 ))}
               </ul>
             </div>
           </div>
 
           <form onSubmit={verify} className="space-y-3">
-            <Input label="Confirm with a current 6-digit code" type="text" value={code} onChange={setCode} className="font-mono tracking-widest" />
+            <Field label="Confirm with a current 6-digit code">
+              <TextInput
+                type="text"
+                required
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                className="font-mono tracking-widest"
+              />
+            </Field>
             <FormFooter busy={busy} idle="Activate 2FA" busyLabel="Verifying…" msg={msg} />
           </form>
         </div>
       )}
-    </Card>
-  );
-}
-
-// ---- shared (private to this module — outside callers should use the
-// primitives in components/ui instead) ----
-
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="rounded-lg border border-zinc-800 bg-zinc-900 p-5">
-      <h3 className="mb-4 text-sm font-semibold text-zinc-200">{title}</h3>
-      {children}
-    </section>
-  );
-}
-
-function Input(props: {
-  label: string;
-  type: string;
-  value: string;
-  onChange: (v: string) => void;
-  className?: string;
-  required?: boolean;
-}) {
-  return (
-    <label className="block">
-      <span className="text-xs text-zinc-400">{props.label}</span>
-      <input
-        type={props.type}
-        required={props.required ?? true}
-        value={props.value}
-        onChange={(e) => props.onChange(e.target.value)}
-        className={`mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-1.5 text-sm focus:border-zinc-500 focus:outline-none ${props.className ?? ""}`}
-      />
-    </label>
+    </ProfilePanel>
   );
 }
 
 function Message({ msg }: { msg: { kind: "ok" | "err"; text: string } }) {
-  return (
-    <p
-      className={`rounded px-3 py-2 text-sm ${
-        msg.kind === "ok"
-          ? "border border-ok/40 bg-ok/10 text-ok"
-          : "border border-fail/40 bg-fail/10 text-fail"
-      }`}
-    >
-      {msg.text}
-    </p>
-  );
+  return msg.kind === "ok" ? <SuccessBox>{msg.text}</SuccessBox> : <ErrorBox>{msg.text}</ErrorBox>;
 }
 
 function FormFooter({
@@ -287,18 +285,14 @@ function FormFooter({
   busy: boolean;
   idle: string;
   busyLabel: string;
-  msg: { kind: "ok" | "err"; text: string } | null;
+  msg: Msg;
   variant?: "danger";
 }) {
-  const classes =
-    variant === "danger"
-      ? "rounded bg-fail/20 px-3 py-1.5 text-sm font-medium text-fail border border-fail/40 hover:bg-fail/30 disabled:opacity-50"
-      : "rounded bg-zinc-100 px-3 py-1.5 text-sm font-medium text-zinc-900 hover:bg-white disabled:opacity-50";
   return (
     <div className="space-y-2">
-      <button type="submit" disabled={busy} className={classes}>
+      <Button type="submit" variant={variant === "danger" ? "danger" : "primary"} disabled={busy}>
         {busy ? busyLabel : idle}
-      </button>
+      </Button>
       {msg && <Message msg={msg} />}
     </div>
   );
