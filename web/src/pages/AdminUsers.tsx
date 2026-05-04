@@ -1,9 +1,24 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useState } from "react";
 
+import {
+  Button,
+  ErrorBox,
+  Field,
+  Panel,
+  PanelBody,
+  PanelHeader,
+  StatusPill,
+  SuccessBox,
+  Table,
+  TBody,
+  TD,
+  TH,
+  THead,
+  TextInput,
+} from "../components/ui";
 import { api, ApiError } from "../lib/api";
 import { AdminCreateUserResponse, AdminUser } from "../lib/types";
-import { Card, Input } from "./Profile";
 
 // TODO(theme): this page still uses raw `zinc-*` Tailwind classes which
 // don't follow the dark/light palette. Migrate to semantic tokens
@@ -24,20 +39,25 @@ export function AdminUsers() {
     <div className="mx-auto max-w-5xl space-y-6 p-6">
       <header>
         <h2 className="text-lg font-semibold">Users</h2>
-        <p className="text-sm text-zinc-400">Create, lock, reset password, reset 2FA.</p>
+        <p className="text-sm text-fg-muted">Create, lock, reset password, reset 2FA.</p>
       </header>
 
       <CreateUserCard onCreated={invalidate} />
 
-      <Card title="All users">
-        {list.isLoading ? (
-          <p className="text-sm text-zinc-400">Loading…</p>
-        ) : list.error ? (
-          <p className="text-sm text-fail">{(list.error as Error).message}</p>
-        ) : (
-          <UserTable users={list.data?.users ?? []} onChange={invalidate} />
-        )}
-      </Card>
+      <Panel>
+        <PanelHeader>
+          <h3 className="text-sm font-semibold text-fg">All users</h3>
+        </PanelHeader>
+        <PanelBody>
+          {list.isLoading ? (
+            <p className="text-sm text-fg-muted">Loading…</p>
+          ) : list.error ? (
+            <ErrorBox>{(list.error as Error).message}</ErrorBox>
+          ) : (
+            <UserTable users={list.data?.users ?? []} onChange={invalidate} />
+          )}
+        </PanelBody>
+      </Panel>
     </div>
   );
 }
@@ -86,85 +106,87 @@ function CreateUserCard({ onCreated }: { onCreated: () => void }) {
   }
 
   return (
-    <Card title="Create user">
-      <form onSubmit={submit} className="space-y-3">
-        <Input label="Email" type="email" value={email} onChange={setEmail} />
-        <div className="grid gap-3 md:grid-cols-2">
-          <label className="block">
-            <span className="text-xs text-zinc-400">Role</span>
-            <select
-              value={role}
-              onChange={(e) => setRole(e.target.value as "admin" | "user")}
-              className="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-1.5 text-sm focus:border-zinc-500 focus:outline-none"
-            >
-              <option value="user">user</option>
-              <option value="admin">admin</option>
-            </select>
-          </label>
-          <Input
-            label="Password (leave empty to invite)"
-            type="text"
-            required={false}
-            value={password}
-            onChange={setPassword}
-          />
-        </div>
-        <label className="flex items-center gap-2 text-sm text-zinc-400">
-          <input
-            type="checkbox"
-            checked={sendInvite}
-            onChange={(e) => setSendInvite(e.target.checked)}
-          />
-          Send invite email (requires SMTP configured under Admin → Mail)
-        </label>
-        <button
-          type="submit"
-          disabled={busy}
-          className="rounded bg-zinc-100 px-3 py-1.5 text-sm font-medium text-zinc-900 hover:bg-white disabled:opacity-50"
-        >
-          {busy ? "Creating…" : "Create user"}
-        </button>
-        {msg && (
-          <p
-            className={`rounded px-3 py-2 text-sm ${
-              msg.kind === "ok"
-                ? "border border-ok/40 bg-ok/10 text-ok"
-                : "border border-fail/40 bg-fail/10 text-fail"
-            }`}
-          >
-            {msg.text}
-          </p>
-        )}
-        {resetURL && (
-          <div className="rounded border border-zinc-700 bg-zinc-950 p-3 font-mono text-xs">
-            <p className="mb-1 text-zinc-400">Invite link (one-time, expires in 7 days):</p>
-            <code className="break-all text-zinc-200">{location.origin + resetURL}</code>
+    <Panel>
+      <PanelHeader>
+        <h3 className="text-sm font-semibold text-fg">Create user</h3>
+      </PanelHeader>
+      <PanelBody>
+        <form onSubmit={submit} className="space-y-3">
+          <Field label="Email">
+            <TextInput
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </Field>
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="Role">
+              <select
+                value={role}
+                onChange={(e) => setRole(e.target.value as "admin" | "user")}
+                className="w-full rounded-md border border-border bg-panel px-3 py-2 text-sm text-fg transition-colors duration-150 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
+              >
+                <option value="user">user</option>
+                <option value="admin">admin</option>
+              </select>
+            </Field>
+            <Field label="Password (leave empty to invite)">
+              <TextInput
+                type="text"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </Field>
           </div>
-        )}
-      </form>
-    </Card>
+          <label className="flex items-center gap-2 text-sm text-fg-muted">
+            <input
+              type="checkbox"
+              checked={sendInvite}
+              onChange={(e) => setSendInvite(e.target.checked)}
+            />
+            Send invite email (requires SMTP configured under Admin → Mail)
+          </label>
+          <Button type="submit" variant="primary" disabled={busy}>
+            {busy ? "Creating…" : "Create user"}
+          </Button>
+          {msg &&
+            (msg.kind === "ok" ? (
+              <SuccessBox>{msg.text}</SuccessBox>
+            ) : (
+              <ErrorBox>{msg.text}</ErrorBox>
+            ))}
+          {resetURL && (
+            <div className="rounded-md border border-border bg-panel-2 p-3 font-mono text-xs">
+              <p className="mb-1 text-fg-muted">Invite link (one-time, expires in 7 days):</p>
+              <code className="break-all text-fg">{location.origin + resetURL}</code>
+            </div>
+          )}
+        </form>
+      </PanelBody>
+    </Panel>
   );
 }
 
 function UserTable({ users, onChange }: { users: AdminUser[]; onChange: () => void }) {
   return (
-    <table className="w-full text-sm">
-      <thead className="text-left text-xs uppercase tracking-wider text-zinc-400">
+    <Table>
+      <THead>
         <tr>
-          <th className="px-3 py-2">Email</th>
-          <th className="px-3 py-2">Role</th>
-          <th className="px-3 py-2">Status</th>
-          <th className="px-3 py-2">2FA</th>
-          <th className="px-3 py-2">Last login</th>
-          <th className="px-3 py-2">Actions</th>
+          <TH>Email</TH>
+          <TH>Role</TH>
+          <TH>Status</TH>
+          <TH>2FA</TH>
+          <TH>Last login</TH>
+          <TH>Actions</TH>
         </tr>
-      </thead>
-      <tbody className="divide-y divide-zinc-800">
+      </THead>
+      <TBody>
         {users.map((u) => (
           <UserRow key={u.id} user={u} onChange={onChange} />
         ))}
-      </tbody>
-    </table>
+      </TBody>
+    </Table>
   );
 }
 
@@ -194,64 +216,52 @@ function UserRow({ user, onChange }: { user: AdminUser; onChange: () => void }) 
 
   return (
     <>
-      <tr className="hover:bg-zinc-900/40">
-        <td className="px-3 py-2 font-medium">{user.email}</td>
-        <td className="px-3 py-2 text-zinc-400">{user.role}</td>
-        <td className="px-3 py-2">
+      <tr className="hover:bg-panel-2/40">
+        <TD className="font-medium">{user.email}</TD>
+        <TD className="text-fg-muted">{user.role}</TD>
+        <TD>
           {disabled ? (
-            <span className="rounded bg-fail/15 px-2 py-0.5 text-xs text-fail">locked</span>
+            <StatusPill status="fail">locked</StatusPill>
           ) : (
-            <span className="rounded bg-ok/15 px-2 py-0.5 text-xs text-ok">active</span>
+            <StatusPill status="ok">active</StatusPill>
           )}
-        </td>
-        <td className="px-3 py-2 text-zinc-400">{user.totp_active ? "yes" : "—"}</td>
-        <td className="px-3 py-2 text-zinc-400">
+        </TD>
+        <TD className="text-fg-muted">{user.totp_active ? "yes" : "—"}</TD>
+        <TD className="text-fg-muted">
           {user.last_login_at ? new Date(user.last_login_at).toLocaleString() : "never"}
-        </td>
-        <td className="px-3 py-2 space-x-1 text-xs">
+        </TD>
+        <TD className="space-x-1 text-xs">
           {disabled ? (
-            <button
-              onClick={() => post.mutate(`/v1/admin/users/${user.id}/unlock`)}
-              className="rounded border border-zinc-700 px-2 py-1 hover:bg-zinc-800"
-            >
+            <Button onClick={() => post.mutate(`/v1/admin/users/${user.id}/unlock`)}>
               unlock
-            </button>
+            </Button>
           ) : (
-            <button
-              onClick={() => post.mutate(`/v1/admin/users/${user.id}/lock`)}
-              className="rounded border border-zinc-700 px-2 py-1 hover:bg-zinc-800"
-            >
+            <Button onClick={() => post.mutate(`/v1/admin/users/${user.id}/lock`)}>
               lock
-            </button>
+            </Button>
           )}
-          <button
-            onClick={() => reset.mutate()}
-            className="rounded border border-zinc-700 px-2 py-1 hover:bg-zinc-800"
-          >
-            reset pw
-          </button>
-          <button
+          <Button onClick={() => reset.mutate()}>reset pw</Button>
+          <Button
             onClick={() => post.mutate(`/v1/admin/users/${user.id}/reset-2fa`)}
             disabled={!user.totp_active}
-            className="rounded border border-zinc-700 px-2 py-1 hover:bg-zinc-800 disabled:opacity-40"
           >
             reset 2fa
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="danger"
             onClick={() => {
               if (confirm(`Delete ${user.email}?`)) del.mutate();
             }}
-            className="rounded border border-fail/40 px-2 py-1 text-fail hover:bg-fail/10"
           >
             delete
-          </button>
-        </td>
+          </Button>
+        </TD>
       </tr>
       {resetURL && (
-        <tr className="bg-zinc-950">
+        <tr className="bg-panel-2">
           <td colSpan={6} className="px-3 py-2 font-mono text-xs">
-            <span className="text-zinc-400">Reset link:</span>{" "}
-            <code className="break-all text-zinc-200">{location.origin + resetURL}</code>
+            <span className="text-fg-muted">Reset link:</span>{" "}
+            <code className="break-all text-fg">{location.origin + resetURL}</code>
           </td>
         </tr>
       )}

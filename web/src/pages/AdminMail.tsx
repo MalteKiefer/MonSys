@@ -1,10 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Mail, Send } from "lucide-react";
-import { ChangeEvent, FormEvent, ReactNode, useEffect, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 
+import {
+  Button,
+  ErrorBox,
+  Field,
+  Panel,
+  PanelBody,
+  PanelHeader,
+  SuccessBox,
+  TextInput,
+} from "../components/ui";
 import { api, ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { Card } from "./Profile";
 import type { SmtpSettings, SmtpSettingsInput } from "../lib/types";
 
 type Msg = { kind: "ok" | "err"; text: string } | null;
@@ -23,16 +32,16 @@ export function AdminMail() {
         <h2 className="flex items-center gap-2 text-lg font-semibold">
           <Mail className="h-4 w-4 text-accent" /> Mail (SMTP)
         </h2>
-        <p className="text-sm text-zinc-400">
+        <p className="text-sm text-fg-muted">
           One global SMTP transport. Every email-typed notification channel reuses these settings — users
           only choose a recipient address.
         </p>
       </header>
 
       {settings.isLoading ? (
-        <p className="text-sm text-zinc-400">Loading…</p>
+        <p className="text-sm text-fg-muted">Loading…</p>
       ) : settings.error ? (
-        <p className="text-sm text-fail">{(settings.error as Error).message}</p>
+        <ErrorBox>{(settings.error as Error).message}</ErrorBox>
       ) : (
         <SettingsForm
           initial={settings.data!}
@@ -43,28 +52,6 @@ export function AdminMail() {
       {settings.data && settings.data.host && <TestCard defaultTo={myEmail} />}
     </div>
   );
-}
-
-function Field({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  children: ReactNode;
-}) {
-  return (
-    <label className="block">
-      <span className="text-xs text-zinc-400">{label}</span>
-      {children}
-      {hint && <span className="mt-1 block text-[11px] text-zinc-500">{hint}</span>}
-    </label>
-  );
-}
-
-function inputClass(extra = "") {
-  return `mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-1.5 text-sm focus:border-zinc-500 focus:outline-none disabled:opacity-50 ${extra}`;
 }
 
 function SettingsForm({ initial, onSaved }: { initial: SmtpSettings; onSaved: () => void }) {
@@ -124,121 +111,121 @@ function SettingsForm({ initial, onSaved }: { initial: SmtpSettings; onSaved: ()
   }
 
   return (
-    <Card title="SMTP transport">
-      <form onSubmit={submit} className="space-y-4">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <Field label="Host">
-            <input
-              type="text"
-              required
-              value={host}
-              onChange={(e: ChangeEvent<HTMLInputElement>) => setHost(e.target.value)}
-              placeholder="smtp.example.com"
-              className={inputClass()}
-            />
-          </Field>
-          <Field label="Port">
-            <input
-              type="number"
-              required
-              min={1}
-              max={65535}
-              value={port}
-              onChange={(e) => setPort(Number(e.target.value))}
-              className={inputClass()}
-            />
-          </Field>
-          <Field label="From address">
-            <input
-              type="email"
-              required
-              value={fromAddress}
-              onChange={(e) => setFromAddress(e.target.value)}
-              placeholder="alerts@example.com"
-              className={inputClass()}
-            />
-          </Field>
-          <Field label="Username" hint="Optional, only set if your relay needs auth.">
-            <input
-              type="text"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              className={inputClass()}
-            />
-          </Field>
-          <Field
-            label={initial.has_password ? "Password (leave blank to keep stored)" : "Password"}
-          >
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder={initial.has_password ? "********" : ""}
-              disabled={clearPassword}
-              className={inputClass("font-mono")}
-            />
-          </Field>
-          {initial.has_password ? (
-            <label className="flex items-center gap-2 self-end pb-2 text-sm text-zinc-300">
+    <Panel>
+      <PanelHeader>
+        <h3 className="text-sm font-semibold text-fg">SMTP transport</h3>
+      </PanelHeader>
+      <PanelBody>
+        <form onSubmit={submit} className="space-y-4">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <Field label="Host">
+              <TextInput
+                type="text"
+                required
+                value={host}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => setHost(e.target.value)}
+                placeholder="smtp.example.com"
+              />
+            </Field>
+            <Field label="Port">
+              <TextInput
+                type="number"
+                required
+                min={1}
+                max={65535}
+                value={port}
+                onChange={(e) => setPort(Number(e.target.value))}
+              />
+            </Field>
+            <Field label="From address">
+              <TextInput
+                type="email"
+                required
+                value={fromAddress}
+                onChange={(e) => setFromAddress(e.target.value)}
+                placeholder="alerts@example.com"
+              />
+            </Field>
+            <Field label="Username" hint="Optional, only set if your relay needs auth.">
+              <TextInput
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+              />
+            </Field>
+            <Field
+              label={initial.has_password ? "Password (leave blank to keep stored)" : "Password"}
+            >
+              <TextInput
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder={initial.has_password ? "********" : ""}
+                disabled={clearPassword}
+                className="font-mono"
+              />
+            </Field>
+            {initial.has_password ? (
+              <label className="flex items-center gap-2 self-end pb-2 text-sm text-fg">
+                <input
+                  type="checkbox"
+                  checked={clearPassword}
+                  onChange={(e) => {
+                    setClearPassword(e.target.checked);
+                    if (e.target.checked) setPassword("");
+                  }}
+                />
+                Wipe stored password
+              </label>
+            ) : (
+              <span />
+            )}
+          </div>
+
+          <fieldset className="space-y-2 rounded-md border border-border p-3 text-sm">
+            <legend className="px-1 text-xs uppercase tracking-wide text-fg-muted">Encryption</legend>
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={starttls} onChange={(e) => setStarttls(e.target.checked)} />
+              STARTTLS (port 587 default)
+            </label>
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={tls} onChange={(e) => setTls(e.target.checked)} />
+              Implicit TLS (port 465)
+            </label>
+            <label className="flex items-center gap-2">
               <input
                 type="checkbox"
-                checked={clearPassword}
-                onChange={(e) => {
-                  setClearPassword(e.target.checked);
-                  if (e.target.checked) setPassword("");
-                }}
+                checked={insecureSkipVerify}
+                onChange={(e) => setInsecureSkipVerify(e.target.checked)}
               />
-              Wipe stored password
+              <span>
+                Skip TLS certificate verification{" "}
+                <span className="text-fail">(dangerous; only for self-signed dev mailservers)</span>
+              </span>
             </label>
-          ) : (
-            <span />
-          )}
-        </div>
+          </fieldset>
 
-        <fieldset className="space-y-2 rounded-md border border-zinc-700 p-3 text-sm">
-          <legend className="px-1 text-xs uppercase tracking-wide text-zinc-400">Encryption</legend>
-          <label className="flex items-center gap-2">
-            <input type="checkbox" checked={starttls} onChange={(e) => setStarttls(e.target.checked)} />
-            STARTTLS (port 587 default)
-          </label>
-          <label className="flex items-center gap-2">
-            <input type="checkbox" checked={tls} onChange={(e) => setTls(e.target.checked)} />
-            Implicit TLS (port 465)
-          </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={insecureSkipVerify}
-              onChange={(e) => setInsecureSkipVerify(e.target.checked)}
-            />
-            <span>
-              Skip TLS certificate verification{" "}
-              <span className="text-fail">(dangerous; only for self-signed dev mailservers)</span>
-            </span>
-          </label>
-        </fieldset>
+          {msg &&
+            (msg.kind === "ok" ? (
+              <SuccessBox>{msg.text}</SuccessBox>
+            ) : (
+              <ErrorBox>{msg.text}</ErrorBox>
+            ))}
 
-        {msg && (
-          <p className={`text-sm ${msg.kind === "ok" ? "text-ok" : "text-fail"}`}>{msg.text}</p>
-        )}
-
-        <div className="flex items-center gap-3">
-          <button
-            type="submit"
-            disabled={save.isPending}
-            className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-zinc-950 disabled:opacity-50"
-          >
-            {save.isPending ? "Saving…" : "Save settings"}
-          </button>
-          {initial.updated_at && (
-            <span className="text-xs text-zinc-500">
-              Last updated {new Date(initial.updated_at).toLocaleString()}
-              {initial.updated_by ? ` by ${initial.updated_by}` : ""}
-            </span>
-          )}
-        </div>
-      </form>
-    </Card>
+          <div className="flex items-center gap-3">
+            <Button type="submit" variant="primary" disabled={save.isPending}>
+              {save.isPending ? "Saving…" : "Save settings"}
+            </Button>
+            {initial.updated_at && (
+              <span className="text-xs text-fg-subtle">
+                Last updated {new Date(initial.updated_at).toLocaleString()}
+                {initial.updated_by ? ` by ${initial.updated_by}` : ""}
+              </span>
+            )}
+          </div>
+        </form>
+      </PanelBody>
+    </Panel>
   );
 }
 
@@ -261,36 +248,39 @@ function TestCard({ defaultTo }: { defaultTo: string }) {
   });
 
   return (
-    <Card title="Send test message">
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          setMsg(null);
-          send.mutate();
-        }}
-        className="space-y-3"
-      >
-        <Field label="Recipient">
-          <input
-            type="email"
-            required
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-            className={inputClass()}
-          />
-        </Field>
-        {msg && (
-          <p className={`text-sm ${msg.kind === "ok" ? "text-ok" : "text-fail"}`}>{msg.text}</p>
-        )}
-        <button
-          type="submit"
-          disabled={send.isPending}
-          className="inline-flex items-center gap-1 rounded-md bg-zinc-700 px-3 py-1.5 text-sm font-medium text-zinc-100 disabled:opacity-50"
+    <Panel>
+      <PanelHeader>
+        <h3 className="text-sm font-semibold text-fg">Send test message</h3>
+      </PanelHeader>
+      <PanelBody>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            setMsg(null);
+            send.mutate();
+          }}
+          className="space-y-3"
         >
-          <Send className="h-3.5 w-3.5" />
-          {send.isPending ? "Sending…" : "Send test mail"}
-        </button>
-      </form>
-    </Card>
+          <Field label="Recipient">
+            <TextInput
+              type="email"
+              required
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+            />
+          </Field>
+          {msg &&
+            (msg.kind === "ok" ? (
+              <SuccessBox>{msg.text}</SuccessBox>
+            ) : (
+              <ErrorBox>{msg.text}</ErrorBox>
+            ))}
+          <Button type="submit" disabled={send.isPending}>
+            <Send className="h-3.5 w-3.5" />
+            {send.isPending ? "Sending…" : "Send test mail"}
+          </Button>
+        </form>
+      </PanelBody>
+    </Panel>
   );
 }
