@@ -62,7 +62,16 @@ systemctl enable --now mon-agent.service
 sleep 2
 systemctl is-active mon-agent.service
 
-# 7. self-update timer — checks for new binary every 6h, sha256-verifies,
+# 7. crowdsec read access — cscli refuses to read decisions when the
+# monagent user can't open the LAPI credentials file. Idempotent: skips
+# if cscli isn't installed.
+if command -v cscli >/dev/null 2>&1; then
+  for f in /etc/crowdsec/config.yaml /etc/crowdsec/local_api_credentials.yaml; do
+    [ -f "$f" ] && chgrp monagent "$f" && chmod g+r "$f"
+  done
+fi
+
+# 8. self-update timer — checks for new binary every 6h, sha256-verifies,
 # atomic-replaces, restarts. Skipped silently if the operator did not stage
 # the unit files in /tmp.
 if [ -f /tmp/mon-agent-update.service ] && [ -f /tmp/mon-agent-update.timer ]; then
