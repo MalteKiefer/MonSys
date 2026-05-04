@@ -149,6 +149,37 @@ func (f *FailedLoginAttempts) ClearFailedLogins(email string) {
 	delete(f.lockedAt, key)
 }
 
+// GC drops per-email buckets whose newest attempt is older than the sliding
+// window and lockout entries that have already expired. Without this, an
+// attacker iterating distinct email addresses could grow the in-memory map
+// without bound. Called periodically by the housekeeping reaper.
+func (f *FailedLoginAttempts) GC() {
+	if f == nil {
+		return
+	}
+	now := time.Now()
+	cutoff := now.Add(-loginAttemptWindow)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for key, ts := range f.attempts {
+		// A bucket is stale once its newest entry is outside the window AND
+		// the email is not currently locked out. Locked-out entries are kept
+		// so the lockout horizon survives a GC pass.
+		if _, locked := f.lockedAt[key]; locked {
+			continue
+		}
+		if len(ts) == 0 || !ts[len(ts)-1].After(cutoff) {
+			delete(f.attempts, key)
+		}
+	}
+	for key, until := range f.lockedAt {
+		if now.After(until) {
+			delete(f.lockedAt, key)
+			delete(f.attempts, key)
+		}
+	}
+}
+
 // User mirrors the `users` row a session-aware caller actually needs. We
 // deliberately don't expose password_hash here.
 type User struct {
