@@ -281,6 +281,12 @@ function ConfigForm({
         description,
         enabled,
       };
+      // Upsert semantics: the server exposes a single PUT /v1/admin/agent-config
+      // route that creates-or-replaces a row keyed by (scope, target_id). There
+      // is intentionally no POST + no PUT-with-id pair here — global is a
+      // singleton row, and group/host rows collide on the (scope, target_id)
+      // unique index, so the same payload shape works for both new and edit.
+      // (See handleUpsertAgentConfig + Store.UpsertAgentConfig.)
       return api<AgentConfigEntry>("/v1/admin/agent-config", {
         method: "PUT",
         body: JSON.stringify(body),
