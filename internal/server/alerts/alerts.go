@@ -12,12 +12,14 @@ package alerts
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/pr0ph37/mon/internal/server/liveness"
@@ -77,10 +79,15 @@ func (e *Engine) handleLiveness(ctx context.Context, tr liveness.Transition) {
 		// Only fire on transitions to states the rule cares about. Default
 		// reaction is on "offline"; rule can override via params.match_states.
 		states := stringSliceParam(r.ConditionParams, "match_states", []string{"offline"})
+		dedup := fmt.Sprintf("host_offline:%s", tr.HostID)
 		if !contains(states, tr.To) {
+			// Transition leaves the alerting set. If we have an open
+			// alert_state row for this dedup_key, send the all-clear
+			// through the same channels and stamp resolved_at.
+			body := fmt.Sprintf("Host is back online (was: %s)", tr.From)
+			e.resolve(ctx, dedup, body)
 			continue
 		}
-		dedup := fmt.Sprintf("host_offline:%s", tr.HostID)
 		subj := fmt.Sprintf("[mon] %s is %s", tr.Hostname, tr.To)
 		body := fmt.Sprintf("Host %s transitioned %s → %s at %s",
 			tr.Hostname, tr.From, tr.To, tr.At.UTC().Format(time.RFC3339))
@@ -90,6 +97,15 @@ func (e *Engine) handleLiveness(ctx context.Context, tr liveness.Transition) {
 
 func (e *Engine) handleMonitor(ctx context.Context, ev probe.ResultEvent) {
 	if ev.Result.Status == probe.StatusOK {
+		// Monitor recovered. Resolve any open alert_state rows tied to
+		// this monitor's dedup keys (monitor_failed + cert_expiring) so
+		// operators get the matching all-clear.
+		body := fmt.Sprintf("Monitor %q (%s) recovered: status ok after %d ms",
+			ev.Name, ev.Type, ev.Result.LatencyMS)
+		e.resolve(ctx, fmt.Sprintf("monitor_failed:%s", ev.MonitorID), body)
+		if ev.Type == "cert" {
+			e.resolve(ctx, fmt.Sprintf("cert_expiring:%s", ev.MonitorID), body)
+		}
 		return
 	}
 
@@ -263,6 +279,106 @@ func (e *Engine) fire(ctx context.Context, r ruleRow, subject, body, dedup strin
 	if err != nil {
 		slog.Warn("alerts: alert_history insert", "err", err)
 	}
+
+	// Track this as currently-open. The PK is dedup_key, so a re-fire of the
+	// same condition updates last_fired_at + refreshes channel_ids; if the
+	// previous incarnation had been resolved we treat this as a brand-new
+	// open and reset opened_at.
+	hostArg, monitorArg := splitDedupKey(dedup)
+	channelUUIDs := parseChannelUUIDs(r.ChannelIDs)
+	if _, err := e.Pool.Exec(ctx, `
+		INSERT INTO alert_state (dedup_key, rule_id, host_id, monitor_id,
+		                         severity, subject, channel_ids,
+		                         opened_at, last_fired_at, resolved_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7, now(), now(), NULL)
+		ON CONFLICT (dedup_key) DO UPDATE SET
+		    rule_id       = EXCLUDED.rule_id,
+		    host_id       = EXCLUDED.host_id,
+		    monitor_id    = EXCLUDED.monitor_id,
+		    severity      = EXCLUDED.severity,
+		    subject       = EXCLUDED.subject,
+		    channel_ids   = EXCLUDED.channel_ids,
+		    last_fired_at = now(),
+		    opened_at     = CASE WHEN alert_state.resolved_at IS NOT NULL
+		                         THEN now() ELSE alert_state.opened_at END,
+		    resolved_at   = NULL`,
+		dedup, r.ID, hostArg, monitorArg, severity, subject, channelUUIDs); err != nil {
+		slog.Warn("alerts: alert_state upsert", "err", err)
+	}
+}
+
+// resolve looks up the open alert_state row for dedup, dispatches a resolved
+// Message to the channels recorded on that row, and stamps resolved_at. No-op
+// if there is no open row (i.e. nothing to clear). Resolved messages are
+// always severity "info" regardless of the original severity.
+func (e *Engine) resolve(ctx context.Context, dedup, body string) {
+	var (
+		subject    string
+		channelIDs []uuid.UUID
+	)
+	err := e.Pool.QueryRow(ctx, `
+		SELECT subject, channel_ids FROM alert_state
+		WHERE dedup_key = $1 AND resolved_at IS NULL`, dedup,
+	).Scan(&subject, &channelIDs)
+	if err != nil {
+		// No open row is the common case (most transitions don't clear
+		// anything because nothing was firing). Only log other errors.
+		if !errors.Is(err, pgx.ErrNoRows) {
+			slog.Warn("alerts: alert_state lookup", "dedup", dedup, "err", err)
+		}
+		return
+	}
+
+	m := notify.Message{
+		Subject:  "[Resolved] " + subject,
+		Body:     body,
+		Severity: "info",
+	}
+	for _, chID := range channelIDs {
+		if err := e.sendChannel(ctx, chID, m); err != nil {
+			slog.Warn("alerts: resolved dispatch failed",
+				"channel", chID, "dedup", dedup, "err", err)
+		}
+	}
+
+	if _, err := e.Pool.Exec(ctx,
+		`UPDATE alert_state SET resolved_at = now()
+		   WHERE dedup_key = $1 AND resolved_at IS NULL`, dedup); err != nil {
+		slog.Warn("alerts: alert_state resolve update", "err", err)
+	}
+}
+
+// splitDedupKey extracts the host_id / monitor_id from a dedup_key formed as
+// "<kind>:<uuid>" and returns them as driver-friendly any values. nil means
+// "store NULL"; this lets the upsert skip host_id for monitor-scoped rules
+// and vice versa without a separate code path.
+func splitDedupKey(dedup string) (hostArg, monitorArg any) {
+	idx := strings.IndexByte(dedup, ':')
+	if idx < 0 || idx == len(dedup)-1 {
+		return nil, nil
+	}
+	kind, raw := dedup[:idx], dedup[idx+1:]
+	id, err := uuid.Parse(raw)
+	if err != nil {
+		return nil, nil
+	}
+	switch kind {
+	case "host_offline", "login_failed", "security_updates":
+		return id, nil
+	case "monitor_failed", "cert_expiring":
+		return nil, id
+	}
+	return nil, nil
+}
+
+func parseChannelUUIDs(in []string) []uuid.UUID {
+	out := make([]uuid.UUID, 0, len(in))
+	for _, s := range in {
+		if u, err := uuid.Parse(s); err == nil {
+			out = append(out, u)
+		}
+	}
+	return out
 }
 
 // sendChannel reads the channel + dispatches. Done here (not via store) to
