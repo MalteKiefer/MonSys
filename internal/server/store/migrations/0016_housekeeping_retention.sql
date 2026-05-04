@@ -60,6 +60,7 @@ SELECT add_retention_policy('host_status_history', INTERVAL '90 days', if_not_ex
 -- Nur die Retention-Policies werden rückgängig gemacht. Die Hypertable-
 -- Konvertierung wird bewusst nicht zurückgenommen — das Zurückwandeln in eine
 -- Plain-Table ist destruktiv und für unsere Zwecke nicht erforderlich.
+-- IRREVERSIBLE: hypertable conversion + PK change is not reverted by goose down
 -- +goose StatementBegin
 SELECT remove_retention_policy('host_status_history', if_exists => TRUE);
 -- +goose StatementEnd
