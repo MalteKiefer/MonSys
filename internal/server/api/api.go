@@ -19,6 +19,7 @@ import (
 	"github.com/go-chi/httprate"
 	"github.com/google/uuid"
 
+	"github.com/pr0ph37/mon/internal/server/alerts"
 	"github.com/pr0ph37/mon/internal/server/ingestlog"
 	"github.com/pr0ph37/mon/internal/server/notify"
 	"github.com/pr0ph37/mon/internal/server/serverlog"
@@ -41,6 +42,10 @@ type Server struct {
 	API          huma.API
 	LogBuffer    *serverlog.Buffer
 	IngestBuffer *ingestlog.Buffer
+	// Alerts is optional; main wires it so the admin quiet-hours handler can
+	// invalidate the engine's cached config immediately rather than waiting
+	// for the 60 s TTL to expire.
+	Alerts *alerts.Engine
 }
 
 func New(s *store.Store) *Server {
@@ -702,6 +707,26 @@ func (s *Server) registerRoutes() {
 		Tags:        []string{"admin"},
 		Middlewares: adminOnly,
 	}, s.handleAdminTestSmtp)
+
+	// Admin: global quiet hours (singleton). When the configured window is
+	// active, the alerts engine still records each alert in alert_history
+	// but emits zero deliveries with a synthetic _quiet_hours marker.
+	huma.Register(s.API, huma.Operation{
+		OperationID: "admin-get-quiet-hours",
+		Method:      http.MethodGet,
+		Path:        "/v1/admin/quiet-hours",
+		Summary:     "Get the global quiet-hour window",
+		Tags:        []string{"admin"},
+		Middlewares: adminOnly,
+	}, s.handleAdminGetQuietHours)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "admin-put-quiet-hours",
+		Method:      http.MethodPut,
+		Path:        "/v1/admin/quiet-hours",
+		Summary:     "Replace the global quiet-hour window",
+		Tags:        []string{"admin"},
+		Middlewares: adminOnly,
+	}, s.handleAdminPutQuietHours)
 
 	// Agent-config: agents fetch their resolved config (auth via agent_key,
 	// not web user). Admin CRUD lives separately under /v1/admin/agent-config.
@@ -2502,6 +2527,51 @@ func (s *Server) handleAdminTestSmtp(ctx context.Context, in *smtpTestInput) (*s
 	}
 	out.Body.OK = true
 	return out, nil
+}
+
+// --- Quiet hours (admin) ---------------------------------------------------
+
+type quietHoursOutput struct {
+	Body apitypes.NotificationSettings
+}
+
+type quietHoursInput struct {
+	Body apitypes.NotificationSettingsInput
+}
+
+func (s *Server) handleAdminGetQuietHours(ctx context.Context, _ *struct{}) (*quietHoursOutput, error) {
+	cur, err := s.Store.GetNotificationSettings(ctx)
+	if err != nil {
+		return nil, internalErr(ctx, "quiet-hours get failed", err)
+	}
+	return &quietHoursOutput{Body: cur}, nil
+}
+
+func (s *Server) handleAdminPutQuietHours(ctx context.Context, in *quietHoursInput) (*quietHoursOutput, error) {
+	// Validate the timezone server-side. The migration default is UTC; we
+	// accept anything time.LoadLocation can resolve so operators on systems
+	// without /usr/share/zoneinfo (distroless) at least get UTC + Local.
+	if in.Body.QuietTZ != "" {
+		if _, err := time.LoadLocation(in.Body.QuietTZ); err != nil {
+			return nil, huma.Error400BadRequest("invalid timezone: " + in.Body.QuietTZ)
+		}
+	}
+	for _, d := range in.Body.QuietDays {
+		if d < 0 || d > 6 {
+			return nil, huma.Error400BadRequest("quiet_days entries must be in 0..6 (0=Sun)")
+		}
+	}
+	u, _ := userFromContext(ctx)
+	saved, err := s.Store.UpsertNotificationSettings(ctx, in.Body, u.Email)
+	if err != nil {
+		return nil, internalErr(ctx, "quiet-hours save failed", err)
+	}
+	// Drop the engine's cache so the change takes effect on the next fire
+	// rather than after the 60 s TTL.
+	if s.Alerts != nil {
+		s.Alerts.InvalidateQuietCache()
+	}
+	return &quietHoursOutput{Body: saved}, nil
 }
 
 // --- Agent config (agent fetch + admin CRUD) ------------------------------

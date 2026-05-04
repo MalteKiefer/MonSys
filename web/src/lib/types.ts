@@ -264,6 +264,24 @@ export type SmtpSettings = {
   updated_by: string;
 };
 
+export type NotificationSettings = {
+  quiet_enabled: boolean;
+  quiet_start: string;
+  quiet_end: string;
+  quiet_days: number[];
+  quiet_tz: string;
+  updated_at: string;
+  updated_by: string;
+};
+
+export type NotificationSettingsInput = {
+  quiet_enabled: boolean;
+  quiet_start: string;
+  quiet_end: string;
+  quiet_days: number[];
+  quiet_tz: string;
+};
+
 export type SmtpSettingsInput = {
   host: string;
   port: number;

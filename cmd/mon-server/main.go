@@ -145,6 +145,7 @@ func main() {
 	s := api.New(st)
 	s.LogBuffer = logBuf
 	s.IngestBuffer = ingestlog.New(envInt("MON_INGEST_BUFFER", 100), envInt("MON_INGEST_MAX_BYTES", 1<<20))
+	s.Alerts = eng
 
 	srv := &http.Server{
 		Addr:              addr,
