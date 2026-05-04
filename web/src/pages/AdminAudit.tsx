@@ -104,7 +104,7 @@ export function AdminAudit() {
           ) : entries.length === 0 ? (
             <Empty>No audit entries match.</Empty>
           ) : (
-            <Table>
+            <Table aria-label="Audit log entries">
               <THead>
                 <tr>
                   <TH>At</TH>
@@ -138,12 +138,16 @@ export function AdminAudit() {
           )}
         </PanelBody>
         {total > PAGE_SIZE && (
-          <div className="flex items-center justify-between border-t border-border px-5 py-3 text-xs text-fg-muted">
+          <div
+            aria-live="polite"
+            className="flex items-center justify-between border-t border-border px-5 py-3 text-xs text-fg-muted"
+          >
             <span className="tabular-nums">
               {offset + 1}–{Math.min(offset + entries.length, total)} of {total}
             </span>
             <div className="flex items-center gap-2">
               <button
+                aria-label="Previous page"
                 disabled={offset === 0}
                 onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
                 className="rounded-md border border-border px-2 py-1 hover:bg-panel-2 disabled:opacity-40"
@@ -151,6 +155,7 @@ export function AdminAudit() {
                 Prev
               </button>
               <button
+                aria-label="Next page"
                 disabled={offset + PAGE_SIZE >= total}
                 onClick={() => setOffset(offset + PAGE_SIZE)}
                 className="rounded-md border border-border px-2 py-1 hover:bg-panel-2 disabled:opacity-40"
