@@ -1,21 +1,12 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { Suspense, lazy, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Activity, Bell, ChevronDown, ClipboardList, CloudOff, FileJson, FileText, LayoutDashboard, LogOut, Mail, Moon, Network, Package, Radio, Server, Settings, ShieldCheck, Sliders, UserCog, Users } from "lucide-react";
 import { Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 
 import { RequireAdmin } from "./components/RequireAdmin";
 import { ThemeToggle } from "./components/ThemeToggle";
-import { AdminAgentConfig } from "./pages/AdminAgentConfig";
-import { AdminAudit } from "./pages/AdminAudit";
-import { AdminGroups } from "./pages/AdminGroups";
-import { AdminIngests } from "./pages/AdminIngests";
-import { AdminLogs } from "./pages/AdminLogs";
-import { AdminMail } from "./pages/AdminMail";
-import { AdminQuietHours } from "./pages/AdminQuietHours";
 import { AdminMonitors } from "./pages/AdminMonitors";
 import { AdminNotifications } from "./pages/AdminNotifications";
-import { AdminSecurity } from "./pages/AdminSecurity";
-import { AdminUsers } from "./pages/AdminUsers";
 import { Dashboard } from "./pages/Dashboard";
 import { HostDetail } from "./pages/HostDetail";
 import { Hosts } from "./pages/Hosts";
@@ -23,6 +14,39 @@ import { Login } from "./pages/Login";
 import { Packages } from "./pages/Packages";
 import { Profile } from "./pages/Profile";
 import { Reset } from "./pages/Reset";
+
+// Admin-only pages are lazy-loaded so non-admin users don't pay for them
+// on first paint. Each becomes its own chunk and only fetches when the
+// route is hit. The user-facing /notifications and /monitors routes still
+// import AdminNotifications and AdminMonitors eagerly above because they
+// are linked from the main nav.
+const AdminAgentConfig = lazy(() =>
+  import("./pages/AdminAgentConfig").then((m) => ({ default: m.AdminAgentConfig })),
+);
+const AdminAudit = lazy(() =>
+  import("./pages/AdminAudit").then((m) => ({ default: m.AdminAudit })),
+);
+const AdminGroups = lazy(() =>
+  import("./pages/AdminGroups").then((m) => ({ default: m.AdminGroups })),
+);
+const AdminIngests = lazy(() =>
+  import("./pages/AdminIngests").then((m) => ({ default: m.AdminIngests })),
+);
+const AdminLogs = lazy(() =>
+  import("./pages/AdminLogs").then((m) => ({ default: m.AdminLogs })),
+);
+const AdminMail = lazy(() =>
+  import("./pages/AdminMail").then((m) => ({ default: m.AdminMail })),
+);
+const AdminQuietHours = lazy(() =>
+  import("./pages/AdminQuietHours").then((m) => ({ default: m.AdminQuietHours })),
+);
+const AdminSecurity = lazy(() =>
+  import("./pages/AdminSecurity").then((m) => ({ default: m.AdminSecurity })),
+);
+const AdminUsers = lazy(() =>
+  import("./pages/AdminUsers").then((m) => ({ default: m.AdminUsers })),
+);
 import { api } from "./lib/api";
 import { useAuth } from "./lib/auth";
 import { getConnectionStatus, subscribe as subscribeConnection } from "./lib/connection";
@@ -32,6 +56,7 @@ export function App() {
   const token = useAuth((s) => s.token);
   const setSession = useAuth((s) => s.setSession);
   const persistedUser = useAuth((s) => s.user);
+  const qc = useQueryClient();
 
   // Refresh /v1/auth/me on first paint so we pick up totp_active changes
   // and admin-toggled role changes without forcing a re-login.
@@ -48,6 +73,19 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me.data]);
 
+  // When the OS reports we're back online, immediately refetch every active
+  // query so the connection banner can clear and stale data gets refreshed
+  // without waiting for the user to click somewhere. The connection store
+  // already resets its failure window on 'online' — this complements it by
+  // generating the actual fetch traffic that flips status back to "ok".
+  useEffect(() => {
+    function onOnline() {
+      qc.refetchQueries({ type: "active" });
+    }
+    window.addEventListener("online", onOnline);
+    return () => window.removeEventListener("online", onOnline);
+  }, [qc]);
+
   if (!token) {
     return (
       <Routes>
@@ -60,32 +98,34 @@ export function App() {
 
   return (
     <div className="flex h-full flex-col">
-      <Header />
       <ConnectionBanner />
+      <Header />
       <main className="flex-1 overflow-auto">
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/hosts" element={<Hosts />} />
-          <Route path="/hosts/:id" element={<HostDetail />} />
-          <Route path="/packages" element={<Packages />} />
-          <Route path="/profile" element={<Profile />} />
-          <Route path="/notifications" element={<AdminNotifications />} />
-          <Route path="/admin/notifications" element={<Navigate to="/notifications" replace />} />
-          <Route path="/monitors" element={<AdminMonitors />} />
-          <Route path="/admin/monitors" element={<Navigate to="/monitors" replace />} />
-          <Route path="/admin/groups" element={<RequireAdmin><AdminGroups /></RequireAdmin>} />
-          <Route path="/admin/logs" element={<RequireAdmin><AdminLogs /></RequireAdmin>} />
-          <Route path="/admin/ingests" element={<RequireAdmin><AdminIngests /></RequireAdmin>} />
-          <Route path="/admin/agent-config" element={<RequireAdmin><AdminAgentConfig /></RequireAdmin>} />
-          <Route path="/admin/mail" element={<RequireAdmin><AdminMail /></RequireAdmin>} />
-          <Route path="/admin/quiet-hours" element={<RequireAdmin><AdminQuietHours /></RequireAdmin>} />
-          <Route path="/admin/users" element={<RequireAdmin><AdminUsers /></RequireAdmin>} />
-          <Route path="/admin/security" element={<RequireAdmin><AdminSecurity /></RequireAdmin>} />
-          <Route path="/admin/audit" element={<RequireAdmin><AdminAudit /></RequireAdmin>} />
-          <Route path="/login" element={<Navigate to="/" replace />} />
-          <Route path="/reset" element={<Reset />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        <Suspense fallback={<div className="p-6 text-sm text-fg-muted">Loading…</div>}>
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/hosts" element={<Hosts />} />
+            <Route path="/hosts/:id" element={<HostDetail />} />
+            <Route path="/packages" element={<Packages />} />
+            <Route path="/profile" element={<Profile />} />
+            <Route path="/notifications" element={<AdminNotifications />} />
+            <Route path="/admin/notifications" element={<Navigate to="/notifications" replace />} />
+            <Route path="/monitors" element={<AdminMonitors />} />
+            <Route path="/admin/monitors" element={<Navigate to="/monitors" replace />} />
+            <Route path="/admin/groups" element={<RequireAdmin><AdminGroups /></RequireAdmin>} />
+            <Route path="/admin/logs" element={<RequireAdmin><AdminLogs /></RequireAdmin>} />
+            <Route path="/admin/ingests" element={<RequireAdmin><AdminIngests /></RequireAdmin>} />
+            <Route path="/admin/agent-config" element={<RequireAdmin><AdminAgentConfig /></RequireAdmin>} />
+            <Route path="/admin/mail" element={<RequireAdmin><AdminMail /></RequireAdmin>} />
+            <Route path="/admin/quiet-hours" element={<RequireAdmin><AdminQuietHours /></RequireAdmin>} />
+            <Route path="/admin/users" element={<RequireAdmin><AdminUsers /></RequireAdmin>} />
+            <Route path="/admin/security" element={<RequireAdmin><AdminSecurity /></RequireAdmin>} />
+            <Route path="/admin/audit" element={<RequireAdmin><AdminAudit /></RequireAdmin>} />
+            <Route path="/login" element={<Navigate to="/" replace />} />
+            <Route path="/reset" element={<Reset />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
       </main>
     </div>
   );
@@ -102,10 +142,12 @@ function ConnectionBanner() {
     <div
       role="status"
       aria-live="polite"
-      // fixed (not sticky) so it overlaps the page instead of nudging the
-      // header / main downward when it appears. z-40 sits above the header
-      // (z-30) so it's clearly visible at the top of the viewport.
-      className="pointer-events-none fixed inset-x-0 top-0 z-40 flex items-center justify-center gap-2 border-b border-fail/30 bg-fail/10 px-4 py-1.5 text-xs font-medium text-fail ring-1 ring-inset ring-fail/30 backdrop-blur"
+      // Rendered above <Header /> in the column layout so it takes its own
+      // row and pushes the header down instead of overlapping the logo /
+      // first NavLinks. sticky top-0 keeps it pinned while the body
+      // scrolls; z-40 sits above the header (z-30) so any rounded edges
+      // overlap cleanly.
+      className="sticky top-0 z-40 flex items-center justify-center gap-2 border-b border-fail/30 bg-fail/10 px-4 py-1.5 text-xs font-medium text-fail ring-1 ring-inset ring-fail/30 backdrop-blur"
     >
       <CloudOff className="h-3.5 w-3.5" aria-hidden />
       <span>Connection to mon-server lost — retrying…</span>
