@@ -32,6 +32,7 @@ import { api, ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import {
   AlertHistoryEntry,
+  AuthConfig,
   ChannelType,
   NotificationChannel,
   NotificationChannelInput,
@@ -46,6 +47,10 @@ export function AdminNotifications() {
   const isAdmin = user?.role === "admin";
   const [tab, setTab] = useState<Tab>("channels");
 
+  // Non-admins get Channels + Alerts (filtered to their channels server-side);
+  // Rules stays admin-only since composing rules is an operator activity.
+  const visibleTabs: Tab[] = isAdmin ? ["channels", "rules", "alerts"] : ["channels", "alerts"];
+
   return (
     <div className="mx-auto max-w-6xl space-y-5 p-6">
       <header className="flex items-center justify-between">
@@ -54,25 +59,26 @@ export function AdminNotifications() {
           <p className="text-sm text-fg-muted">
             {isAdmin
               ? "Manage channels (email + webhooks), rules, and review alert history. Configure the global SMTP transport under Admin → Mail (SMTP)."
-              : "Manage your delivery channels (email, Slack, Mattermost, Discord, ntfy). Email uses the SMTP transport set up by an admin."}
+              : "Manage your delivery channels (email, Slack, Mattermost, Discord, ntfy) and view alerts on your channels. Email uses the SMTP transport set up by an admin."}
           </p>
         </div>
-        {isAdmin && <Tabs tab={tab} onChange={setTab} />}
+        <Tabs tab={tab} onChange={setTab} visible={visibleTabs} />
       </header>
 
-      {(!isAdmin || tab === "channels") && <ChannelsPanel isAdmin={!!isAdmin} myID={user?.id ?? ""} />}
+      {tab === "channels" && <ChannelsPanel isAdmin={!!isAdmin} myID={user?.id ?? ""} />}
       {isAdmin && tab === "rules" && <RulesPanel />}
-      {isAdmin && tab === "alerts" && <AlertsPanel />}
+      {tab === "alerts" && <AlertsPanel />}
     </div>
   );
 }
 
-function Tabs({ tab, onChange }: { tab: Tab; onChange: (t: Tab) => void }) {
-  const items: Array<{ key: Tab; label: string; icon: typeof Bell }> = [
+function Tabs({ tab, onChange, visible }: { tab: Tab; onChange: (t: Tab) => void; visible: Tab[] }) {
+  const allItems: Array<{ key: Tab; label: string; icon: typeof Bell }> = [
     { key: "channels", label: "Channels", icon: Bell },
     { key: "rules", label: "Rules", icon: AlertTriangle },
     { key: "alerts", label: "Alerts", icon: History },
   ];
+  const items = allItems.filter((i) => visible.includes(i.key));
   return (
     <div role="tablist" className="inline-flex rounded-md border border-border bg-panel p-0.5">
       {items.map(({ key, label, icon: Icon }) => {
@@ -306,6 +312,14 @@ function ChannelForm({
   onSaved: () => void;
 }) {
   const myEmail = useAuth((s) => s.user?.email ?? "");
+  // Server-wide readiness flags: lets us warn a non-admin that creating an
+  // email channel is pointless until SMTP is configured. Falls back silently
+  // (smtp_configured stays falsy → warning shows) if the call fails.
+  const authConfig = useQuery({
+    queryKey: ["auth-config"],
+    queryFn: () => api<AuthConfig>("/v1/auth/config"),
+    staleTime: 30_000,
+  });
   const [type, setType] = useState<ChannelType>(initial?.type ?? "email");
   const [name, setName] = useState(initial?.name ?? "");
   const [enabled, setEnabled] = useState(initial?.enabled ?? true);
@@ -385,18 +399,25 @@ function ChannelForm({
           </div>
 
           {type === "email" ? (
-            <Field
-              label="Recipient email"
-              hint="Defaults to your account email. Outbound transport (SMTP host, auth, from address) is configured by an admin under Admin → Mail (SMTP)."
-            >
-              <TextInput
-                type="email"
-                required
-                value={recipientEmail}
-                onChange={(e) => setRecipientEmail(e.target.value)}
-                placeholder={myEmail}
-              />
-            </Field>
+            <>
+              {authConfig.data && authConfig.data.smtp_configured === false && (
+                <p className="rounded-md border border-warn/30 bg-warn/10 px-3 py-2 text-sm text-warn">
+                  Outbound mail isn't configured yet — ask an admin to set up SMTP under Admin → Mail before this channel can deliver.
+                </p>
+              )}
+              <Field
+                label="Recipient email"
+                hint="Defaults to your account email. Outbound transport (SMTP host, auth, from address) is configured by an admin under Admin → Mail (SMTP)."
+              >
+                <TextInput
+                  type="email"
+                  required
+                  value={recipientEmail}
+                  onChange={(e) => setRecipientEmail(e.target.value)}
+                  placeholder={myEmail}
+                />
+              </Field>
+            </>
           ) : (
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               {fields.map((f) => (
@@ -601,6 +622,18 @@ function RuleForm({
   const [paramsRaw, setParamsRaw] = useState(
     JSON.stringify(initial?.condition_params ?? {}, null, 2),
   );
+  // Inline JSON-validation hint. Re-parsed on every keystroke so the user
+  // sees the error before submitting; the server still validates the shape
+  // on save, so we deliberately do not gate the submit button.
+  const paramsParseError = useMemo<string | null>(() => {
+    if (paramsRaw.trim() === "") return null;
+    try {
+      JSON.parse(paramsRaw);
+      return null;
+    } catch (e) {
+      return (e as Error).message;
+    }
+  }, [paramsRaw]);
   const [channelIDs, setChannelIDs] = useState<string[]>(initial?.channel_ids ?? []);
   const [error, setError] = useState<string | null>(null);
 
@@ -695,6 +728,9 @@ function RuleForm({
               onChange={(e) => setParamsRaw(e.target.value)}
               className="w-full rounded-md border border-border bg-panel px-3 py-2 font-mono text-xs text-fg focus:border-accent focus:outline-none"
             />
+            {paramsParseError && (
+              <p className="mt-1 text-xs text-fail">Invalid JSON: {paramsParseError}</p>
+            )}
           </Field>
 
           <Field label="Channels" hint="Select one or more delivery channels (Ctrl/⌘ to multi-select).">

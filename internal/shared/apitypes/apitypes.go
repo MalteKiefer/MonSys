@@ -439,6 +439,14 @@ type CurrentUser struct {
 	TOTPActive bool   `json:"totp_active"`
 }
 
+// AuthConfig surfaces server-wide auth/notification readiness flags to any
+// logged-in user so the UI can warn before they create a channel that won't
+// deliver. Hidden secrets stay on the admin endpoints.
+type AuthConfig struct {
+	SSOEnabled     bool `json:"sso_enabled"     doc:"True when an external SSO provider (e.g. Pocket-ID) is wired up"`
+	SmtpConfigured bool `json:"smtp_configured" doc:"True when the global SMTP transport has Host + FromAddress set"`
+}
+
 // Self-service profile
 
 type ChangePasswordRequest struct {
