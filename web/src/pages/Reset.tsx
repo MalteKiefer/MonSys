@@ -1,6 +1,8 @@
+import { KeyRound } from "lucide-react";
 import { FormEvent, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
+import { Button, ErrorBox, Field, Panel, SuccessBox, TextInput } from "../components/ui";
 import { api, ApiError } from "../lib/api";
 
 // TODO(theme): this page still uses raw `zinc-*` Tailwind classes which
@@ -20,9 +22,9 @@ export function Reset() {
   if (!token) {
     return (
       <div className="flex min-h-full items-center justify-center px-4">
-        <p className="rounded border border-fail/40 bg-fail/10 px-4 py-3 text-sm text-fail">
-          Missing reset token. Use the link from your invite email.
-        </p>
+        <div className="w-full max-w-sm">
+          <ErrorBox>Missing reset token. Use the link from your invite email.</ErrorBox>
+        </div>
       </div>
     );
   }
@@ -51,66 +53,56 @@ export function Reset() {
 
   if (done) {
     return (
-      <div className="flex min-h-full items-center justify-center px-4">
-        <div className="w-full max-w-sm space-y-3 rounded-lg border border-ok/40 bg-ok/10 p-6">
-          <h2 className="text-base font-semibold text-ok">Password set</h2>
-          <p className="text-sm text-zinc-300">
-            You can sign in now.
-          </p>
-          <button
-            onClick={() => navigate("/login", { replace: true })}
-            className="rounded bg-zinc-100 px-3 py-1.5 text-sm font-medium text-zinc-900 hover:bg-white"
-          >
-            Go to login
-          </button>
-        </div>
+      <div className="flex min-h-full items-center justify-center px-4 py-10">
+        <Panel className="w-full max-w-sm">
+          <div className="space-y-4 p-6">
+            <SuccessBox>Password set. You can sign in now.</SuccessBox>
+            <Button
+              variant="primary"
+              onClick={() => navigate("/login", { replace: true })}
+              className="w-full"
+            >
+              Go to login
+            </Button>
+          </div>
+        </Panel>
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-full items-center justify-center px-4">
-      <form
-        onSubmit={submit}
-        className="w-full max-w-sm space-y-3 rounded-lg border border-zinc-800 bg-zinc-900 p-6"
-      >
-        <h2 className="text-base font-semibold">Set your password</h2>
-        <p className="text-sm text-zinc-400">
-          Choose a strong password. Server policy will reject weak ones.
-        </p>
-        <label className="block">
-          <span className="text-xs text-zinc-400">New password</span>
-          <input
-            type="password"
-            required
-            value={pw}
-            onChange={(e) => setPw(e.target.value)}
-            className="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
-          />
-        </label>
-        <label className="block">
-          <span className="text-xs text-zinc-400">Confirm</span>
-          <input
-            type="password"
-            required
-            value={pw2}
-            onChange={(e) => setPw2(e.target.value)}
-            className="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
-          />
-        </label>
-        {error && (
-          <p className="rounded border border-fail/40 bg-fail/10 px-3 py-2 text-sm text-fail">
-            {error}
+    <div className="flex min-h-full items-center justify-center px-4 py-10">
+      <Panel className="w-full max-w-sm">
+        <form onSubmit={submit} className="space-y-5 p-6">
+          <div className="flex items-center gap-2">
+            <KeyRound className="h-5 w-5 text-accent" />
+            <h1 className="text-lg font-semibold">Set your password</h1>
+          </div>
+          <p className="text-sm text-fg-muted">
+            Choose a strong password. Server policy will reject weak ones.
           </p>
-        )}
-        <button
-          type="submit"
-          disabled={busy}
-          className="w-full rounded bg-zinc-100 py-2 text-sm font-medium text-zinc-900 hover:bg-white disabled:opacity-50"
-        >
-          {busy ? "Saving…" : "Set password"}
-        </button>
-      </form>
+          <Field label="New password">
+            <TextInput
+              type="password"
+              required
+              value={pw}
+              onChange={(e) => setPw(e.target.value)}
+            />
+          </Field>
+          <Field label="Confirm">
+            <TextInput
+              type="password"
+              required
+              value={pw2}
+              onChange={(e) => setPw2(e.target.value)}
+            />
+          </Field>
+          {error && <ErrorBox>{error}</ErrorBox>}
+          <Button type="submit" variant="primary" disabled={busy} className="w-full">
+            {busy ? "Saving…" : "Set password"}
+          </Button>
+        </form>
+      </Panel>
     </div>
   );
 }
