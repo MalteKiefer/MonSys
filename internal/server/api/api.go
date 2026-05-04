@@ -2272,31 +2272,35 @@ func randomPlaceholder() (string, error) {
 	return "x!" + base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-// sendInviteMail looks for an SMTP channel named "system" and dispatches a
-// simple body. Failure is non-fatal — the admin still has the URL in the
-// response. Caller is the admin issuing the invite.
+// sendInviteMail dispatches a welcome message via the global SMTP transport
+// directly to the invitee's address. Failure is non-fatal — the admin still
+// has the URL in the response.
 func (s *Server) sendInviteMail(ctx context.Context, recipient, url string) error {
-	_ = recipient // currently the SMTP channel's "to" config controls delivery
-	// isAdmin=true so we see the shared SMTP "system" channel regardless of
-	// who initiated the call.
-	channels, err := s.Store.ListChannels(ctx, uuid.Nil, true)
+	if recipient == "" {
+		return errors.New("invite mail: empty recipient")
+	}
+	settings, err := s.Store.GetSmtpSettings(ctx)
 	if err != nil {
 		return err
 	}
-	for _, c := range channels {
-		if c.Type == "smtp" && c.Name == "system" && c.Enabled {
-			id, err := uuid.Parse(c.ID)
-			if err != nil {
-				return err
-			}
-			return s.Store.SendChannel(ctx, id, notify.Message{
-				Subject:  "Welcome to mon",
-				Body:     "An admin invited you to mon. Open this link to set your password:\n\n" + url,
-				Severity: "info",
-			})
-		}
+	cfg := map[string]any{
+		"host":                 settings.Host,
+		"port":                 settings.Port,
+		"username":             settings.Username,
+		"password":             settings.Password,
+		"from":                 settings.FromAddress,
+		"to":                   []string{recipient},
+		"starttls":             settings.StartTLS,
+		"tls":                  settings.TLS,
+		"insecure_skip_verify": settings.InsecureSkipVerify,
 	}
-	return errors.New("no SMTP channel named 'system' configured")
+	return notify.Dispatch(ctx, notify.Channel{
+		ID: "invite-mail", Type: "email", Name: "invite", Config: cfg,
+	}, notify.Message{
+		Subject:  "Welcome to mon",
+		Body:     "An admin invited you to mon. Open this link to set your password:\n\n" + url,
+		Severity: "info",
+	})
 }
 
 func (s *Server) handleAdminDeleteUser(ctx context.Context, in *hostIDInput) (*emptyOutput, error) {

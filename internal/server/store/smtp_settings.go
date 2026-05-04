@@ -45,7 +45,8 @@ func (s *Store) GetSmtpSettings(ctx context.Context) (SmtpSettingsRaw, error) {
 }
 
 // UpsertSmtpSettings saves the singleton SMTP row. When in.Password is empty
-// and clearPassword is false, the stored password is preserved.
+// and clearPassword is false, the stored password is preserved atomically
+// inside the upsert — no read-modify-write race against concurrent admins.
 func (s *Store) UpsertSmtpSettings(ctx context.Context, in apitypes.SmtpSettingsInput, updatedBy string) (apitypes.SmtpSettings, error) {
 	if in.Host == "" || in.FromAddress == "" {
 		return apitypes.SmtpSettings{}, errors.New("host and from_address are required")
@@ -54,15 +55,14 @@ func (s *Store) UpsertSmtpSettings(ctx context.Context, in apitypes.SmtpSettings
 		in.Port = 587
 	}
 
-	password := in.Password
-	if password == "" && !in.ClearPassword {
-		// preserve existing
-		var existing string
-		err := s.Pool.QueryRow(ctx, `SELECT password FROM smtp_settings WHERE id = 1`).Scan(&existing)
-		if err == nil {
-			password = existing
-		}
-		// pgx.ErrNoRows is fine — first save just stores empty.
+	// Three-valued password handling:
+	//   ClearPassword=true  → store empty
+	//   Password != ""      → store the new value
+	//   else (default)      → keep the previously stored value via ON CONFLICT CASE
+	var password string
+	keepExisting := !in.ClearPassword && in.Password == ""
+	if !keepExisting {
+		password = in.Password
 	}
 
 	_, err := s.Pool.Exec(ctx, `
@@ -75,7 +75,7 @@ func (s *Store) UpsertSmtpSettings(ctx context.Context, in apitypes.SmtpSettings
 			host = EXCLUDED.host,
 			port = EXCLUDED.port,
 			username = EXCLUDED.username,
-			password = EXCLUDED.password,
+			password = CASE WHEN $10 THEN smtp_settings.password ELSE EXCLUDED.password END,
 			from_address = EXCLUDED.from_address,
 			starttls = EXCLUDED.starttls,
 			tls = EXCLUDED.tls,
@@ -84,6 +84,7 @@ func (s *Store) UpsertSmtpSettings(ctx context.Context, in apitypes.SmtpSettings
 			updated_by = EXCLUDED.updated_by`,
 		in.Host, in.Port, in.Username, password, in.FromAddress,
 		in.StartTLS, in.TLS, in.InsecureSkipVerify, nullableString(updatedBy),
+		keepExisting,
 	)
 	if err != nil {
 		return apitypes.SmtpSettings{}, err

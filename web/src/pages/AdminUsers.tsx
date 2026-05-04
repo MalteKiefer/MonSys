@@ -111,7 +111,7 @@ function CreateUserCard({ onCreated }: { onCreated: () => void }) {
             checked={sendInvite}
             onChange={(e) => setSendInvite(e.target.checked)}
           />
-          Send invite email (requires SMTP channel named "system")
+          Send invite email (requires SMTP configured under Admin → Mail)
         </label>
         <button
           type="submit"

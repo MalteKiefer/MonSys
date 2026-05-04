@@ -265,18 +265,21 @@ func (e *Engine) fire(ctx context.Context, r ruleRow, subject, body, dedup strin
 	}
 }
 
-// sendChannel calls the channel via store.SendChannel-equivalent. We avoid
-// importing store to dodge an import cycle; instead we read the row + dispatch
-// here.
+// sendChannel reads the channel + dispatches. Done here (not via store) to
+// avoid an alerts→store→alerts import cycle. For email channels the global
+// SMTP transport from smtp_settings is merged in just before dispatch, so a
+// recipient_email row plus admin-saved SMTP credentials is enough to send.
 func (e *Engine) sendChannel(ctx context.Context, id uuid.UUID, m notify.Message) error {
 	var (
 		typ, name string
 		enabled   bool
 		raw       []byte
+		recipient string
 	)
 	err := e.Pool.QueryRow(ctx,
-		`SELECT type, name, enabled, config FROM notification_channels WHERE id = $1`, id,
-	).Scan(&typ, &name, &enabled, &raw)
+		`SELECT type, name, enabled, config, COALESCE(recipient_email, '')
+		   FROM notification_channels WHERE id = $1`, id,
+	).Scan(&typ, &name, &enabled, &raw, &recipient)
 	if err != nil {
 		return err
 	}
@@ -286,6 +289,16 @@ func (e *Engine) sendChannel(ctx context.Context, id uuid.UUID, m notify.Message
 	cfg := map[string]any{}
 	if len(raw) > 0 {
 		_ = json.Unmarshal(raw, &cfg)
+	}
+	if typ == "email" || typ == "smtp" {
+		if recipient == "" {
+			return fmt.Errorf("channel %s has no recipient_email", name)
+		}
+		merged, err := e.loadSmtpDispatchConfig(ctx, recipient)
+		if err != nil {
+			return err
+		}
+		cfg = merged
 	}
 	sendErr := notify.Dispatch(ctx, notify.Channel{
 		ID: id.String(), Type: typ, Name: name, Config: cfg,
@@ -300,6 +313,36 @@ func (e *Engine) sendChannel(ctx context.Context, id uuid.UUID, m notify.Message
 			id)
 	}
 	return sendErr
+}
+
+// loadSmtpDispatchConfig reads the global smtp_settings singleton and returns
+// the runtime config map notify.SMTP expects. Mirrored from the store helper
+// (kept in sync — small enough to duplicate vs. introducing an import cycle).
+func (e *Engine) loadSmtpDispatchConfig(ctx context.Context, recipient string) (map[string]any, error) {
+	var (
+		host, username, password, from string
+		port                           int
+		starttls, tls, insecure        bool
+	)
+	err := e.Pool.QueryRow(ctx, `
+		SELECT host, port, username, password, from_address,
+		       starttls, tls, insecure_skip_verify
+		FROM smtp_settings WHERE id = 1`,
+	).Scan(&host, &port, &username, &password, &from, &starttls, &tls, &insecure)
+	if err != nil {
+		return nil, fmt.Errorf("smtp settings: %w", err)
+	}
+	return map[string]any{
+		"host":                 host,
+		"port":                 port,
+		"username":             username,
+		"password":             password,
+		"from":                 from,
+		"to":                   []string{recipient},
+		"starttls":             starttls,
+		"tls":                  tls,
+		"insecure_skip_verify": insecure,
+	}, nil
 }
 
 func (e *Engine) recentlyFired(ctx context.Context, dedup string, within time.Duration) (bool, error) {
