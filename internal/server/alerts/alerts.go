@@ -223,14 +223,19 @@ func (e *Engine) evalSecurityUpdates(ctx context.Context, r ruleRow) {
 // --- fire path -------------------------------------------------------------
 
 func (e *Engine) fire(ctx context.Context, r ruleRow, subject, body, dedup string) {
-	if r.ThrottleSec > 0 {
-		recent, err := e.recentlyFired(ctx, dedup, time.Duration(r.ThrottleSec)*time.Second)
-		if err != nil {
-			slog.Warn("alerts: recentlyFired query failed; firing anyway",
-				"rule", r.Name, "err", err)
-		} else if recent {
-			return
-		}
+	// throttle_sec == 0 historically meant "no throttling", which made the
+	// engine spam every tick during sustained outages. Treat 0 as "use the
+	// default" (300s) instead; migration 0015 also rewrites stored zeros.
+	throttle := r.ThrottleSec
+	if throttle <= 0 {
+		throttle = 300
+	}
+	recent, err := e.recentlyFired(ctx, dedup, time.Duration(throttle)*time.Second)
+	if err != nil {
+		slog.Warn("alerts: recentlyFired query failed; firing anyway",
+			"rule", r.Name, "err", err)
+	} else if recent {
+		return
 	}
 
 	severity := r.Severity
@@ -255,7 +260,7 @@ func (e *Engine) fire(ctx context.Context, r ruleRow, subject, body, dedup strin
 	}
 
 	errJSON, _ := json.Marshal(errors)
-	_, err := e.Pool.Exec(ctx, `
+	_, err = e.Pool.Exec(ctx, `
 		INSERT INTO alert_history (rule_id, rule_name, severity, subject, body,
 		                           dedup_key, delivered_to, delivery_errors)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
@@ -346,10 +351,16 @@ func (e *Engine) loadSmtpDispatchConfig(ctx context.Context, recipient string) (
 }
 
 func (e *Engine) recentlyFired(ctx context.Context, dedup string, within time.Duration) (bool, error) {
+	// Only count rows where at least one channel actually delivered. A row
+	// with an empty delivered_to means every channel errored, so the operator
+	// never received the alert — suppressing the next one would compound the
+	// outage (e.g. an SMTP flap silencing real alerts for the whole window).
 	var n int
 	err := e.Pool.QueryRow(ctx, `
 		SELECT count(*) FROM alert_history
-		WHERE dedup_key = $1 AND at >= now() - make_interval(secs => $2)`,
+		WHERE dedup_key = $1
+		  AND at >= now() - make_interval(secs => $2)
+		  AND coalesce(array_length(delivered_to, 1), 0) > 0`,
 		dedup, within.Seconds()).Scan(&n)
 	if err != nil {
 		return false, err

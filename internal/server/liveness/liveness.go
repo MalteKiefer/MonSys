@@ -123,7 +123,7 @@ func (w *Watcher) Tick(ctx context.Context) error {
 	type row struct {
 		id       uuid.UUID
 		hostname string
-		lastSeen time.Time
+		lastSeen *time.Time
 		current  *string
 	}
 	var rs []row
@@ -136,6 +136,12 @@ func (w *Watcher) Tick(ctx context.Context) error {
 	}
 
 	for _, r := range rs {
+		// Freshly registered hosts have last_seen_at = NULL until their first
+		// ingest. Without this guard we'd compute now.Sub(zero-time) and fire
+		// host_offline immediately on registration. Skip until we have data.
+		if r.lastSeen == nil {
+			continue
+		}
 		want := classify(now.Sub(r.lastSeen.UTC()), w.Thresholds)
 		have := ""
 		if r.current != nil {
