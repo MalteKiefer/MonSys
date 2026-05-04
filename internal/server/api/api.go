@@ -266,6 +266,18 @@ func (s *Server) registerRoutes() {
 		Middlewares: huma.Middlewares{s.requireUser},
 	}, s.handleMe)
 
+	// Lightweight server-wide auth/notification readiness flags. Any logged-in
+	// user can read this so non-admins can be told *before* they create an
+	// email channel that SMTP isn't configured yet.
+	huma.Register(s.API, huma.Operation{
+		OperationID: "auth-config",
+		Method:      http.MethodGet,
+		Path:        "/v1/auth/config",
+		Summary:     "Server-wide readiness flags (sso, smtp) visible to any user",
+		Tags:        []string{"auth"},
+		Middlewares: huma.Middlewares{s.requireUser},
+	}, s.handleAuthConfig)
+
 	// Read APIs require a user session.
 	protected := huma.Middlewares{s.requireUser}
 	// Operator surfaces (user management, agent config, notification rules, …)
@@ -1578,7 +1590,29 @@ func (s *Server) handleAlertHistory(ctx context.Context, in *alertHistoryInput) 
 	if since.IsZero() {
 		since = time.Now().Add(-24 * time.Hour).UTC()
 	}
-	alerts, err := s.Store.ListAlertHistory(ctx, since, in.Limit)
+	u, ok := userFromContext(ctx)
+	if !ok {
+		return nil, huma.Error401Unauthorized("no session")
+	}
+	// Admins see every alert; everyone else is restricted to alerts where one
+	// of their delivery channels appears in delivered_to. We pass an explicit
+	// (possibly empty) slice so the store knows "filtered" vs "unfiltered".
+	var restrict []uuid.UUID
+	if u.Role != "admin" {
+		channels, err := s.Store.ListChannels(ctx, u.ID, false)
+		if err != nil {
+			return nil, internalErr(ctx, "channel lookup failed", err)
+		}
+		restrict = make([]uuid.UUID, 0, len(channels))
+		for _, c := range channels {
+			id, err := uuid.Parse(c.ID)
+			if err != nil {
+				continue
+			}
+			restrict = append(restrict, id)
+		}
+	}
+	alerts, err := s.Store.ListAlertHistory(ctx, since, in.Limit, restrict)
 	if err != nil {
 		return nil, internalErr(ctx, "query failed", err)
 	}
@@ -2120,6 +2154,36 @@ func (s *Server) handleMe(ctx context.Context, _ *emptyInput) (*meOutput, error)
 		Role:       full.Role,
 		TOTPActive: full.TOTPActive,
 	}}, nil
+}
+
+type authConfigOutput struct {
+	Body apitypes.AuthConfig
+}
+
+// handleAuthConfig reports server-wide readiness flags so non-admin pages can
+// surface "create-an-email-channel won't work yet" warnings without exposing
+// the admin SMTP settings themselves. SSO is a placeholder for future
+// Pocket-ID work; SMTP readiness is true iff the singleton row has both Host
+// and FromAddress set. Best-effort: any unexpected error is logged and we
+// return false rather than failing the call.
+func (s *Server) handleAuthConfig(ctx context.Context, _ *emptyInput) (*authConfigOutput, error) {
+	out := &authConfigOutput{}
+	out.Body.SSOEnabled = false
+
+	if s.Store == nil {
+		return out, nil
+	}
+	settings, err := s.Store.GetSmtpSettings(ctx)
+	switch {
+	case err == nil:
+		out.Body.SmtpConfigured = settings.Host != "" && settings.FromAddress != ""
+	case errors.Is(err, store.ErrSmtpNotConfigured):
+		out.Body.SmtpConfigured = false
+	default:
+		slog.Warn("auth-config: smtp settings lookup failed", "err", err)
+		out.Body.SmtpConfigured = false
+	}
+	return out, nil
 }
 
 // --- Session middleware ----------------------------------------------------
