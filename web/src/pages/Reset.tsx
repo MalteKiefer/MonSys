@@ -3,6 +3,10 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { api, ApiError } from "../lib/api";
 
+// TODO(theme): this page still uses raw `zinc-*` Tailwind classes which
+// don't follow the dark/light palette. Migrate to semantic tokens
+// (text-fg-muted, bg-panel, border-border, …) in a follow-up.
+
 export function Reset() {
   const [params] = useSearchParams();
   const navigate = useNavigate();

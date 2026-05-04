@@ -4,6 +4,7 @@ import { Activity, Bell, ChevronDown, ClipboardList, CloudOff, FileJson, FileTex
 import { Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 
 import { RequireAdmin } from "./components/RequireAdmin";
+import { ThemeToggle } from "./components/ThemeToggle";
 import { AdminAgentConfig } from "./pages/AdminAgentConfig";
 import { AdminAudit } from "./pages/AdminAudit";
 import { AdminGroups } from "./pages/AdminGroups";
@@ -152,6 +153,7 @@ function Header() {
           </span>
         )}
         <span className="text-fg-muted">{user?.email}</span>
+        <ThemeToggle />
         <button
           onClick={logout}
           aria-label="Sign out"

@@ -8,6 +8,52 @@
 @tailwind utilities;
 
 @layer base {
+  /* Light palette (default) — overridden by `.dark` on <html>. Each token
+     is an "R G B" triplet so Tailwind's `<alpha-value>` placeholder still
+     works (e.g. `bg-ok/10`). The set of tokens here is the contract;
+     tailwind.config.js wires every one of them into a class. */
+  :root {
+    --color-bg: 255 255 255;
+    --color-panel: 250 250 250;
+    --color-panel-2: 244 244 245;
+    --color-border: 228 228 231;
+    --color-border-strong: 212 212 216;
+    --color-fg: 9 9 11;
+    --color-fg-muted: 82 82 91;
+    --color-fg-subtle: 113 113 122;
+    --color-accent: 5 150 105;
+    --color-accent-hover: 4 120 87;
+    --color-ok: 5 150 105;
+    --color-warn: 217 119 6;
+    --color-fail: 220 38 38;
+    --color-stale: 217 119 6;
+    --color-offline: 113 113 122;
+    --color-critical: 220 38 38;
+    --color-info: 37 99 235;
+  }
+
+  /* Dark palette — exact preservation of the previous hard-dark values so
+     that toggling `dark` on <html> yields identical pixels to pre-toggle. */
+  .dark {
+    --color-bg: 9 9 11;
+    --color-panel: 24 24 27;
+    --color-panel-2: 28 28 31;
+    --color-border: 39 39 42;
+    --color-border-strong: 63 63 70;
+    --color-fg: 250 250 250;
+    --color-fg-muted: 161 161 170;
+    --color-fg-subtle: 113 113 122;
+    --color-accent: 16 185 129;
+    --color-accent-hover: 52 211 153;
+    --color-ok: 16 185 129;
+    --color-warn: 245 158 11;
+    --color-fail: 239 68 68;
+    --color-stale: 245 158 11;
+    --color-offline: 113 113 122;
+    --color-critical: 239 68 68;
+    --color-info: 96 165 250;
+  }
+
   html {
     font-feature-settings: "cv11", "ss01", "ss03"; /* Inter character variants */
   }
@@ -15,23 +61,25 @@
     font-family: theme("fontFamily.sans");
     font-feature-settings: "cv11", "ss01";
   }
-  /* Scrollbar tuned for dark UI; only applied when supported. */
+  /* Scrollbar tuned for the active palette. Tailwind's `theme()` helper
+     can't read CSS variables, so we drive these straight from the same
+     vars used by the rest of the palette. */
   * {
-    scrollbar-color: theme("colors.border-strong") theme("colors.bg");
+    scrollbar-color: rgb(var(--color-border-strong)) rgb(var(--color-bg));
   }
   *::-webkit-scrollbar { width: 8px; height: 8px; }
-  *::-webkit-scrollbar-thumb { background: theme("colors.border-strong"); border-radius: 4px; }
+  *::-webkit-scrollbar-thumb { background: rgb(var(--color-border-strong)); border-radius: 4px; }
   *::-webkit-scrollbar-track { background: transparent; }
 }
 
 @layer components {
-  /* uPlot dark theme overrides. uPlot gives us a `.u-wrap` root we can scope. */
+  /* uPlot theme overrides. uPlot gives us a `.u-wrap` root we can scope. */
   .u-wrap {
-    color: theme("colors.fg-muted");
+    color: rgb(var(--color-fg-muted));
     font-family: theme("fontFamily.sans");
     font-size: 11px;
   }
-  .u-legend { color: theme("colors.fg-muted"); }
-  .u-legend th { color: theme("colors.fg-subtle"); font-weight: 500; }
+  .u-legend { color: rgb(var(--color-fg-muted)); }
+  .u-legend th { color: rgb(var(--color-fg-subtle)); font-weight: 500; }
   .u-cursor-pt { box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.4); }
 }
