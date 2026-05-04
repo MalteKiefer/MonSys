@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -252,7 +253,10 @@ func scanChannel(scan func(...any) error) (apitypes.NotificationChannel, error) 
 	c.ID = idVal.String()
 	c.Config = map[string]any{}
 	if len(cfg) > 0 {
-		_ = json.Unmarshal(cfg, &c.Config)
+		if err := json.Unmarshal(cfg, &c.Config); err != nil {
+			slog.Warn("notification_channels: corrupt config jsonb", "channel_id", c.ID, "err", err)
+			c.Config = map[string]any{}
+		}
 	}
 	if ownerVal != nil {
 		c.OwnerUserID = ownerVal.String()

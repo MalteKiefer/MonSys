@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -214,7 +215,10 @@ func scanRule(scan func(...any) error) (apitypes.NotificationRule, error) {
 	r.ID = idVal.String()
 	r.ConditionParams = map[string]any{}
 	if len(paramsRaw) > 0 {
-		_ = json.Unmarshal(paramsRaw, &r.ConditionParams)
+		if err := json.Unmarshal(paramsRaw, &r.ConditionParams); err != nil {
+			slog.Warn("notification_rules: corrupt config jsonb", "rule_id", r.ID, "err", err)
+			r.ConditionParams = map[string]any{}
+		}
 	}
 	for _, u := range channelIDs {
 		r.ChannelIDs = append(r.ChannelIDs, u.String())
