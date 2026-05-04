@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -2667,6 +2668,8 @@ func (s *Server) handleAdminPutQuietHours(ctx context.Context, in *quietHoursInp
 	if s.Alerts != nil {
 		s.Alerts.InvalidateQuietCache()
 	}
+	detail := fmt.Sprintf("%v %s-%s tz=%s days=%v", in.Body.QuietEnabled, in.Body.QuietStart, in.Body.QuietEnd, in.Body.QuietTZ, in.Body.QuietDays)
+	s.audit(ctx, "quiet_hours.update", "", detail)
 	return &quietHoursOutput{Body: saved}, nil
 }
 
