@@ -2,7 +2,7 @@
 // the single source of truth for colors/spacing/typography. No third-party
 // component library is used — these compose directly on top of Tailwind.
 
-import { ComponentPropsWithoutRef, ReactNode } from "react";
+import { ComponentPropsWithoutRef, KeyboardEvent, ReactNode, useRef } from "react";
 
 // ---- Layout primitives -----------------------------------------------------
 
@@ -288,40 +288,69 @@ export function Tabs<T extends string>({
   value,
   onChange,
   className = "",
+  idPrefix = "tab",
+  panelIdPrefix = "panel",
 }: {
   items: ReadonlyArray<TabItem<T>>;
   value: T;
   onChange: (v: T) => void;
   className?: string;
+  idPrefix?: string;
+  panelIdPrefix?: string;
 }) {
+  const visibleItems = items.filter((i) => !i.hidden);
+  const tablistRef = useRef<HTMLDivElement | null>(null);
+
+  function onKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    const idx = visibleItems.findIndex((i) => i.key === value);
+    if (idx < 0 || visibleItems.length === 0) return;
+    const delta = e.key === "ArrowRight" ? 1 : -1;
+    const next = visibleItems[(idx + delta + visibleItems.length) % visibleItems.length];
+    onChange(next.key);
+    // Move focus to the newly active tab so arrow nav also moves DOM focus.
+    const root = tablistRef.current;
+    if (root) {
+      const btn = root.querySelector<HTMLButtonElement>(`#${idPrefix}-${next.key}`);
+      btn?.focus();
+    }
+  }
+
   return (
-    <div role="tablist" className={`sticky top-header-h z-20 -mx-2 flex gap-1 overflow-x-auto border-b border-border bg-bg/85 px-2 py-1.5 backdrop-blur supports-[backdrop-filter]:bg-bg/70 ${className}`}>
-      {items
-        .filter((i) => !i.hidden)
-        .map(({ key, label, icon: Icon, badge }) => {
-          const active = key === value;
-          return (
-            <button
-              key={key}
-              role="tab"
-              aria-selected={active}
-              onClick={() => onChange(key)}
-              className={`inline-flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors duration-150 ${
-                active
-                  ? "bg-panel-2 text-fg shadow-panel"
-                  : "text-fg-muted hover:bg-panel hover:text-fg"
-              }`}
-            >
-              {Icon && <Icon className="h-3.5 w-3.5" />}
-              {label}
-              {badge !== undefined && badge !== null && (
-                <span className="rounded-full bg-border-strong px-1.5 py-0.5 text-[10px] font-mono text-fg-muted">
-                  {badge}
-                </span>
-              )}
-            </button>
-          );
-        })}
+    <div
+      ref={tablistRef}
+      role="tablist"
+      onKeyDown={onKeyDown}
+      className={`sticky top-header-h z-20 -mx-2 flex gap-1 overflow-x-auto border-b border-border bg-bg/85 px-2 py-1.5 backdrop-blur supports-[backdrop-filter]:bg-bg/70 ${className}`}
+    >
+      {visibleItems.map(({ key, label, icon: Icon, badge }) => {
+        const active = key === value;
+        return (
+          <button
+            key={key}
+            id={`${idPrefix}-${key}`}
+            role="tab"
+            aria-selected={active}
+            aria-controls={`${panelIdPrefix}-${key}`}
+            tabIndex={active ? 0 : -1}
+            onClick={() => onChange(key)}
+            className={`inline-flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors duration-150 ${
+              active
+                ? "bg-panel-2 text-fg shadow-panel"
+                : "text-fg-muted hover:bg-panel hover:text-fg"
+            }`}
+          >
+            {Icon && <Icon className="h-3.5 w-3.5" />}
+            {label}
+            {badge !== undefined && badge !== null && (
+              <span className="rounded-full bg-border-strong px-1.5 py-0.5 text-[10px] font-mono text-fg-muted">
+                {badge}
+              </span>
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 }

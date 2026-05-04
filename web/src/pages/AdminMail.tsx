@@ -53,7 +53,10 @@ export function AdminMail() {
       ) : (
         <SettingsForm
           initial={settings.data!}
-          onSaved={() => qc.invalidateQueries({ queryKey: ["admin-smtp"] })}
+          onSaved={() => {
+            qc.invalidateQueries({ queryKey: ["admin-smtp"] });
+            qc.invalidateQueries({ queryKey: ["auth-config"] });
+          }}
         />
       )}
 
