@@ -61,3 +61,13 @@ fi
 systemctl enable --now mon-agent.service
 sleep 2
 systemctl is-active mon-agent.service
+
+# 7. self-update timer — checks for new binary every 6h, sha256-verifies,
+# atomic-replaces, restarts. Skipped silently if the operator did not stage
+# the unit files in /tmp.
+if [ -f /tmp/mon-agent-update.service ] && [ -f /tmp/mon-agent-update.timer ]; then
+  install -m 0644 /tmp/mon-agent-update.service /etc/systemd/system/mon-agent-update.service
+  install -m 0644 /tmp/mon-agent-update.timer   /etc/systemd/system/mon-agent-update.timer
+  systemctl daemon-reload
+  systemctl enable --now mon-agent-update.timer
+fi

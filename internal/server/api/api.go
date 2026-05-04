@@ -20,6 +20,7 @@ import (
 	"github.com/go-chi/httprate"
 	"github.com/google/uuid"
 
+	"github.com/MalteKiefer/MonSys/internal/server/agentupdate"
 	"github.com/MalteKiefer/MonSys/internal/server/alerts"
 	"github.com/MalteKiefer/MonSys/internal/server/ingestlog"
 	"github.com/MalteKiefer/MonSys/internal/server/notify"
@@ -47,6 +48,10 @@ type Server struct {
 	// invalidate the engine's cached config immediately rather than waiting
 	// for the 60 s TTL to expire.
 	Alerts *alerts.Engine
+	// AgentUpdate publishes the metadata mon-agent's self-updater consults
+	// (latest version + per-arch URL + sha256). Optional — endpoint returns
+	// 404 when nil.
+	AgentUpdate *agentupdate.Resolver
 }
 
 func New(s *store.Store) *Server {
@@ -239,6 +244,15 @@ func (s *Server) registerRoutes() {
 		Description: "Agents push samples here. Auth: Authorization: Bearer <agent_key>.",
 		Tags:        []string{"ingest"},
 	}, s.handleIngest)
+
+	huma.Register(s.API, huma.Operation{
+		OperationID: "agent-latest-version",
+		Method:      http.MethodGet,
+		Path:        "/v1/agents/latest-version",
+		Summary:     "Latest mon-agent build metadata for self-update",
+		Description: "Public. Returns the version, per-arch download URL, and SHA256 the agent's auto-updater verifies the binary against. Sourced from operator env (static mode) or the GitHub Releases API (default).",
+		Tags:        []string{"agents"},
+	}, s.handleAgentLatestVersion)
 
 	// Auth: login + me + logout. Login itself is unauthenticated.
 	huma.Register(s.API, huma.Operation{
@@ -902,6 +916,24 @@ type ingestInput struct {
 
 type ingestOutput struct {
 	Body apitypes.IngestResponse
+}
+
+type agentLatestInput struct{}
+
+type agentLatestOutput struct {
+	Body agentupdate.Manifest
+}
+
+func (s *Server) handleAgentLatestVersion(ctx context.Context, _ *agentLatestInput) (*agentLatestOutput, error) {
+	if s.AgentUpdate == nil {
+		return nil, huma.Error404NotFound("agent update resolver not configured")
+	}
+	m, err := s.AgentUpdate.Latest(ctx)
+	if err != nil {
+		slog.Warn("agent latest-version: resolver failed", "err", err)
+		return nil, huma.Error503ServiceUnavailable("agent update resolver unavailable")
+	}
+	return &agentLatestOutput{Body: *m}, nil
 }
 
 func (s *Server) handleIngest(ctx context.Context, in *ingestInput) (*ingestOutput, error) {

@@ -1,0 +1,45 @@
+[Unit]
+Description=mon agent self-updater (one-shot, root)
+Documentation=https://github.com/MalteKiefer/MonSys
+# Don't start if mon-agent.service is masked or removed.
+ConditionPathExists=/usr/local/bin/mon-agent
+After=network-online.target mon-agent.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Runs as root because it must atomic-replace /usr/local/bin/mon-agent and
+# call `systemctl try-restart`. Hardening below limits the blast radius.
+User=root
+Group=root
+
+ExecStart=/usr/local/bin/mon-agent --self-update --config=/etc/mon-agent/config.yaml
+
+# Filesystem hardening — root needs to write the binary itself, the staging
+# dir, and call systemctl. Everything else stays read-only.
+ProtectSystem=strict
+ReadWritePaths=/usr/local/bin /var/lib/mon-agent /run/systemd
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectHostname=yes
+ProtectClock=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+ProcSubset=pid
+
+NoNewPrivileges=yes
+LockPersonality=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources @mount @swap @reboot @raw-io @debug @cpu-emulation @obsolete
+
+UMask=0022
+TimeoutStartSec=5min

@@ -1,0 +1,15 @@
+[Unit]
+Description=mon agent self-update timer
+Documentation=https://github.com/MalteKiefer/MonSys
+
+[Timer]
+# First check 5 min after boot, then every 6 h. RandomizedDelaySec spreads
+# the request across a fleet so the server doesn't see a thundering herd.
+OnBootSec=5min
+OnUnitActiveSec=6h
+RandomizedDelaySec=15min
+Persistent=true
+Unit=mon-agent-update.service
+
+[Install]
+WantedBy=timers.target
