@@ -792,6 +792,16 @@ func (s *Server) registerRoutes() {
 		Middlewares: adminOnly,
 	}, s.handleSetPasswordPolicy)
 
+	// Admin: audit log
+	huma.Register(s.API, huma.Operation{
+		OperationID: "admin-list-audit",
+		Method:      http.MethodGet,
+		Path:        "/v1/admin/audit",
+		Summary:     "List audit log entries (admin actions)",
+		Tags:        []string{"admin"},
+		Middlewares: adminOnly,
+	}, s.handleAdminListAudit)
+
 	// SPA mount: anything not claimed by /v1, /healthz, /readyz, /docs is
 	// served from the embedded React build. Registered last so huma's API
 	// routes win.
@@ -1477,6 +1487,7 @@ func (s *Server) handleCreateRule(ctx context.Context, in *createRuleInput) (*ru
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
+	s.audit(ctx, "rule.create", r.ID, r.Name)
 	return &ruleOutput{Body: r}, nil
 }
 
@@ -1497,6 +1508,7 @@ func (s *Server) handleUpdateRule(ctx context.Context, in *updateRuleInput) (*ru
 		}
 		return nil, huma.Error400BadRequest(err.Error())
 	}
+	s.audit(ctx, "rule.update", r.ID, r.Name)
 	return &ruleOutput{Body: r}, nil
 }
 
@@ -1511,6 +1523,7 @@ func (s *Server) handleDeleteRule(ctx context.Context, in *ruleIDInput) (*emptyO
 		}
 		return nil, internalErr(ctx, "delete failed", err)
 	}
+	s.audit(ctx, "rule.delete", in.ID, "")
 	out := &emptyOutput{}
 	out.Body.OK = true
 	return out, nil
@@ -1710,6 +1723,7 @@ func (s *Server) handleCreateChannel(ctx context.Context, in *channelInput) (*ch
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
+	s.audit(ctx, "channel.create", c.ID, c.Type+":"+c.Name)
 	return &channelOutput{Body: c}, nil
 }
 
@@ -1755,6 +1769,7 @@ func (s *Server) handleUpdateChannel(ctx context.Context, in *updateChannelInput
 		}
 		return nil, huma.Error400BadRequest(err.Error())
 	}
+	s.audit(ctx, "channel.update", c.ID, c.Type+":"+c.Name)
 	return &channelOutput{Body: c}, nil
 }
 
@@ -1770,6 +1785,7 @@ func (s *Server) handleDeleteChannel(ctx context.Context, in *channelIDInput) (*
 		}
 		return nil, internalErr(ctx, "delete failed", err)
 	}
+	s.audit(ctx, "channel.delete", in.ID, "")
 	out := &emptyOutput{}
 	out.Body.OK = true
 	return out, nil
@@ -2222,6 +2238,7 @@ func (s *Server) handleAdminCreateUser(ctx context.Context, in *adminCreateUserI
 		out.Body.User = apitypes.AdminUserSummary{
 			ID: u.ID.String(), Email: u.Email, Role: u.Role, CreatedAt: u.CreatedAt,
 		}
+		s.audit(ctx, "user.create", u.Email, role)
 		return out, nil
 	}
 
@@ -2256,6 +2273,7 @@ func (s *Server) handleAdminCreateUser(ctx context.Context, in *adminCreateUserI
 			out.Body.InviteSent = true
 		}
 	}
+	s.audit(ctx, "user.create", u.Email, role)
 	return out, nil
 }
 
@@ -2321,6 +2339,7 @@ func (s *Server) handleAdminDeleteUser(ctx context.Context, in *hostIDInput) (*e
 		}
 		return nil, internalErr(ctx, "delete failed", err)
 	}
+	s.audit(ctx, "user.delete", in.ID, "")
 	out := &emptyOutput{}
 	out.Body.OK = true
 	return out, nil
@@ -2341,6 +2360,7 @@ func (s *Server) handleAdminLockUser(ctx context.Context, in *hostIDInput) (*emp
 	if err := s.Store.SetUserDisabled(ctx, id, true); err != nil {
 		return nil, internalErr(ctx, "lock failed", err)
 	}
+	s.audit(ctx, "user.lock", in.ID, "")
 	out := &emptyOutput{}
 	out.Body.OK = true
 	return out, nil
@@ -2378,6 +2398,7 @@ func (s *Server) handleAdminUnlockUser(ctx context.Context, in *hostIDInput) (*e
 	if err := s.Store.SetUserDisabled(ctx, id, false); err != nil {
 		return nil, internalErr(ctx, "unlock failed", err)
 	}
+	s.audit(ctx, "user.unlock", in.ID, "")
 	out := &emptyOutput{}
 	out.Body.OK = true
 	return out, nil
@@ -2409,6 +2430,7 @@ func (s *Server) handleAdminResetPassword(ctx context.Context, in *hostIDInput) 
 	if err := s.sendInviteMail(ctx, u.Email, out.Body.ResetURL); err == nil {
 		out.Body.InviteSent = true
 	}
+	s.audit(ctx, "user.reset_password", in.ID, u.Email)
 	return out, nil
 }
 
@@ -2420,6 +2442,7 @@ func (s *Server) handleAdminReset2FA(ctx context.Context, in *hostIDInput) (*emp
 	if err := s.Store.DisableTOTP(ctx, id); err != nil {
 		return nil, internalErr(ctx, "reset 2fa failed", err)
 	}
+	s.audit(ctx, "user.reset_2fa", in.ID, "")
 	out := &emptyOutput{}
 	out.Body.OK = true
 	return out, nil
@@ -2462,6 +2485,7 @@ func (s *Server) handleAdminPutSmtp(ctx context.Context, in *smtpInput) (*smtpOu
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
+	s.audit(ctx, "smtp.update", saved.Host, saved.FromAddress)
 	return &smtpOutput{Body: saved}, nil
 }
 
@@ -2498,9 +2522,11 @@ func (s *Server) handleAdminTestSmtp(ctx context.Context, in *smtpTestInput) (*s
 	if dispatchErr != nil {
 		out.Body.OK = false
 		out.Body.Error = dispatchErr.Error()
+		s.audit(ctx, "smtp.test", in.Body.To, "error: "+dispatchErr.Error())
 		return out, nil
 	}
 	out.Body.OK = true
+	s.audit(ctx, "smtp.test", in.Body.To, "ok")
 	return out, nil
 }
 
@@ -2564,6 +2590,7 @@ func (s *Server) handleUpsertAgentConfig(ctx context.Context, in *upsertAgentCon
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
+	s.audit(ctx, "agent_config.upsert", c.ID, c.Scope+":"+c.TargetID)
 	return &agentConfigEntryOutput{Body: c}, nil
 }
 
@@ -2582,6 +2609,7 @@ func (s *Server) handleDeleteAgentConfig(ctx context.Context, in *agentConfigIDI
 		}
 		return nil, internalErr(ctx, "delete failed", err)
 	}
+	s.audit(ctx, "agent_config.delete", in.ID, "")
 	out := &emptyOutput{}
 	out.Body.OK = true
 	return out, nil
@@ -2751,5 +2779,67 @@ func (s *Server) handleSetPasswordPolicy(ctx context.Context, in *setPolicyInput
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 	p, _ := s.Store.GetPasswordPolicy(ctx)
+	s.audit(ctx, "policy.update", "password_policy", "")
 	return &passwordPolicyOutput{Body: p}, nil
+}
+
+// --- Admin: audit log -----------------------------------------------------
+
+// audit writes an audit_log row best-effort: failures are downgraded to
+// slog warnings so a missing audit insert never blocks the underlying
+// admin action. Actor is taken from the request user when available.
+func (s *Server) audit(ctx context.Context, action, target, detail string) {
+	if s.Store == nil {
+		return
+	}
+	actor := ""
+	if u, ok := userFromContext(ctx); ok {
+		actor = u.Email
+	}
+	if err := s.Store.AuditLog(ctx, actor, action, target, detail); err != nil {
+		slog.Warn("audit log insert failed", "action", action, "target", target, "err", err)
+	}
+}
+
+type adminListAuditInput struct {
+	Limit  int    `query:"limit"  minimum:"1" maximum:"500" doc:"page size; default 100"`
+	Offset int    `query:"offset" minimum:"0"               doc:"row offset; default 0"`
+	Actor  string `query:"actor"                            doc:"exact actor match (e.g. user email)"`
+	Action string `query:"action"                           doc:"exact action match (e.g. user.create)"`
+}
+
+type adminListAuditOutput struct {
+	Body struct {
+		Entries []apitypes.AuditEntry `json:"entries"`
+		Total   int                   `json:"total"`
+	}
+}
+
+func (s *Server) handleAdminListAudit(ctx context.Context, in *adminListAuditInput) (*adminListAuditOutput, error) {
+	if s.Store == nil {
+		return nil, huma.Error503ServiceUnavailable("server has no store configured")
+	}
+	limit := in.Limit
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	offset := in.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	entries, err := s.Store.ListAuditLog(ctx, limit, offset, in.Actor, in.Action)
+	if err != nil {
+		return nil, internalErr(ctx, "audit list failed", err)
+	}
+	total, err := s.Store.CountAuditLog(ctx, in.Actor, in.Action)
+	if err != nil {
+		return nil, internalErr(ctx, "audit count failed", err)
+	}
+	out := &adminListAuditOutput{}
+	out.Body.Entries = entries
+	out.Body.Total = total
+	return out, nil
 }

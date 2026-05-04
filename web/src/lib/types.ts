@@ -486,3 +486,12 @@ export type PendingUpdate = {
   source_repo?: string;
   is_security: boolean;
 };
+
+export type AuditEntry = {
+  id: number;
+  actor: string;
+  action: string;
+  target: string;
+  detail: string;
+  at: string;
+};
