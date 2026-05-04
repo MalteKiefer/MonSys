@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -38,6 +39,23 @@ type Engine struct {
 	// PeriodicInterval determines how often we run "stateful" checks like
 	// "is there a host whose security_updates pending count > N?".
 	PeriodicInterval time.Duration
+
+	// Cached quiet-hour settings. The alerts engine fires on every liveness
+	// transition and every monitor result, so a synchronous DB read on every
+	// fire would be wasteful. 60 s is short enough for an admin tweaking the
+	// window not to wait long, and long enough to keep the cache effective
+	// during a sustained outage that's spawning many alerts.
+	quietMu     sync.Mutex
+	quietCache  *quietConfig
+	quietExpiry time.Time
+}
+
+type quietConfig struct {
+	enabled bool
+	start   string
+	end     string
+	days    []int
+	loc     *time.Location
 }
 
 func New(pool *pgxpool.Pool, livenessOut <-chan liveness.Transition, monitorOut <-chan probe.ResultEvent) *Engine {
@@ -258,6 +276,24 @@ func (e *Engine) fire(ctx context.Context, r ruleRow, subject, body, dedup strin
 	if severity == "" {
 		severity = "warning"
 	}
+
+	// Quiet-hour gate. We still write an alert_history row so the audit trail
+	// stays intact, but skip dispatching to channels and mark the suppression
+	// in delivery_errors. recentlyFired() above only counts rows that actually
+	// delivered, so a suppressed alert won't silence the next one.
+	if e.inQuietHours(time.Now()) {
+		errJSON, _ := json.Marshal(map[string]string{"_quiet_hours": "suppressed"})
+		_, err := e.Pool.Exec(ctx, `
+			INSERT INTO alert_history (rule_id, rule_name, severity, subject, body,
+			                           dedup_key, delivered_to, delivery_errors)
+			VALUES ($1,$2,$3,$4,$5,$6,$7::text[],$8)`,
+			r.ID, r.Name, severity, subject, body, dedup, []string{}, errJSON)
+		if err != nil {
+			slog.Warn("alerts: alert_history insert (quiet-hours)", "err", err)
+		}
+		return
+	}
+
 	m := notify.Message{Subject: subject, Body: body, Severity: severity}
 
 	delivered := []string{}
@@ -384,6 +420,133 @@ func parseChannelUUIDs(in []string) []uuid.UUID {
 		}
 	}
 	return out
+}
+
+// --- quiet hours -----------------------------------------------------------
+
+// inQuietHours mirrors the algorithm in internal/agent/agent.go:inQuietHours
+// (wraparound windows like 22:00→06:00 supported, optional day filter), but
+// resolves the comparison time in the configured timezone. The cache layer
+// reads notification_settings at most once per cacheTTL to avoid hammering
+// the DB during a sustained outage spawning lots of alerts.
+const quietCacheTTL = 60 * time.Second
+
+func (e *Engine) inQuietHours(now time.Time) bool {
+	q := e.loadQuietConfig()
+	if q == nil || !q.enabled {
+		return false
+	}
+	loc := q.loc
+	if loc == nil {
+		loc = time.UTC
+	}
+	local := now.In(loc)
+	if len(q.days) > 0 {
+		match := false
+		for _, d := range q.days {
+			if int(local.Weekday()) == d {
+				match = true
+				break
+			}
+		}
+		if !match {
+			return false
+		}
+	}
+	startMin, ok1 := parseHHMM(q.start)
+	endMin, ok2 := parseHHMM(q.end)
+	if !ok1 || !ok2 || startMin == endMin {
+		return false
+	}
+	cur := local.Hour()*60 + local.Minute()
+	if startMin < endMin {
+		return cur >= startMin && cur < endMin
+	}
+	// Wraparound (e.g. 22:00 - 06:00).
+	return cur >= startMin || cur < endMin
+}
+
+// loadQuietConfig returns the cached config, refreshing from the DB when the
+// cache is stale. A DB error returns nil (treated as "no quiet hours") so a
+// transient outage doesn't accidentally suppress alerts.
+func (e *Engine) loadQuietConfig() *quietConfig {
+	e.quietMu.Lock()
+	defer e.quietMu.Unlock()
+
+	if e.quietCache != nil && time.Now().Before(e.quietExpiry) {
+		return e.quietCache
+	}
+
+	var (
+		enabled    bool
+		start, end string
+		days       []int16
+		tz         string
+	)
+	err := e.Pool.QueryRow(context.Background(), `
+		SELECT quiet_enabled, quiet_start, quiet_end, quiet_days, quiet_tz
+		FROM notification_settings WHERE id = 1`,
+	).Scan(&enabled, &start, &end, &days, &tz)
+	if err != nil {
+		slog.Warn("alerts: notification_settings load", "err", err)
+		// Cache nil briefly so we don't slam the DB while it's down.
+		e.quietCache = nil
+		e.quietExpiry = time.Now().Add(quietCacheTTL)
+		return nil
+	}
+	loc, lerr := time.LoadLocation(tz)
+	if lerr != nil {
+		loc = time.UTC
+	}
+	cfg := &quietConfig{
+		enabled: enabled,
+		start:   start,
+		end:     end,
+		loc:     loc,
+	}
+	for _, d := range days {
+		cfg.days = append(cfg.days, int(d))
+	}
+	e.quietCache = cfg
+	e.quietExpiry = time.Now().Add(quietCacheTTL)
+	return cfg
+}
+
+// InvalidateQuietCache forces the next inQuietHours() call to re-read the
+// settings row. Called from the admin PUT handler so an operator's change
+// takes effect immediately rather than after the 60 s TTL.
+func (e *Engine) InvalidateQuietCache() {
+	e.quietMu.Lock()
+	defer e.quietMu.Unlock()
+	e.quietCache = nil
+	e.quietExpiry = time.Time{}
+}
+
+func parseHHMM(s string) (int, bool) {
+	if len(s) < 4 || len(s) > 5 {
+		return 0, false
+	}
+	parts := strings.Split(s, ":")
+	if len(parts) != 2 {
+		return 0, false
+	}
+	h, err1 := atoiSafe(parts[0])
+	m, err2 := atoiSafe(parts[1])
+	if err1 != nil || err2 != nil || h < 0 || h > 23 || m < 0 || m > 59 {
+		return 0, false
+	}
+	return h*60 + m, true
+}
+
+func atoiSafe(s string) (int, error) {
+	n := 0
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return 0, fmt.Errorf("not a number: %q", s)
+		}
+		n = n*10 + int(c-'0')
+	}
+	return n, nil
 }
 
 // sendChannel reads the channel + dispatches. Done here (not via store) to
