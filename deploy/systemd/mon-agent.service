@@ -32,7 +32,9 @@ ProtectKernelModules=yes
 ProtectKernelLogs=yes
 ProtectControlGroups=yes
 ProtectProc=invisible
-ProcSubset=pid
+# ProcSubset=pid removed: hides /proc/stat, /proc/net/dev, /proc/meminfo
+# which the agent's net/cpu/mem collectors need. ProtectProc=invisible
+# already hides other users' process info, which is the real concern.
 
 # Privileges
 NoNewPrivileges=yes
@@ -54,9 +56,10 @@ UMask=0077
 Restart=on-failure
 RestartSec=5s
 TimeoutStopSec=15s
-
-# Watchdog: agent pings systemd
-WatchdogSec=60s
+# WatchdogSec removed: requires Type=notify and the agent calling
+# sd_notify(WATCHDOG=1) on every successful tick; the current Type=simple
+# agent doesn't implement that, so leaving WatchdogSec=60s caused
+# systemd to kill it every 60s (Failed with result 'watchdog').
 
 [Install]
 WantedBy=multi-user.target
