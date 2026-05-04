@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, Bell, ChevronDown, ClipboardList, FileJson, FileText, LayoutDashboard, LogOut, Mail, Moon, Network, Package, Radio, Server, Settings, ShieldCheck, Sliders, UserCog, Users } from "lucide-react";
+import { Activity, Bell, ChevronDown, ClipboardList, CloudOff, FileJson, FileText, LayoutDashboard, LogOut, Mail, Moon, Network, Package, Radio, Server, Settings, ShieldCheck, Sliders, UserCog, Users } from "lucide-react";
 import { Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 
 import { RequireAdmin } from "./components/RequireAdmin";
@@ -24,6 +24,7 @@ import { Profile } from "./pages/Profile";
 import { Reset } from "./pages/Reset";
 import { api } from "./lib/api";
 import { useAuth } from "./lib/auth";
+import { getConnectionStatus, subscribe as subscribeConnection } from "./lib/connection";
 import { CurrentUser } from "./lib/types";
 
 export function App() {
@@ -59,6 +60,7 @@ export function App() {
   return (
     <div className="flex h-full flex-col">
       <Header />
+      <ConnectionBanner />
       <main className="flex-1 overflow-auto">
         <Routes>
           <Route path="/" element={<Dashboard />} />
@@ -84,6 +86,28 @@ export function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
+    </div>
+  );
+}
+
+function ConnectionBanner() {
+  // Subscribe to the external connection store via useSyncExternalStore so the
+  // banner re-renders the moment api() reports a failure (or the OS fires
+  // 'offline'). The store throttles failures itself — by the time we render
+  // status === "lost" we've already crossed the ≥ 2-failures-in-10s threshold.
+  const status = useSyncExternalStore(subscribeConnection, getConnectionStatus, getConnectionStatus);
+  if (status !== "lost") return null;
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      // fixed (not sticky) so it overlaps the page instead of nudging the
+      // header / main downward when it appears. z-40 sits above the header
+      // (z-30) so it's clearly visible at the top of the viewport.
+      className="pointer-events-none fixed inset-x-0 top-0 z-40 flex items-center justify-center gap-2 border-b border-fail/30 bg-fail/10 px-4 py-1.5 text-xs font-medium text-fail ring-1 ring-inset ring-fail/30 backdrop-blur"
+    >
+      <CloudOff className="h-3.5 w-3.5" aria-hidden />
+      <span>Connection to mon-server lost — retrying…</span>
     </div>
   );
 }

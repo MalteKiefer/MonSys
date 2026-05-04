@@ -1,10 +1,14 @@
 import { useAuth } from "./auth";
+import { setFailure, setSuccess } from "./connection";
 
 // Single fetch helper that:
 //   - prefixes the API base ("" in prod = same origin; Vite proxies /v1 in dev)
 //   - injects Authorization: Bearer <session-token> when authenticated
 //   - on 401, clears the auth store so React Router can redirect to /login
 //   - throws ApiError on any non-2xx so TanStack Query lands in `error` state
+//   - reports liveness to the connection store: 2xx-4xx (excl. 5xx) = success,
+//     network errors and 5xx = failure (so the global "Connection lost"
+//     banner can flip on after ≥ 2 failures within 10 s).
 
 export class ApiError extends Error {
   constructor(public status: number, public detail: string) {
@@ -29,7 +33,25 @@ export async function api<T>(path: string, opts: Options = {}): Promise<T> {
     finalHeaders.Authorization = `Bearer ${token}`;
   }
 
-  const resp = await fetch(path, { ...rest, headers: finalHeaders });
+  let resp: Response;
+  try {
+    resp = await fetch(path, { ...rest, headers: finalHeaders });
+  } catch (err) {
+    // TypeError from fetch = network/DNS/connection-refused. The browser also
+    // throws here when the request was aborted while the body was streaming.
+    setFailure();
+    throw err;
+  }
+
+  // 5xx is "the server is up but unhappy"; we still treat it as a connection
+  // issue for the banner — a flapping backend is functionally indistinguishable
+  // from a downed one for the user. 4xx is intentional and means the API is
+  // alive enough to reject us, so we count those as a successful liveness ping.
+  if (resp.status >= 500) {
+    setFailure();
+  } else {
+    setSuccess();
+  }
 
   if (resp.status === 401 && !skipAuth) {
     useAuth.getState().clear();
