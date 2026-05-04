@@ -677,6 +677,32 @@ func (s *Server) registerRoutes() {
 		Middlewares: adminOnly,
 	}, s.handleAdminReset2FA)
 
+	// Admin: outbound SMTP transport (singleton).
+	huma.Register(s.API, huma.Operation{
+		OperationID: "admin-get-smtp",
+		Method:      http.MethodGet,
+		Path:        "/v1/admin/mail",
+		Summary:     "Get the global SMTP settings (password redacted)",
+		Tags:        []string{"admin"},
+		Middlewares: adminOnly,
+	}, s.handleAdminGetSmtp)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "admin-put-smtp",
+		Method:      http.MethodPut,
+		Path:        "/v1/admin/mail",
+		Summary:     "Replace the global SMTP settings",
+		Tags:        []string{"admin"},
+		Middlewares: adminOnly,
+	}, s.handleAdminPutSmtp)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "admin-test-smtp",
+		Method:      http.MethodPost,
+		Path:        "/v1/admin/mail/test",
+		Summary:     "Send a test email through the configured SMTP transport",
+		Tags:        []string{"admin"},
+		Middlewares: adminOnly,
+	}, s.handleAdminTestSmtp)
+
 	// Agent-config: agents fetch their resolved config (auth via agent_key,
 	// not web user). Admin CRUD lives separately under /v1/admin/agent-config.
 	huma.Register(s.API, huma.Operation{
@@ -1675,17 +1701,11 @@ type channelOutput struct {
 
 func (s *Server) handleCreateChannel(ctx context.Context, in *channelInput) (*channelOutput, error) {
 	u, _ := userFromContext(ctx)
-	isAdmin := u.Role == "admin"
-	if strings.EqualFold(in.Body.Type, "smtp") && !isAdmin {
-		return nil, huma.Error403Forbidden("SMTP channels can only be created by admins")
+	// Default email recipient to caller's account email — the common case.
+	if strings.EqualFold(in.Body.Type, "email") && in.Body.RecipientEmail == "" {
+		in.Body.RecipientEmail = u.Email
 	}
-	// Admin creates shared channels (owner = NULL); regular users own
-	// their channels. SMTP from admin = shared; non-SMTP from admin =
-	// also admin-owned (so admin's own ntfy doesn't show to other users).
-	var owner *uuid.UUID
-	if !(isAdmin && strings.EqualFold(in.Body.Type, "smtp")) {
-		owner = &u.ID
-	}
+	owner := &u.ID
 	c, err := s.Store.CreateChannel(ctx, in.Body, u.Email, owner)
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
@@ -1725,8 +1745,8 @@ func (s *Server) handleUpdateChannel(ctx context.Context, in *updateChannelInput
 	}
 	u, _ := userFromContext(ctx)
 	isAdmin := u.Role == "admin"
-	if strings.EqualFold(in.Body.Type, "smtp") && !isAdmin {
-		return nil, huma.Error403Forbidden("SMTP channels can only be edited by admins")
+	if strings.EqualFold(in.Body.Type, "email") && in.Body.RecipientEmail == "" {
+		in.Body.RecipientEmail = u.Email
 	}
 	c, err := s.Store.UpdateChannel(ctx, id, in.Body, u.ID, isAdmin)
 	if err != nil {
@@ -2397,6 +2417,85 @@ func (s *Server) handleAdminReset2FA(ctx context.Context, in *hostIDInput) (*emp
 		return nil, internalErr(ctx, "reset 2fa failed", err)
 	}
 	out := &emptyOutput{}
+	out.Body.OK = true
+	return out, nil
+}
+
+// --- SMTP settings (admin) -------------------------------------------------
+
+type smtpOutput struct {
+	Body apitypes.SmtpSettings
+}
+
+type smtpInput struct {
+	Body apitypes.SmtpSettingsInput
+}
+
+type smtpTestInput struct {
+	Body apitypes.SmtpTestRequest
+}
+
+type smtpTestOutput struct {
+	Body apitypes.NotificationTestResponse
+}
+
+func (s *Server) handleAdminGetSmtp(ctx context.Context, _ *struct{}) (*smtpOutput, error) {
+	raw, err := s.Store.GetSmtpSettings(ctx)
+	if err != nil {
+		if errors.Is(err, store.ErrSmtpNotConfigured) {
+			// Return a zero-value record so the admin UI can present a
+			// blank form rather than treating "not set yet" as an error.
+			return &smtpOutput{Body: apitypes.SmtpSettings{Port: 587, StartTLS: true}}, nil
+		}
+		return nil, internalErr(ctx, "smtp get failed", err)
+	}
+	return &smtpOutput{Body: raw.SmtpSettings}, nil
+}
+
+func (s *Server) handleAdminPutSmtp(ctx context.Context, in *smtpInput) (*smtpOutput, error) {
+	u, _ := userFromContext(ctx)
+	saved, err := s.Store.UpsertSmtpSettings(ctx, in.Body, u.Email)
+	if err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	return &smtpOutput{Body: saved}, nil
+}
+
+func (s *Server) handleAdminTestSmtp(ctx context.Context, in *smtpTestInput) (*smtpTestOutput, error) {
+	if in.Body.To == "" {
+		return nil, huma.Error400BadRequest("'to' is required")
+	}
+	settings, err := s.Store.GetSmtpSettings(ctx)
+	if err != nil {
+		if errors.Is(err, store.ErrSmtpNotConfigured) {
+			return nil, huma.Error400BadRequest("smtp settings not configured")
+		}
+		return nil, internalErr(ctx, "smtp get failed", err)
+	}
+	cfg := map[string]any{
+		"host":                 settings.Host,
+		"port":                 settings.Port,
+		"username":             settings.Username,
+		"password":             settings.Password,
+		"from":                 settings.FromAddress,
+		"to":                   []string{in.Body.To},
+		"starttls":             settings.StartTLS,
+		"tls":                  settings.TLS,
+		"insecure_skip_verify": settings.InsecureSkipVerify,
+	}
+	dispatchErr := notify.Dispatch(ctx, notify.Channel{
+		ID: "smtp-settings", Type: "email", Name: "smtp-test", Config: cfg,
+	}, notify.Message{
+		Subject:  "mon SMTP test",
+		Body:     "If you received this message, the global SMTP settings work.",
+		Severity: "info",
+	})
+	out := &smtpTestOutput{}
+	if dispatchErr != nil {
+		out.Body.OK = false
+		out.Body.Error = dispatchErr.Error()
+		return out, nil
+	}
 	out.Body.OK = true
 	return out, nil
 }

@@ -46,9 +46,13 @@ type Sender interface {
 
 // Dispatch picks the right Sender for ch.Type. Unknown types return an error
 // rather than silently succeeding — operators want loud failures.
+//
+// "email" is the per-user channel type; the dispatch layer is expected to
+// merge the global SMTP settings into ch.Config before calling. "smtp" stays
+// supported as an alias so older clients keep working.
 func Dispatch(ctx context.Context, ch Channel, m Message) error {
 	switch strings.ToLower(ch.Type) {
-	case "smtp":
+	case "email", "smtp":
 		return SMTP{}.Send(ctx, ch, m)
 	case "slack":
 		return Slack{}.Send(ctx, ch, m)

@@ -326,23 +326,61 @@ type MonitorResult struct {
 // Notification channels
 
 type NotificationChannel struct {
-	ID          string         `json:"id"`
-	Type        string         `json:"type"        enum:"smtp,slack,mattermost,discord,ntfy"`
-	Name        string         `json:"name"`
-	Enabled     bool           `json:"enabled"`
-	Config      map[string]any `json:"config"      doc:"Type-specific configuration"`
-	CreatedAt   time.Time      `json:"created_at"`
-	CreatedBy   string         `json:"created_by"`
-	OwnerUserID string         `json:"owner_user_id,omitempty" doc:"Empty when channel is shared/admin-only (e.g. SMTP)"`
-	LastUsedAt  *time.Time     `json:"last_used_at,omitempty"`
-	LastError   string         `json:"last_error,omitempty"`
+	ID             string         `json:"id"`
+	Type           string         `json:"type"        enum:"email,slack,mattermost,discord,ntfy"`
+	Name           string         `json:"name"`
+	Enabled        bool           `json:"enabled"`
+	Config         map[string]any `json:"config"      doc:"Type-specific configuration (empty for email; recipient is in recipient_email)"`
+	RecipientEmail string         `json:"recipient_email,omitempty" doc:"Used by type=email; SMTP transport comes from the admin-managed global settings"`
+	CreatedAt      time.Time      `json:"created_at"`
+	CreatedBy      string         `json:"created_by"`
+	OwnerUserID    string         `json:"owner_user_id,omitempty"`
+	LastUsedAt     *time.Time     `json:"last_used_at,omitempty"`
+	LastError      string         `json:"last_error,omitempty"`
 }
 
 type NotificationChannelInput struct {
-	Type    string         `json:"type"    enum:"smtp,slack,mattermost,discord,ntfy"`
-	Name    string         `json:"name"    minLength:"1" maxLength:"100"`
-	Enabled bool           `json:"enabled"`
-	Config  map[string]any `json:"config"  doc:"Type-specific config: see /docs"`
+	Type           string         `json:"type"             enum:"email,slack,mattermost,discord,ntfy"`
+	Name           string         `json:"name"             minLength:"1" maxLength:"100"`
+	Enabled        bool           `json:"enabled"`
+	Config         map[string]any `json:"config,omitempty" doc:"Type-specific config; ignored for type=email"`
+	RecipientEmail string         `json:"recipient_email,omitempty" doc:"Required for type=email; defaults to caller's account email if blank"`
+}
+
+// SmtpSettings is the admin-managed singleton describing the outbound mail
+// transport. There is at most one row server-wide; type=email channels reuse
+// it. Password is write-only: GET responses always blank it out.
+type SmtpSettings struct {
+	Host               string    `json:"host"`
+	Port               int       `json:"port"`
+	Username           string    `json:"username"`
+	HasPassword        bool      `json:"has_password" doc:"True when a non-empty password is stored; the password itself is never returned"`
+	FromAddress        string    `json:"from_address"`
+	StartTLS           bool      `json:"starttls"`
+	TLS                bool      `json:"tls"`
+	InsecureSkipVerify bool      `json:"insecure_skip_verify"`
+	UpdatedAt          time.Time `json:"updated_at"`
+	UpdatedBy          string    `json:"updated_by"`
+}
+
+// SmtpSettingsInput is the admin-only PUT payload. Leaving Password empty
+// preserves the stored value; submit "" with ClearPassword=true to wipe.
+type SmtpSettingsInput struct {
+	Host               string `json:"host"                  minLength:"1" maxLength:"255"`
+	Port               int    `json:"port"                  minimum:"1"   maximum:"65535"`
+	Username           string `json:"username,omitempty"    maxLength:"255"`
+	Password           string `json:"password,omitempty"    doc:"Leave empty to keep the stored password"`
+	ClearPassword      bool   `json:"clear_password,omitempty" doc:"When true, the stored password is wiped"`
+	FromAddress        string `json:"from_address"          minLength:"3" maxLength:"255"`
+	StartTLS           bool   `json:"starttls"`
+	TLS                bool   `json:"tls"`
+	InsecureSkipVerify bool   `json:"insecure_skip_verify"`
+}
+
+// SmtpTestRequest exercises the SMTP transport by sending a test message to
+// To using the currently saved settings. Admin-only.
+type SmtpTestRequest struct {
+	To string `json:"to" minLength:"3" maxLength:"255" doc:"Recipient address for the test mail"`
 }
 
 type NotificationTestRequest struct {

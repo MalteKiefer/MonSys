@@ -227,7 +227,7 @@ export type SystemSample = {
 
 // Notifications
 
-export type ChannelType = "smtp" | "slack" | "mattermost" | "discord" | "ntfy";
+export type ChannelType = "email" | "slack" | "mattermost" | "discord" | "ntfy";
 
 export type NotificationChannel = {
   id: string;
@@ -235,6 +235,7 @@ export type NotificationChannel = {
   name: string;
   enabled: boolean;
   config: Record<string, unknown>;
+  recipient_email?: string;
   created_at: string;
   created_by?: string;
   owner_user_id?: string;
@@ -246,7 +247,33 @@ export type NotificationChannelInput = {
   type: ChannelType;
   name: string;
   enabled: boolean;
-  config: Record<string, unknown>;
+  config?: Record<string, unknown>;
+  recipient_email?: string;
+};
+
+export type SmtpSettings = {
+  host: string;
+  port: number;
+  username: string;
+  has_password: boolean;
+  from_address: string;
+  starttls: boolean;
+  tls: boolean;
+  insecure_skip_verify: boolean;
+  updated_at: string;
+  updated_by: string;
+};
+
+export type SmtpSettingsInput = {
+  host: string;
+  port: number;
+  username?: string;
+  password?: string;
+  clear_password?: boolean;
+  from_address: string;
+  starttls: boolean;
+  tls: boolean;
+  insecure_skip_verify: boolean;
 };
 
 export type NotificationRule = {

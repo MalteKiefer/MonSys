@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, Bell, ChevronDown, FileJson, FileText, LayoutDashboard, LogOut, Network, Package, Radio, Server, Settings, ShieldCheck, Sliders, UserCog, Users } from "lucide-react";
+import { Activity, Bell, ChevronDown, FileJson, FileText, LayoutDashboard, LogOut, Mail, Network, Package, Radio, Server, Settings, ShieldCheck, Sliders, UserCog, Users } from "lucide-react";
 import { Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 
 import { RequireAdmin } from "./components/RequireAdmin";
@@ -8,6 +8,7 @@ import { AdminAgentConfig } from "./pages/AdminAgentConfig";
 import { AdminGroups } from "./pages/AdminGroups";
 import { AdminIngests } from "./pages/AdminIngests";
 import { AdminLogs } from "./pages/AdminLogs";
+import { AdminMail } from "./pages/AdminMail";
 import { AdminMonitors } from "./pages/AdminMonitors";
 import { AdminNotifications } from "./pages/AdminNotifications";
 import { AdminSecurity } from "./pages/AdminSecurity";
@@ -71,6 +72,7 @@ export function App() {
           <Route path="/admin/logs" element={<RequireAdmin><AdminLogs /></RequireAdmin>} />
           <Route path="/admin/ingests" element={<RequireAdmin><AdminIngests /></RequireAdmin>} />
           <Route path="/admin/agent-config" element={<RequireAdmin><AdminAgentConfig /></RequireAdmin>} />
+          <Route path="/admin/mail" element={<RequireAdmin><AdminMail /></RequireAdmin>} />
           <Route path="/admin/users" element={<RequireAdmin><AdminUsers /></RequireAdmin>} />
           <Route path="/admin/security" element={<RequireAdmin><AdminSecurity /></RequireAdmin>} />
           <Route path="/login" element={<Navigate to="/" replace />} />
@@ -138,6 +140,7 @@ function Header() {
 const ADMIN_ITEMS = [
   { to: "/admin/groups", label: "Groups", icon: Network },
   { to: "/admin/users", label: "Users", icon: Users },
+  { to: "/admin/mail", label: "Mail (SMTP)", icon: Mail },
   { to: "/admin/agent-config", label: "Agent config", icon: Sliders },
   { to: "/admin/logs", label: "Server logs", icon: FileText },
   { to: "/admin/ingests", label: "Agent ingests", icon: FileJson },

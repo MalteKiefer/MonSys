@@ -53,8 +53,8 @@ export function AdminNotifications() {
           <h2 className="text-lg font-semibold tracking-tight">Notifications</h2>
           <p className="text-sm text-fg-muted">
             {isAdmin
-              ? "Manage channels (SMTP admin-only), rules, and review alert history."
-              : "Manage your delivery channels (Slack, Mattermost, Discord, ntfy)."}
+              ? "Manage channels (email + webhooks), rules, and review alert history. Configure the global SMTP transport under Admin → Mail (SMTP)."
+              : "Manage your delivery channels (email, Slack, Mattermost, Discord, ntfy). Email uses the SMTP transport set up by an admin."}
           </p>
         </div>
         {isAdmin && <Tabs tab={tab} onChange={setTab} />}
@@ -270,17 +270,10 @@ function ChannelRow({
 }
 
 // Channel-form schema by type. Sensitive fields shown as password inputs.
-const CHANNEL_FIELDS: Record<ChannelType, Array<{ key: string; label: string; type?: string; placeholder?: string; help?: string }>> = {
-  smtp: [
-    { key: "host", label: "Host", placeholder: "smtp.example.com" },
-    { key: "port", label: "Port", placeholder: "587" },
-    { key: "username", label: "Username (optional)" },
-    { key: "password", label: "Password (optional)", type: "password" },
-    { key: "from", label: "From", placeholder: "alerts@example.com" },
-    { key: "to", label: "To (comma-separated)", placeholder: "ops@example.com,admin@example.com" },
-    { key: "starttls", label: "STARTTLS (true/false)", placeholder: "true" },
-    { key: "tls", label: "Implicit TLS (true/false)", placeholder: "false" },
-  ],
+// type=email is special-cased in ChannelForm: it has no per-channel config,
+// only a top-level recipient_email field. Transport (host/auth/from) lives
+// in the admin-managed SMTP settings.
+const CHANNEL_FIELDS: Record<Exclude<ChannelType, "email">, Array<{ key: string; label: string; type?: string; placeholder?: string; help?: string }>> = {
   slack: [
     { key: "webhook_url", label: "Incoming webhook URL", type: "password", placeholder: "https://hooks.slack.com/…" },
   ],
@@ -303,7 +296,7 @@ const CHANNEL_FIELDS: Record<ChannelType, Array<{ key: string; label: string; ty
 
 function ChannelForm({
   initial,
-  isAdmin,
+  isAdmin: _isAdmin,
   onCancel,
   onSaved,
 }: {
@@ -312,9 +305,13 @@ function ChannelForm({
   onCancel: () => void;
   onSaved: () => void;
 }) {
-  const [type, setType] = useState<ChannelType>(initial?.type ?? "ntfy");
+  const myEmail = useAuth((s) => s.user?.email ?? "");
+  const [type, setType] = useState<ChannelType>(initial?.type ?? "email");
   const [name, setName] = useState(initial?.name ?? "");
   const [enabled, setEnabled] = useState(initial?.enabled ?? true);
+  const [recipientEmail, setRecipientEmail] = useState<string>(
+    initial?.recipient_email ?? (initial ? "" : myEmail),
+  );
   const [config, setConfig] = useState<Record<string, string>>(() => {
     const out: Record<string, string> = {};
     if (initial?.config) {
@@ -328,8 +325,10 @@ function ChannelForm({
 
   const save = useMutation({
     mutationFn: () => {
-      const parsed = parseConfig(type, config);
-      const body: NotificationChannelInput = { type, name, enabled, config: parsed };
+      const body: NotificationChannelInput =
+        type === "email"
+          ? { type, name, enabled, recipient_email: recipientEmail || myEmail, config: {} }
+          : { type, name, enabled, config: parseConfig(type, config) };
       if (initial) {
         return api(`/v1/notifications/channels/${initial.id}`, {
           method: "PUT",
@@ -351,7 +350,7 @@ function ChannelForm({
     save.mutate();
   }
 
-  const fields = CHANNEL_FIELDS[type];
+  const fields = type === "email" ? [] : CHANNEL_FIELDS[type];
 
   return (
     <Panel>
@@ -361,21 +360,23 @@ function ChannelForm({
       <PanelBody>
         <form onSubmit={submit} className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Type" hint={!isAdmin ? "SMTP requires admin role." : undefined}>
+            <Field label="Type">
               <select
                 value={type}
                 disabled={!!initial}
                 onChange={(e) => {
-                  setType(e.target.value as ChannelType);
+                  const next = e.target.value as ChannelType;
+                  setType(next);
                   setConfig({});
+                  if (next === "email") setRecipientEmail(myEmail);
                 }}
                 className="w-full rounded-md border border-border bg-panel px-3 py-2 text-sm focus:border-accent focus:outline-none disabled:opacity-60"
               >
+                <option value="email">email</option>
                 <option value="ntfy">ntfy</option>
                 <option value="slack">slack</option>
                 <option value="discord">discord</option>
                 <option value="mattermost">mattermost</option>
-                {isAdmin && <option value="smtp">smtp</option>}
               </select>
             </Field>
             <Field label="Name">
@@ -383,19 +384,34 @@ function ChannelForm({
             </Field>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            {fields.map((f) => (
-              <Field key={f.key} label={f.label} hint={f.help}>
-                <TextInput
-                  type={f.type || "text"}
-                  placeholder={f.placeholder}
-                  value={config[f.key] ?? ""}
-                  onChange={(e) => setConfig({ ...config, [f.key]: e.target.value })}
-                  className={f.type === "password" ? "font-mono" : ""}
-                />
-              </Field>
-            ))}
-          </div>
+          {type === "email" ? (
+            <Field
+              label="Recipient email"
+              hint="Defaults to your account email. Outbound transport (SMTP host, auth, from address) is configured by an admin under Admin → Mail (SMTP)."
+            >
+              <TextInput
+                type="email"
+                required
+                value={recipientEmail}
+                onChange={(e) => setRecipientEmail(e.target.value)}
+                placeholder={myEmail}
+              />
+            </Field>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              {fields.map((f) => (
+                <Field key={f.key} label={f.label} hint={f.help}>
+                  <TextInput
+                    type={f.type || "text"}
+                    placeholder={f.placeholder}
+                    value={config[f.key] ?? ""}
+                    onChange={(e) => setConfig({ ...config, [f.key]: e.target.value })}
+                    className={f.type === "password" ? "font-mono" : ""}
+                  />
+                </Field>
+              ))}
+            </div>
+          )}
 
           <label className="flex items-center gap-2 text-sm text-fg-muted">
             <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
@@ -418,7 +434,7 @@ function ChannelForm({
   );
 }
 
-function parseConfig(type: ChannelType, cfg: Record<string, string>): Record<string, unknown> {
+function parseConfig(_type: ChannelType, cfg: Record<string, string>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(cfg)) {
     if (v === "") continue;
@@ -427,8 +443,6 @@ function parseConfig(type: ChannelType, cfg: Record<string, string>): Record<str
       out[k] = Number.isFinite(n) ? n : v;
     } else if (k === "starttls" || k === "tls" || k === "insecure_skip_verify") {
       out[k] = v.toLowerCase() === "true";
-    } else if (type === "smtp" && k === "to") {
-      out[k] = v.split(",").map((s) => s.trim()).filter(Boolean);
     } else {
       out[k] = v;
     }
