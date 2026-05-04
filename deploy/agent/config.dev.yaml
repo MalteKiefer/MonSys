@@ -1,0 +1,23 @@
+# mon-agent — local dev config.
+#
+# Talks to a mon-server running on the same machine over plain HTTP.
+# Drops the bootstrap key file in $HOME/.config so root isn't required.
+
+server_url: http://127.0.0.1:8080
+interval_seconds: 5
+buffer_dir: /tmp/mon-agent-buffer
+buffer_max_mb: 25
+key_file: /home/USER/.config/mon-agent/agent.key
+
+labels:
+  env: dev
+  host: laptop
+
+tls:
+  insecure: true
+
+packages:
+  enabled: true
+
+redact:
+  enabled: false

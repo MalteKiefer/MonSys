@@ -1,0 +1,56 @@
+# mon-agent — minimal config.
+#
+# Copy to /etc/mon-agent/config.yaml and tweak. The agent reads this on
+# every start; a SIGHUP isn't supported, restart the systemd unit to pick
+# up changes.
+#
+# server_url      — full base URL of the mon-server, https://… in prod.
+# interval_seconds — local fallback when no remote config is published;
+#                    the server can override via /v1/admin/agent-config.
+# buffer_dir      — on-disk spool that the agent uses when the server is
+#                    unreachable. Owned by the monagent user.
+# buffer_max_mb   — hard cap; older spool entries are dropped first.
+# key_file        — path to the agent_id:agent_key file written at
+#                    bootstrap. Mode 0400, monagent-owned.
+# labels          — free-form string→string map; surfaced in the UI and
+#                    usable as targets for monitor/notification rules.
+# tls.ca_file     — pinned CA bundle. Use either ca_file OR ca_pin_sha256;
+#                    setting ca_pin_sha256 wins.
+# tls.ca_pin_sha256 — base64 SHA256 of the server cert's SubjectPublicKeyInfo
+#                    (run `openssl x509 -in fullchain.pem -pubkey -noout |
+#                     openssl pkey -pubin -outform der | openssl dgst
+#                     -sha256 -binary | base64`). Cert rotation requires
+#                    pushing the new pin via agent-config.
+# tls.insecure    — DEV ONLY — skips certificate verification entirely.
+# packages.enabled        — opt-in package collector. Adds dpkg/rpm/pacman
+#                            inventory and a security-update count.
+# redact.enabled          — defence-in-depth PII filter applied before
+#                            payloads leave the host. Server also redacts.
+#
+# See deploy/agent/ for additional examples (debian, redhat, alpine, dev).
+
+server_url: https://mon.example.com
+interval_seconds: 30
+buffer_dir: /var/lib/mon-agent
+buffer_max_mb: 100
+key_file: /var/lib/mon-agent/agent.key
+
+labels:
+  env: prod
+  role: app
+
+tls:
+  # ca_file: /etc/mon-agent/ca.pem
+  # ca_pin_sha256: 6jUR0...n7Xa=
+  insecure: false
+
+packages:
+  enabled: true
+  update_check_interval: 1h
+  full_snapshot_max_interval: 24h
+
+redact:
+  enabled: false
+  shells: false
+  homes: false
+  source_ips: false

@@ -1,0 +1,37 @@
+# mon-agent on a host that runs Docker workloads.
+#
+# Adds docker.sock as the docker collector source, opts into the
+# Proxmox + virt collectors if libvirt/PVE is also present, and uses
+# a higher buffer cap so a longer outage doesn't drop spool entries.
+
+server_url: https://mon.example.com
+interval_seconds: 15
+buffer_dir: /var/lib/mon-agent
+buffer_max_mb: 250
+key_file: /var/lib/mon-agent/agent.key
+
+labels:
+  env: prod
+  role: docker-host
+
+# The agent talks to the docker engine over its UNIX socket. Add the
+# monagent user to the docker group (or use a docker-socket-proxy) so
+# read-only access is granted without giving full root.
+docker_endpoint: unix:///var/run/docker.sock
+
+# If the host is also a Proxmox node, point the agent at its API. Token
+# secret is read from a file with mode 0400, monagent-owned.
+proxmox:
+  enabled: false
+  api_url: https://pve.example.com:8006
+  api_token_id: monagent@pve!ro
+  api_token_secret_file: /etc/mon-agent/proxmox-token
+
+tls:
+  insecure: false
+
+packages:
+  enabled: true
+
+redact:
+  enabled: false
