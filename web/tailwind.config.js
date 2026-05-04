@@ -35,6 +35,9 @@ export default {
         sans: ['"Inter Variable"', "ui-sans-serif", "system-ui", "sans-serif"],
         mono: ['"JetBrains Mono Variable"', "ui-monospace", "Menlo", "Monaco", "monospace"],
       },
+      spacing: {
+        "header-h": "var(--header-h)",
+      },
       fontSize: {
         // tabular numbers default for these sizes — set via class instead.
       },

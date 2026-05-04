@@ -182,14 +182,14 @@ const ADMIN_ITEMS = [
 function AdminMenu() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const itemsRef = useRef<Array<HTMLAnchorElement | null>>([]);
   const loc = useLocation();
+  const menuId = "admin-menu";
 
-  // Close on route change.
   useEffect(() => {
     setOpen(false);
   }, [loc.pathname]);
 
-  // Close on outside click.
   useEffect(() => {
     if (!open) return;
     function onDoc(e: MouseEvent) {
@@ -198,6 +198,27 @@ function AdminMenu() {
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  useEffect(() => {
+    if (open) itemsRef.current[0]?.focus();
+  }, [open]);
+
+  function onItemKeyDown(e: React.KeyboardEvent<HTMLAnchorElement>, idx: number) {
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    e.preventDefault();
+    const len = ADMIN_ITEMS.length;
+    const next = e.key === "ArrowDown" ? (idx + 1) % len : (idx - 1 + len) % len;
+    itemsRef.current[next]?.focus();
+  }
 
   const insideAdmin = loc.pathname.startsWith("/admin");
   const activeItem = ADMIN_ITEMS.find((i) => loc.pathname.startsWith(i.to));
@@ -208,6 +229,7 @@ function AdminMenu() {
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
+        aria-controls={menuId}
         className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm transition-colors duration-150 ${
           insideAdmin ? "bg-panel-2 text-fg shadow-panel" : "text-fg-muted hover:bg-panel hover:text-fg"
         }`}
@@ -219,14 +241,18 @@ function AdminMenu() {
       </button>
       {open && (
         <div
+          id={menuId}
           role="menu"
           className="absolute right-0 mt-1.5 min-w-[180px] overflow-hidden rounded-md border border-border bg-panel shadow-panel-strong"
         >
-          {ADMIN_ITEMS.map(({ to, label, icon: Icon }) => (
+          {ADMIN_ITEMS.map(({ to, label, icon: Icon }, idx) => (
             <NavLink
               key={to}
               to={to}
               role="menuitem"
+              tabIndex={open ? 0 : -1}
+              ref={(el) => { itemsRef.current[idx] = el; }}
+              onKeyDown={(e) => onItemKeyDown(e, idx)}
               className={({ isActive }) =>
                 `flex items-center gap-2 px-3 py-2 text-sm transition-colors ${
                   isActive
