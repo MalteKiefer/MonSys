@@ -224,9 +224,10 @@ function TwoFactorCard({ active, onSuccess }: { active: boolean; onSuccess: () =
   );
 }
 
-// ---- shared ----
+// ---- shared (private to this module — outside callers should use the
+// primitives in components/ui instead) ----
 
-export function Card({ title, children }: { title: string; children: React.ReactNode }) {
+function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="rounded-lg border border-zinc-800 bg-zinc-900 p-5">
       <h3 className="mb-4 text-sm font-semibold text-zinc-200">{title}</h3>
@@ -235,7 +236,7 @@ export function Card({ title, children }: { title: string; children: React.React
   );
 }
 
-export function Input(props: {
+function Input(props: {
   label: string;
   type: string;
   value: string;
