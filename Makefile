@@ -6,18 +6,24 @@ COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 DATE    ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 
 LDFLAGS := -s -w -buildid= \
-  -X github.com/pr0ph37/mon/internal/shared/version.Version=$(VERSION) \
-  -X github.com/pr0ph37/mon/internal/shared/version.Commit=$(COMMIT) \
-  -X github.com/pr0ph37/mon/internal/shared/version.Date=$(DATE)
+  -X github.com/MalteKiefer/MonSys/internal/shared/version.Version=$(VERSION) \
+  -X github.com/MalteKiefer/MonSys/internal/shared/version.Commit=$(COMMIT) \
+  -X github.com/MalteKiefer/MonSys/internal/shared/version.Date=$(DATE)
 
 GOFLAGS_BASE := -trimpath -ldflags='$(LDFLAGS)'
 
 BIN_DIR := bin
 
 .PHONY: all build build-server build-agent build-all tidy test vet fmt clean \
-        web web-dev compose-up compose-down compose-logs
+        web web-dev compose-up compose-down compose-logs install-hooks
 
 all: web build
+
+# Install local git hooks (commit-msg blocks AI-attribution trailers).
+# Idempotent — re-running it is safe.
+install-hooks:
+	git config core.hooksPath .githooks
+	@echo "core.hooksPath -> .githooks"
 
 # `make web` builds the SPA and stages it into the embed directory used by
 # `internal/server/spa`. Run this before `make build-server` if you've

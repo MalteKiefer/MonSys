@@ -3,7 +3,7 @@ package collector
 import (
 	"context"
 
-	"github.com/pr0ph37/mon/internal/shared/apitypes"
+	"github.com/MalteKiefer/MonSys/internal/shared/apitypes"
 )
 
 // Source is the per-collector contract: read-only, returns whatever this

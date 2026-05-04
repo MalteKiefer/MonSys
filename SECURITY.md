@@ -10,7 +10,7 @@ Please **do not** open public GitHub issues for security problems.
 
 Instead, open a **private GitHub Security Advisory** at:
 
-  https://github.com/pr0ph37/mon/security/advisories
+  https://github.com/MalteKiefer/MonSys/security/advisories
 
 Include, where possible:
 

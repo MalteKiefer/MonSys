@@ -10,8 +10,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/pr0ph37/mon/internal/server/probe"
-	"github.com/pr0ph37/mon/internal/shared/apitypes"
+	"github.com/MalteKiefer/MonSys/internal/server/probe"
+	"github.com/MalteKiefer/MonSys/internal/shared/apitypes"
 )
 
 var ErrMonitorNotFound = errors.New("monitor not found")

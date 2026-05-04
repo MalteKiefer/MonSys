@@ -20,14 +20,14 @@ import (
 	"github.com/go-chi/httprate"
 	"github.com/google/uuid"
 
-	"github.com/pr0ph37/mon/internal/server/alerts"
-	"github.com/pr0ph37/mon/internal/server/ingestlog"
-	"github.com/pr0ph37/mon/internal/server/notify"
-	"github.com/pr0ph37/mon/internal/server/serverlog"
-	"github.com/pr0ph37/mon/internal/server/spa"
-	"github.com/pr0ph37/mon/internal/server/store"
-	"github.com/pr0ph37/mon/internal/shared/apitypes"
-	"github.com/pr0ph37/mon/internal/shared/version"
+	"github.com/MalteKiefer/MonSys/internal/server/alerts"
+	"github.com/MalteKiefer/MonSys/internal/server/ingestlog"
+	"github.com/MalteKiefer/MonSys/internal/server/notify"
+	"github.com/MalteKiefer/MonSys/internal/server/serverlog"
+	"github.com/MalteKiefer/MonSys/internal/server/spa"
+	"github.com/MalteKiefer/MonSys/internal/server/store"
+	"github.com/MalteKiefer/MonSys/internal/shared/apitypes"
+	"github.com/MalteKiefer/MonSys/internal/shared/version"
 )
 
 // Request body size caps. AUDIT-011: every endpoint must refuse oversized

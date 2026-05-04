@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/pr0ph37/mon/internal/shared/apitypes"
+	"github.com/MalteKiefer/MonSys/internal/shared/apitypes"
 )
 
 func TestRegisterAndIngestRoundTrip(t *testing.T) {

@@ -9,9 +9,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/pr0ph37/mon/internal/agent"
-	"github.com/pr0ph37/mon/internal/agent/config"
-	"github.com/pr0ph37/mon/internal/shared/version"
+	"github.com/MalteKiefer/MonSys/internal/agent"
+	"github.com/MalteKiefer/MonSys/internal/agent/config"
+	"github.com/MalteKiefer/MonSys/internal/shared/version"
 )
 
 func main() {

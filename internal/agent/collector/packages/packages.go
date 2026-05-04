@@ -16,9 +16,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pr0ph37/mon/internal/agent/config"
-	"github.com/pr0ph37/mon/internal/agent/safeexec"
-	"github.com/pr0ph37/mon/internal/shared/apitypes"
+	"github.com/MalteKiefer/MonSys/internal/agent/config"
+	"github.com/MalteKiefer/MonSys/internal/agent/safeexec"
+	"github.com/MalteKiefer/MonSys/internal/shared/apitypes"
 )
 
 // Manager identifies the active package manager.

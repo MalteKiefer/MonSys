@@ -19,9 +19,9 @@ ARG COMMIT=unknown
 ARG DATE=unknown
 RUN CGO_ENABLED=0 go build -trimpath \
     -ldflags="-s -w -buildid= \
-      -X github.com/pr0ph37/mon/internal/shared/version.Version=${VERSION} \
-      -X github.com/pr0ph37/mon/internal/shared/version.Commit=${COMMIT} \
-      -X github.com/pr0ph37/mon/internal/shared/version.Date=${DATE}" \
+      -X github.com/MalteKiefer/MonSys/internal/shared/version.Version=${VERSION} \
+      -X github.com/MalteKiefer/MonSys/internal/shared/version.Commit=${COMMIT} \
+      -X github.com/MalteKiefer/MonSys/internal/shared/version.Date=${DATE}" \
     -o /out/mon-server ./cmd/mon-server
 
 FROM gcr.io/distroless/static-debian12:nonroot

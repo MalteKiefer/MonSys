@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/pr0ph37/mon/internal/shared/apitypes"
+	"github.com/MalteKiefer/MonSys/internal/shared/apitypes"
 )
 
 // AuditLog inserts a single row into audit_log. detail is a free-form

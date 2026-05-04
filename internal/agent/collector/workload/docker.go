@@ -18,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pr0ph37/mon/internal/shared/apitypes"
+	"github.com/MalteKiefer/MonSys/internal/shared/apitypes"
 )
 
 // DefaultDockerEndpoint is the conventional Docker socket on Linux. The agent

@@ -47,8 +47,10 @@ including but not limited to:
 - `Generated with Claude Code` / `🤖 Generated with ...`
 - Any `Co-Authored-By:` line referring to an AI assistant or model.
 
-A repository hook strips these on commit. PRs whose history still contains
-them after the hook runs will be asked to rebase clean.
+A `commit-msg` hook lives at `.githooks/commit-msg` and rejects these
+trailers. Activate it once per checkout with `make install-hooks` (or
+`git config core.hooksPath .githooks`). PRs whose history still contains
+them will be asked to rebase clean.
 
 ## `agent_config` schema additions
 

@@ -1,4 +1,4 @@
-module github.com/pr0ph37/mon
+module github.com/MalteKiefer/MonSys
 
 go 1.26.2
 

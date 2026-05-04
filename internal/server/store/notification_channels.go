@@ -11,8 +11,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/pr0ph37/mon/internal/server/notify"
-	"github.com/pr0ph37/mon/internal/shared/apitypes"
+	"github.com/MalteKiefer/MonSys/internal/server/notify"
+	"github.com/MalteKiefer/MonSys/internal/shared/apitypes"
 )
 
 var (

@@ -23,9 +23,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/pr0ph37/mon/internal/server/liveness"
-	"github.com/pr0ph37/mon/internal/server/notify"
-	"github.com/pr0ph37/mon/internal/server/probe"
+	"github.com/MalteKiefer/MonSys/internal/server/liveness"
+	"github.com/MalteKiefer/MonSys/internal/server/notify"
+	"github.com/MalteKiefer/MonSys/internal/server/probe"
 )
 
 // Engine ties inputs to rule evaluation. It is constructed once at server

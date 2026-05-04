@@ -12,7 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 
-	"github.com/pr0ph37/mon/internal/server/store/migrations"
+	"github.com/MalteKiefer/MonSys/internal/server/store/migrations"
 )
 
 type Store struct {

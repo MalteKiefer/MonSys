@@ -22,7 +22,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/pr0ph37/mon/internal/server/store"
+	"github.com/MalteKiefer/MonSys/internal/server/store"
 )
 
 // defaultInterval is the period between reaper passes. One hour is a

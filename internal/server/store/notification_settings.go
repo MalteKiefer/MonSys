@@ -3,7 +3,7 @@ package store
 import (
 	"context"
 
-	"github.com/pr0ph37/mon/internal/shared/apitypes"
+	"github.com/MalteKiefer/MonSys/internal/shared/apitypes"
 )
 
 // GetNotificationSettings returns the singleton row. Migration 0019 inserts

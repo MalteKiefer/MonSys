@@ -14,15 +14,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/pr0ph37/mon/internal/server/alerts"
-	"github.com/pr0ph37/mon/internal/server/api"
-	"github.com/pr0ph37/mon/internal/server/housekeeping"
-	"github.com/pr0ph37/mon/internal/server/ingestlog"
-	"github.com/pr0ph37/mon/internal/server/liveness"
-	"github.com/pr0ph37/mon/internal/server/probe"
-	"github.com/pr0ph37/mon/internal/server/serverlog"
-	"github.com/pr0ph37/mon/internal/server/store"
-	"github.com/pr0ph37/mon/internal/shared/version"
+	"github.com/MalteKiefer/MonSys/internal/server/alerts"
+	"github.com/MalteKiefer/MonSys/internal/server/api"
+	"github.com/MalteKiefer/MonSys/internal/server/housekeeping"
+	"github.com/MalteKiefer/MonSys/internal/server/ingestlog"
+	"github.com/MalteKiefer/MonSys/internal/server/liveness"
+	"github.com/MalteKiefer/MonSys/internal/server/probe"
+	"github.com/MalteKiefer/MonSys/internal/server/serverlog"
+	"github.com/MalteKiefer/MonSys/internal/server/store"
+	"github.com/MalteKiefer/MonSys/internal/shared/version"
 )
 
 func main() {

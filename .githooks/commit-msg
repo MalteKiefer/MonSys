@@ -1,0 +1,11 @@
+#!/bin/sh
+# Block AI/assistant attribution trailers from landing in commit messages.
+# Enable for the repo with: git config core.hooksPath .githooks
+set -e
+msg="$1"
+if grep -qiE "^(Co-Authored-By: ?)?Claude\b|noreply@anthropic\.com|Generated with Claude Code|🤖 Generated with " "$msg"; then
+    echo "commit-msg hook: AI attribution trailer detected — strip it before committing." >&2
+    echo "Lines flagged:" >&2
+    grep -niE "^(Co-Authored-By: ?)?Claude\b|noreply@anthropic\.com|Generated with Claude Code|🤖 Generated with " "$msg" >&2
+    exit 1
+fi

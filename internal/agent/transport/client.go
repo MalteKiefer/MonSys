@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pr0ph37/mon/internal/shared/apitypes"
+	"github.com/MalteKiefer/MonSys/internal/shared/apitypes"
 )
 
 // pinHexRe matches a 64-char lowercase hex string (sha256 digest).

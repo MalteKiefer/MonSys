@@ -7,7 +7,7 @@ import (
 
 	"github.com/shirou/gopsutil/v4/disk"
 
-	"github.com/pr0ph37/mon/internal/shared/apitypes"
+	"github.com/MalteKiefer/MonSys/internal/shared/apitypes"
 )
 
 type Disk struct{}
