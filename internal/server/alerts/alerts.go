@@ -281,7 +281,7 @@ func (e *Engine) fire(ctx context.Context, r ruleRow, subject, body, dedup strin
 	// stays intact, but skip dispatching to channels and mark the suppression
 	// in delivery_errors. recentlyFired() above only counts rows that actually
 	// delivered, so a suppressed alert won't silence the next one.
-	if e.inQuietHours(time.Now()) {
+	if e.inQuietHours(ctx, time.Now()) {
 		errJSON, _ := json.Marshal(map[string]string{"_quiet_hours": "suppressed"})
 		_, err := e.Pool.Exec(ctx, `
 			INSERT INTO alert_history (rule_id, rule_name, severity, subject, body,
@@ -344,7 +344,11 @@ func (e *Engine) fire(ctx context.Context, r ruleRow, subject, body, dedup strin
 		                         THEN now() ELSE alert_state.opened_at END,
 		    resolved_at   = NULL`,
 		dedup, r.ID, hostArg, monitorArg, severity, subject, channelUUIDs); err != nil {
-		slog.Warn("alerts: alert_state upsert", "err", err)
+		// Escalated to Error: a missing alert_state row breaks the future
+		// resolved path — resolve() looks up by dedup_key and silently
+		// no-ops when there's no open row, so operators would never see
+		// the all-clear when this incident eventually clears.
+		slog.Error("alerts: alert_state upsert", "dedup", dedup, "err", err)
 	}
 }
 
@@ -352,6 +356,21 @@ func (e *Engine) fire(ctx context.Context, r ruleRow, subject, body, dedup strin
 // Message to the channels recorded on that row, and stamps resolved_at. No-op
 // if there is no open row (i.e. nothing to clear). Resolved messages are
 // always severity "info" regardless of the original severity.
+//
+// Two correctness rules:
+//
+//  1. We only stamp resolved_at when at least one channel actually delivered
+//     the all-clear. If every dispatch errored (e.g. a transient SMTP outage
+//     during recovery) the open row stays put so the next liveness/monitor
+//     tick — or the next periodic resolve attempt — can retry. Otherwise a
+//     single SMTP flap during recovery would silently drop the resolved mail
+//     forever and operators would never learn the incident closed.
+//
+//  2. Quiet hours apply symmetrically with fire(): inside the silence window
+//     we still clear the open record (so it doesn't linger across the rest
+//     of the night) but skip the dispatch. The all-clear is intentionally
+//     dropped for the same reason a fire is suppressed — the operator asked
+//     for silence.
 func (e *Engine) resolve(ctx context.Context, dedup, body string) {
 	var (
 		subject    string
@@ -370,16 +389,43 @@ func (e *Engine) resolve(ctx context.Context, dedup, body string) {
 		return
 	}
 
+	// Quiet-hours symmetry with fire(): clear the open record but don't
+	// dispatch. We log at info so operators can correlate why no all-clear
+	// arrived during a silence window.
+	if e.inQuietHours(ctx, time.Now()) {
+		slog.Info("alerts: resolve suppressed by quiet hours", "dedup", dedup)
+		if _, err := e.Pool.Exec(ctx,
+			`UPDATE alert_state SET resolved_at = now()
+			   WHERE dedup_key = $1 AND resolved_at IS NULL`, dedup); err != nil {
+			slog.Warn("alerts: alert_state resolve update (quiet)", "err", err)
+		}
+		return
+	}
+
 	m := notify.Message{
 		Subject:  "[Resolved] " + subject,
 		Body:     body,
 		Severity: "info",
 	}
+	delivered := 0
 	for _, chID := range channelIDs {
 		if err := e.sendChannel(ctx, chID, m); err != nil {
 			slog.Warn("alerts: resolved dispatch failed",
 				"channel", chID, "dedup", dedup, "err", err)
+			continue
 		}
+		delivered++
+	}
+
+	if delivered == 0 {
+		// Every dispatch failed (or there were no channels). Leave the open
+		// alert_state row in place so a future tick retries the all-clear.
+		// Escalated to Error because a stuck open record means operators
+		// will never see the resolution unless something triggers another
+		// attempt.
+		slog.Error("alerts: resolve dispatched zero channels; leaving alert_state open for retry",
+			"dedup", dedup, "channels", len(channelIDs))
+		return
 	}
 
 	if _, err := e.Pool.Exec(ctx,
@@ -431,8 +477,8 @@ func parseChannelUUIDs(in []string) []uuid.UUID {
 // the DB during a sustained outage spawning lots of alerts.
 const quietCacheTTL = 60 * time.Second
 
-func (e *Engine) inQuietHours(now time.Time) bool {
-	q := e.loadQuietConfig()
+func (e *Engine) inQuietHours(ctx context.Context, now time.Time) bool {
+	q := e.loadQuietConfig(ctx)
 	if q == nil || !q.enabled {
 		return false
 	}
@@ -468,8 +514,10 @@ func (e *Engine) inQuietHours(now time.Time) bool {
 
 // loadQuietConfig returns the cached config, refreshing from the DB when the
 // cache is stale. A DB error returns nil (treated as "no quiet hours") so a
-// transient outage doesn't accidentally suppress alerts.
-func (e *Engine) loadQuietConfig() *quietConfig {
+// transient outage doesn't accidentally suppress alerts. The ctx is the
+// engine's run-loop ctx so a graceful shutdown actually cancels the lookup
+// instead of stranding the goroutine on a pool wait.
+func (e *Engine) loadQuietConfig(ctx context.Context) *quietConfig {
 	e.quietMu.Lock()
 	defer e.quietMu.Unlock()
 
@@ -483,7 +531,7 @@ func (e *Engine) loadQuietConfig() *quietConfig {
 		days       []int16
 		tz         string
 	)
-	err := e.Pool.QueryRow(context.Background(), `
+	err := e.Pool.QueryRow(ctx, `
 		SELECT quiet_enabled, quiet_start, quiet_end, quiet_days, quiet_tz
 		FROM notification_settings WHERE id = 1`,
 	).Scan(&enabled, &start, &end, &days, &tz)
@@ -599,6 +647,14 @@ func (e *Engine) sendChannel(ctx context.Context, id uuid.UUID, m notify.Message
 	return sendErr
 }
 
+// ErrSmtpNotConfigured is the alerts-side mirror of store.ErrSmtpNotConfigured.
+// We don't import it directly to avoid pulling the store package into the
+// alerts dispatch path (the loadSmtpDispatchConfig comment below explains the
+// intentional duplication). errors.Is across packages doesn't matter here —
+// what matters is that channel last_error and the delivery_errors map surface
+// a human-readable message instead of a wrapped pgx.ErrNoRows.
+var ErrSmtpNotConfigured = errors.New("smtp transport is not configured — set it under /admin/mail")
+
 // loadSmtpDispatchConfig reads the global smtp_settings singleton and returns
 // the runtime config map notify.SMTP expects. Mirrored from the store helper
 // (kept in sync — small enough to duplicate vs. introducing an import cycle).
@@ -614,6 +670,14 @@ func (e *Engine) loadSmtpDispatchConfig(ctx context.Context, recipient string) (
 		FROM smtp_settings WHERE id = 1`,
 	).Scan(&host, &port, &username, &password, &from, &starttls, &tls, &insecure)
 	if err != nil {
+		// Translate the "no row yet" case into a clear, operator-facing
+		// sentinel. Everything else stays wrapped so transient DB errors
+		// still surface their underlying cause. Don't wrap ErrSmtpNotConfigured
+		// itself — operators would just see "smtp settings: smtp transport
+		// is not configured…" twice.
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrSmtpNotConfigured
+		}
 		return nil, fmt.Errorf("smtp settings: %w", err)
 	}
 	return map[string]any{
@@ -634,10 +698,20 @@ func (e *Engine) recentlyFired(ctx context.Context, dedup string, within time.Du
 	// with an empty delivered_to means every channel errored, so the operator
 	// never received the alert — suppressing the next one would compound the
 	// outage (e.g. an SMTP flap silencing real alerts for the whole window).
+	//
+	// The 24h upper bound is a Timescale chunk-pruning hint: alert_history is
+	// a hypertable on `at` with 365-day retention, and without an absolute
+	// time bound the planner has to scan every chunk on every fire. 24h is a
+	// comfortable multiple of the largest reasonable throttle_sec — operators
+	// don't care about a row from 6 months ago. The throttle bound (`within`)
+	// stays the actual filter; the 24h bound exists purely so the planner
+	// can drop old chunks. make_interval(secs => 86400) avoids the pgx int||
+	// text gotcha we hit elsewhere.
 	var n int
 	err := e.Pool.QueryRow(ctx, `
 		SELECT count(*) FROM alert_history
 		WHERE dedup_key = $1
+		  AND at >= now() - make_interval(secs => 86400)
 		  AND at >= now() - make_interval(secs => $2)
 		  AND coalesce(array_length(delivered_to, 1), 0) > 0`,
 		dedup, within.Seconds()).Scan(&n)
@@ -677,7 +751,15 @@ func (e *Engine) loadRules(ctx context.Context, conditionType string) ([]ruleRow
 		}
 		r.ConditionParams = map[string]any{}
 		if len(paramsRaw) > 0 {
-			_ = json.Unmarshal(paramsRaw, &r.ConditionParams)
+			if err := json.Unmarshal(paramsRaw, &r.ConditionParams); err != nil {
+				// Don't fail the whole load — degrade to an empty params
+				// map so the rule still evaluates with defaults. Logging
+				// the rule_id makes the corrupt JSONB row discoverable
+				// without having to dump the whole table.
+				slog.Warn("alerts: rule condition_params unmarshal",
+					"rule_id", r.ID, "column", "condition_params", "err", err)
+				r.ConditionParams = map[string]any{}
+			}
 		}
 		for _, u := range channelUUIDs {
 			r.ChannelIDs = append(r.ChannelIDs, u.String())
