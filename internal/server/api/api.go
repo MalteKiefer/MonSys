@@ -263,6 +263,9 @@ func (s *Server) registerRoutes() {
 
 	// Read APIs require a user session.
 	protected := huma.Middlewares{s.requireUser}
+	// Operator surfaces (user management, agent config, notification rules, …)
+	// require an admin in addition to a valid session.
+	adminOnly := huma.Middlewares{s.requireUser, s.requireAdmin}
 
 	huma.Register(s.API, huma.Operation{
 		OperationID: "list-hosts",
@@ -514,14 +517,18 @@ func (s *Server) registerRoutes() {
 		Middlewares: protected,
 	}, s.handleMonitorResults)
 
-	// Notification rules + alert history
+	// Notification rules + alert history.
+	// Rule CRUD is admin-only: operators compose rules that target the
+	// channels users own. notification_rules has no owner column, so a
+	// non-admin who knew (or guessed) another user's channel UUID could
+	// otherwise POST a rule that fired on it.
 	huma.Register(s.API, huma.Operation{
 		OperationID: "list-rules",
 		Method:      http.MethodGet,
 		Path:        "/v1/notifications/rules",
 		Summary:     "List notification rules",
 		Tags:        []string{"notifications"},
-		Middlewares: protected,
+		Middlewares: adminOnly,
 	}, s.handleListRules)
 	huma.Register(s.API, huma.Operation{
 		OperationID: "create-rule",
@@ -529,7 +536,7 @@ func (s *Server) registerRoutes() {
 		Path:        "/v1/notifications/rules",
 		Summary:     "Create a notification rule",
 		Tags:        []string{"notifications"},
-		Middlewares: protected,
+		Middlewares: adminOnly,
 	}, s.handleCreateRule)
 	huma.Register(s.API, huma.Operation{
 		OperationID: "update-rule",
@@ -537,7 +544,7 @@ func (s *Server) registerRoutes() {
 		Path:        "/v1/notifications/rules/{id}",
 		Summary:     "Replace a notification rule",
 		Tags:        []string{"notifications"},
-		Middlewares: protected,
+		Middlewares: adminOnly,
 	}, s.handleUpdateRule)
 	huma.Register(s.API, huma.Operation{
 		OperationID: "delete-rule",
@@ -545,7 +552,7 @@ func (s *Server) registerRoutes() {
 		Path:        "/v1/notifications/rules/{id}",
 		Summary:     "Delete a notification rule",
 		Tags:        []string{"notifications"},
-		Middlewares: protected,
+		Middlewares: adminOnly,
 	}, s.handleDeleteRule)
 	huma.Register(s.API, huma.Operation{
 		OperationID: "alert-history",
@@ -619,7 +626,6 @@ func (s *Server) registerRoutes() {
 	}, s.handleConsumeReset)
 
 	// Admin: user management
-	adminOnly := huma.Middlewares{s.requireUser, s.requireAdmin}
 	huma.Register(s.API, huma.Operation{
 		OperationID: "admin-list-users",
 		Method:      http.MethodGet,
