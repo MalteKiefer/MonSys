@@ -42,7 +42,7 @@ var (
 // case. Persisted to DB is intentionally out of scope for this commit; the
 // admin can simply restart to clear all lockouts in an emergency.
 type FailedLoginAttempts struct {
-	mu       sync.Mutex
+	mu       sync.RWMutex
 	attempts map[string][]time.Time
 	lockedAt map[string]time.Time
 }
@@ -153,30 +153,73 @@ func (f *FailedLoginAttempts) ClearFailedLogins(email string) {
 // window and lockout entries that have already expired. Without this, an
 // attacker iterating distinct email addresses could grow the in-memory map
 // without bound. Called periodically by the housekeeping reaper.
+//
+// To avoid pausing Auth requests for the entire sweep on a million-bucket
+// map, GC works in two passes per map:
+//  1. Snapshot the candidate keys under a brief RLock (attempts) / Lock
+//     (lockedAt — needs write because nothing else is allowed to read mid-
+//     pass; we still hold it only for the snapshot duration).
+//  2. Walk the snapshot WITHOUT holding the lock. For each candidate, take
+//     a brief write lock, re-check that the bucket is still stale, and only
+//     then delete. The re-check is essential because RecordFailedLogin /
+//     IsLockedOut may have repopulated the bucket between snapshot and
+//     delete.
 func (f *FailedLoginAttempts) GC() {
 	if f == nil {
 		return
 	}
 	now := time.Now()
 	cutoff := now.Add(-loginAttemptWindow)
-	f.mu.Lock()
-	defer f.mu.Unlock()
+
+	// Pass 1: stale attempt buckets. Snapshot under read lock, delete
+	// per-key under brief write locks with re-validation.
+	f.mu.RLock()
+	attemptCandidates := make([]string, 0, len(f.attempts))
 	for key, ts := range f.attempts {
-		// A bucket is stale once its newest entry is outside the window AND
-		// the email is not currently locked out. Locked-out entries are kept
-		// so the lockout horizon survives a GC pass.
 		if _, locked := f.lockedAt[key]; locked {
+			// Locked-out entries are kept so the lockout horizon survives a
+			// GC pass; pass 2 will clean them when the lock itself expires.
 			continue
 		}
 		if len(ts) == 0 || !ts[len(ts)-1].After(cutoff) {
-			delete(f.attempts, key)
+			attemptCandidates = append(attemptCandidates, key)
 		}
 	}
+	f.mu.RUnlock()
+
+	for _, key := range attemptCandidates {
+		f.mu.Lock()
+		// Re-check under the write lock — the bucket may have been touched
+		// in the meantime by RecordFailedLogin or wiped by ClearFailedLogins.
+		if _, locked := f.lockedAt[key]; locked {
+			f.mu.Unlock()
+			continue
+		}
+		ts, ok := f.attempts[key]
+		if ok && (len(ts) == 0 || !ts[len(ts)-1].After(cutoff)) {
+			delete(f.attempts, key)
+		}
+		f.mu.Unlock()
+	}
+
+	// Pass 2: expired lockouts. Same shape — snapshot, then delete with
+	// per-key re-validation.
+	f.mu.RLock()
+	lockCandidates := make([]string, 0, len(f.lockedAt))
 	for key, until := range f.lockedAt {
 		if now.After(until) {
+			lockCandidates = append(lockCandidates, key)
+		}
+	}
+	f.mu.RUnlock()
+
+	for _, key := range lockCandidates {
+		f.mu.Lock()
+		if until, ok := f.lockedAt[key]; ok && now.After(until) {
 			delete(f.lockedAt, key)
 			delete(f.attempts, key)
 		}
+		f.mu.Unlock()
 	}
 }
 
