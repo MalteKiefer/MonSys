@@ -1,0 +1,16 @@
+.git
+.github
+.claude
+deploy/secrets
+deploy/certs
+node_modules
+web/node_modules
+bin/
+dist/
+*.log
+*.swp
+.idea
+.vscode
+.DS_Store
+internal/server/spa/dist/assets
+web/dist

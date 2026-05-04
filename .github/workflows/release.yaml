@@ -1,0 +1,123 @@
+name: release
+
+# Builds mon-agent + mon-server linux/amd64 + linux/arm64 statics on every
+# push to main and on every pushed tag. The "latest" GitHub Release is
+# updated on main pushes (so auto-update clients can pin to it). Tags
+# (v*.*.*) cut a permanent immutable release with the same artifacts.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*.*.*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goarch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
+        with:
+          go-version: '1.26.x'
+          cache: true
+
+      - name: derive version
+        id: ver
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          if [[ "$REF" == refs/tags/* ]]; then
+            echo "version=${REF##refs/tags/}" >> "$GITHUB_OUTPUT"
+            echo "channel=stable" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=$(git describe --tags --always --dirty)" >> "$GITHUB_OUTPUT"
+            echo "channel=latest" >> "$GITHUB_OUTPUT"
+          fi
+          echo "commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - name: build agent + server
+        env:
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '0'
+          VERSION: ${{ steps.ver.outputs.version }}
+          COMMIT:  ${{ steps.ver.outputs.commit }}
+          DATE:    ${{ steps.ver.outputs.date }}
+        run: |
+          mkdir -p out
+          LDFLAGS="-s -w -buildid= \
+            -X github.com/MalteKiefer/MonSys/internal/shared/version.Version=${VERSION} \
+            -X github.com/MalteKiefer/MonSys/internal/shared/version.Commit=${COMMIT} \
+            -X github.com/MalteKiefer/MonSys/internal/shared/version.Date=${DATE}"
+          go build -trimpath -ldflags="$LDFLAGS" -o "out/mon-agent-linux-${GOARCH}"  ./cmd/mon-agent
+          go build -trimpath -ldflags="$LDFLAGS" -o "out/mon-server-linux-${GOARCH}" ./cmd/mon-server
+
+      - name: sha256 sums
+        working-directory: out
+        env:
+          ARCH: ${{ matrix.goarch }}
+        run: |
+          sha256sum "mon-agent-linux-${ARCH}"  > "mon-agent-linux-${ARCH}.sha256"
+          sha256sum "mon-server-linux-${ARCH}" > "mon-server-linux-${ARCH}.sha256"
+
+      - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: bin-linux-${{ matrix.goarch }}
+          path: out/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: combined sha256 manifest
+        working-directory: artifacts
+        run: |
+          ls -la
+          sha256sum mon-* | sort > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: release (tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@7b4da11513bf3f43f9999e90eabced41ab8bb048 # v2.2.2
+        with:
+          files: |
+            artifacts/mon-agent-linux-amd64
+            artifacts/mon-agent-linux-arm64
+            artifacts/mon-server-linux-amd64
+            artifacts/mon-server-linux-arm64
+            artifacts/SHA256SUMS
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+
+      - name: release (latest)
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="latest"
+          gh release view "$tag" >/dev/null 2>&1 || \
+            gh release create "$tag" --title "latest (rolling)" \
+              --notes "Auto-built from main. Use a versioned tag for pinned installs." \
+              --prerelease
+          gh release upload "$tag" --clobber \
+            artifacts/mon-agent-linux-amd64 \
+            artifacts/mon-agent-linux-arm64 \
+            artifacts/mon-server-linux-amd64 \
+            artifacts/mon-server-linux-arm64 \
+            artifacts/SHA256SUMS

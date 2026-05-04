@@ -147,6 +147,7 @@ export function Hosts() {
                 <TH>Services</TH>
                 <TH>Tags / Groups</TH>
                 <TH>CPU / RAM</TH>
+                <TH>Agent</TH>
                 <TH>Last seen</TH>
               </tr>
             </THead>
@@ -200,6 +201,9 @@ export function Hosts() {
                   </TD>
                   <TD className="tabular-nums text-fg-muted whitespace-nowrap">
                     {h.cpu_cores}c · {formatBytes(h.ram_total_bytes)}
+                  </TD>
+                  <TD className="font-mono text-xs text-fg-muted whitespace-nowrap">
+                    {h.agent_version || "—"}
                   </TD>
                   <TD className="text-fg-muted whitespace-nowrap">{relativeTime(h.last_seen_at)}</TD>
                 </tr>
