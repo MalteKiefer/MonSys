@@ -112,6 +112,13 @@ func (s *Store) RegisterAgent(ctx context.Context, token string, req apitypes.Ag
 	}
 
 	// 2) Upsert host (machine_id is unique).
+	// hosts.labels is NOT NULL DEFAULT '{}'; pgx encodes a nil Go map as SQL
+	// NULL, which trips the constraint when the agent omits labels entirely.
+	// Coerce nil -> empty map so the upsert lands a clean '{}' jsonb.
+	labels := req.Labels
+	if labels == nil {
+		labels = map[string]string{}
+	}
 	var hostID uuid.UUID
 	err = tx.QueryRow(ctx, `
 		INSERT INTO hosts (hostname, machine_id, os, kernel, arch, distro, cpu_model, cpu_cores, ram_total_bytes, agent_version, labels, last_seen_at)
@@ -130,7 +137,7 @@ func (s *Store) RegisterAgent(ctx context.Context, token string, req apitypes.Ag
 			last_seen_at=now()
 		RETURNING id`,
 		req.Hostname, nullableString(req.MachineID), req.OS, req.Kernel, req.Arch, req.Distro,
-		req.CPUModel, req.CPUCores, req.RAMTotalBytes, req.AgentVersion, req.Labels,
+		req.CPUModel, req.CPUCores, req.RAMTotalBytes, req.AgentVersion, labels,
 	).Scan(&hostID)
 	if err != nil {
 		return resp, fmt.Errorf("host upsert: %w", err)
