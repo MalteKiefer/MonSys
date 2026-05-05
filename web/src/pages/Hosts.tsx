@@ -22,6 +22,7 @@ import {
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { Host } from "../lib/types";
+import { hostDisplay } from "../lib/utils";
 
 type HostsResponse = { hosts: Host[] };
 
@@ -54,7 +55,7 @@ export function Hosts() {
     return hosts.filter((h) => {
       if (statusFilter !== "all" && h.status !== statusFilter) return false;
       if (needle === "") return true;
-      if (h.hostname.toLowerCase().includes(needle)) return true;
+      if (hostDisplay(h).toLowerCase().includes(needle)) return true;
       if (h.tags.some((t) => t.toLowerCase().includes(needle))) return true;
       return false;
     });
@@ -97,10 +98,10 @@ export function Hosts() {
       {hosts.length > 0 && (
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
           <div className="flex-1">
-            <Field label="Search" hint="Matches hostname or tag (case-insensitive).">
+            <Field label="Search" hint="Matches hostname, label, or tag (case-insensitive).">
               <TextInput
                 type="search"
-                placeholder="hostname or #tag…"
+                placeholder="hostname, label, or #tag…"
                 value={search}
                 onChange={(e) => setSearch(e.currentTarget.value)}
                 aria-label="Search hosts"
@@ -171,14 +172,14 @@ export function Hosts() {
                   key={h.id}
                   role="link"
                   tabIndex={0}
-                  aria-label={`Open host ${h.hostname}`}
+                  aria-label={`Open host ${hostDisplay(h)}`}
                   className="cursor-pointer transition-colors duration-100 hover:bg-panel-2 focus:outline-none focus-visible:bg-panel-2 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/50"
                   onClick={() => navigate(`/hosts/${h.id}`)}
                   onKeyDown={(e) => onRowKeyDown(e, h.id)}
                 >
                   <TD><StatusPill status={h.status} /></TD>
                   <TD>
-                    <span className="font-medium text-fg">{h.hostname}</span>
+                    <span className="font-medium text-fg">{hostDisplay(h)}</span>
                     <span className="ml-2 font-mono text-[10px] text-fg-subtle">{h.arch}</span>
                   </TD>
                   <TD>

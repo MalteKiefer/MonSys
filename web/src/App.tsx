@@ -1,6 +1,6 @@
 import { Suspense, lazy, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, Bell, ChevronDown, ClipboardList, CloudOff, FileJson, FileText, LayoutDashboard, LogOut, Mail, Moon, Network, Package, Radio, Server, Settings, ShieldCheck, Sliders, UserCog, Users } from "lucide-react";
+import { Activity, Bell, ChevronDown, ClipboardList, CloudOff, FileJson, FileText, LayoutDashboard, LogOut, Mail, Moon, Network, Package, Radio, Server, Settings, ShieldCheck, Sliders, Ticket, UserCog, Users } from "lucide-react";
 import { Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 
 import { RequireAdmin } from "./components/RequireAdmin";
@@ -26,6 +26,7 @@ const AdminAgentConfig = lazy(() =>
 const AdminAudit = lazy(() =>
   import("./pages/AdminAudit").then((m) => ({ default: m.AdminAudit })),
 );
+const AdminEnrollments = lazy(() => import("./pages/AdminEnrollments"));
 const AdminGroups = lazy(() =>
   import("./pages/AdminGroups").then((m) => ({ default: m.AdminGroups })),
 );
@@ -116,6 +117,7 @@ export function App() {
             <Route path="/admin/logs" element={<RequireAdmin><AdminLogs /></RequireAdmin>} />
             <Route path="/admin/ingests" element={<RequireAdmin><AdminIngests /></RequireAdmin>} />
             <Route path="/admin/agent-config" element={<RequireAdmin><AdminAgentConfig /></RequireAdmin>} />
+            <Route path="/admin/enrollments" element={<RequireAdmin><AdminEnrollments /></RequireAdmin>} />
             <Route path="/admin/mail" element={<RequireAdmin><AdminMail /></RequireAdmin>} />
             <Route path="/admin/quiet-hours" element={<RequireAdmin><AdminQuietHours /></RequireAdmin>} />
             <Route path="/admin/users" element={<RequireAdmin><AdminUsers /></RequireAdmin>} />
@@ -215,6 +217,7 @@ const ADMIN_ITEMS = [
   { to: "/admin/mail", label: "Mail (SMTP)", icon: Mail },
   { to: "/admin/quiet-hours", label: "Quiet hours", icon: Moon },
   { to: "/admin/agent-config", label: "Agent config", icon: Sliders },
+  { to: "/admin/enrollments", label: "Enrollments", icon: Ticket },
   { to: "/admin/logs", label: "Server logs", icon: FileText },
   { to: "/admin/ingests", label: "Agent ingests", icon: FileJson },
   { to: "/admin/security", label: "Security", icon: ShieldCheck },

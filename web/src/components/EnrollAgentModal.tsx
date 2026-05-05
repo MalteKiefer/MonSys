@@ -5,7 +5,18 @@
 // (i.e. the agent successfully claimed the token).
 
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Check, CheckCircle2, ChevronDown, ChevronUp, Copy, Loader, X } from "lucide-react";
+import {
+  AlertCircle,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  Code2,
+  Copy,
+  Download,
+  Loader,
+  X,
+} from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -252,6 +263,10 @@ function ResultView({
     refetchInterval: (q) => {
       const data = q.state.data;
       if (data?.enrollment.used_at) return false;
+      // Stop polling once the token's TTL has elapsed; the agent can no
+      // longer claim it server-side, so further requests are noise.
+      const exp = data ? new Date(data.enrollment.expires_at).getTime() : 0;
+      if (exp && exp <= Date.now()) return false;
       return 2000;
     },
     // Seed cache so the UI doesn't flicker before the first poll lands.
@@ -261,14 +276,15 @@ function ResultView({
   const enrollment = poll.data?.enrollment ?? created.enrollment;
   const connected = !!enrollment.used_at;
 
-  const [copied, setCopied] = useState(false);
-  const [showURL, setShowURL] = useState(false);
+  const [copiedCmd, setCopiedCmd] = useState(false);
+  const [copiedURL, setCopiedURL] = useState(false);
+  const [showScript, setShowScript] = useState(false);
 
-  async function copy() {
+  async function copyText(text: string, setFlag: (b: boolean) => void) {
     try {
-      await navigator.clipboard.writeText(created.install_command);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      await navigator.clipboard.writeText(text);
+      setFlag(true);
+      setTimeout(() => setFlag(false), 1500);
     } catch {
       /* clipboard may be unavailable on insecure origins; the user can select manually */
     }
@@ -276,14 +292,21 @@ function ResultView({
 
   // Recompute the relative-expiry string each tick so it stays fresh while
   // the modal is open. Cheap timer; pauses naturally when modal unmounts.
-  const [, setNow] = useState(Date.now());
+  // We also re-derive `expired` from this tick so the StatusRow flips to
+  // the expired-before-registered state without waiting on a poll cycle.
+  const [now, setNow] = useState(Date.now());
   useEffect(() => {
     if (connected) return;
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, [connected]);
 
-  const expiresIn = useMemo(() => relativeFuture(enrollment.expires_at), [enrollment.expires_at]);
+  const expiresIn = useMemo(
+    () => relativeFuture(enrollment.expires_at, now),
+    [enrollment.expires_at, now],
+  );
+  const expired = !connected && new Date(enrollment.expires_at).getTime() <= now;
+  const tokenPrefix = created.token.slice(0, 8);
 
   return (
     <div className="space-y-4">
@@ -297,42 +320,63 @@ function ResultView({
           <pre className="m-0 flex-1 whitespace-pre-wrap break-all font-mono text-xs text-fg">
             {created.install_command}
           </pre>
-          <Button onClick={copy} aria-label="Copy install command" className="shrink-0">
-            {copied ? (
-              <>
-                <Check className="h-3.5 w-3.5" /> Copied
-              </>
-            ) : (
-              <>
-                <Copy className="h-3.5 w-3.5" /> Copy
-              </>
-            )}
-          </Button>
+          <div className="flex shrink-0 flex-col gap-1.5 sm:flex-row">
+            <Button
+              variant="primary"
+              onClick={() => copyText(created.install_command, setCopiedCmd)}
+              aria-label="Copy install command"
+            >
+              {copiedCmd ? (
+                <>
+                  <Check className="h-3.5 w-3.5" /> Copied
+                </>
+              ) : (
+                <>
+                  <Copy className="h-3.5 w-3.5" /> Copy command
+                </>
+              )}
+            </Button>
+            <Button
+              onClick={() => copyText(created.install_url, setCopiedURL)}
+              aria-label="Copy install URL"
+            >
+              {copiedURL ? (
+                <>
+                  <Check className="h-3.5 w-3.5" /> Copied
+                </>
+              ) : (
+                <>
+                  <Copy className="h-3.5 w-3.5" /> Copy URL
+                </>
+              )}
+            </Button>
+          </div>
         </div>
       </div>
 
       <div>
         <button
           type="button"
-          onClick={() => setShowURL((v) => !v)}
-          className="inline-flex items-center gap-1 text-xs text-fg-muted transition-colors hover:text-fg"
+          onClick={() => setShowScript((v) => !v)}
+          aria-expanded={showScript}
+          className="inline-flex items-center gap-1.5 text-xs text-fg-muted transition-colors hover:text-fg"
         >
-          {showURL ? (
+          <Code2 className="h-3.5 w-3.5" />
+          View install script
+          {showScript ? (
             <ChevronUp className="h-3.5 w-3.5" />
           ) : (
             <ChevronDown className="h-3.5 w-3.5" />
           )}
-          View install URL
         </button>
-        {showURL && (
-          <pre className="mt-2 m-0 rounded-md border border-border bg-bg/60 px-3 py-2 font-mono text-[11px] text-fg-muted whitespace-pre-wrap break-all">
-            {created.install_url}
-          </pre>
+        {showScript && (
+          <InstallScriptViewer url={created.install_url} tokenPrefix={tokenPrefix} />
         )}
       </div>
 
       <StatusRow
         connected={connected}
+        expired={expired}
         hostname={enrollment.used_by_hostname}
         expiresIn={expiresIn}
         onOpenHost={() => {
@@ -353,11 +397,13 @@ function ResultView({
 
 function StatusRow({
   connected,
+  expired,
   hostname,
   expiresIn,
   onOpenHost,
 }: {
   connected: boolean;
+  expired: boolean;
   hostname?: string;
   expiresIn: string;
   onOpenHost: () => void;
@@ -373,6 +419,14 @@ function StatusRow({
       </div>
     );
   }
+  if (expired) {
+    return (
+      <div className="inline-flex items-center gap-2 rounded-md border border-fail/30 bg-fail/10 px-3 py-2 text-sm text-fail">
+        <AlertCircle className="h-4 w-4" />
+        Token expired before agent registered. Close and try again.
+      </div>
+    );
+  }
   return (
     <div className="inline-flex items-center gap-2 rounded-md border border-border bg-panel-2/60 px-3 py-2 text-sm text-fg-muted">
       <Loader className="h-4 w-4 animate-spin" />
@@ -381,12 +435,101 @@ function StatusRow({
   );
 }
 
+// ---- Install script viewer ------------------------------------------------
+
+// Fetches the bootstrap script directly from the public install endpoint and
+// renders it with download support. Uses fetch() rather than the api() helper
+// because the response is text/x-shellscript (not JSON) and the endpoint is
+// intentionally session-less.
+function InstallScriptViewer({
+  url,
+  tokenPrefix,
+}: {
+  url: string;
+  tokenPrefix: string;
+}) {
+  const [script, setScript] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    fetch(url, { credentials: "omit" })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.text();
+      })
+      .then((text) => {
+        if (!cancelled) setScript(text);
+      })
+      .catch((e) => {
+        if (!cancelled) setError((e as Error).message || "fetch failed");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [url, attempt]);
+
+  function download() {
+    if (!script) return;
+    const blob = new Blob([script], { type: "text/x-shellscript" });
+    const href = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = href;
+    a.download = `mon-agent-install-${tokenPrefix}.sh`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(href);
+  }
+
+  if (loading) {
+    return (
+      <div className="mt-2 inline-flex items-center gap-2 rounded-md border border-border bg-bg/60 px-3 py-2 text-xs text-fg-muted">
+        <Loader className="h-3.5 w-3.5 animate-spin" />
+        Fetching script…
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="mt-2 flex items-center justify-between gap-3 rounded-md border border-fail/30 bg-fail/10 px-3 py-2 text-xs text-fail">
+        <span className="inline-flex items-center gap-2">
+          <AlertCircle className="h-3.5 w-3.5" />
+          Failed to load script
+        </span>
+        <Button onClick={() => setAttempt((n) => n + 1)} aria-label="Retry fetching script">
+          Retry
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <div className="mt-2 space-y-2">
+      <div className="flex items-center justify-end">
+        <Button onClick={download} disabled={!script} aria-label="Download install script">
+          <Download className="h-3.5 w-3.5" /> Download .sh
+        </Button>
+      </div>
+      <pre className="m-0 max-h-[400px] overflow-auto rounded-md border border-border bg-bg/60 px-3 py-2 font-mono text-[11px] text-fg-muted">
+        {script}
+      </pre>
+    </div>
+  );
+}
+
 // ---- Helpers --------------------------------------------------------------
 
-function relativeFuture(iso: string): string {
+function relativeFuture(iso: string, now: number = Date.now()): string {
   const t = new Date(iso).getTime();
   if (Number.isNaN(t)) return iso;
-  const diff = (t - Date.now()) / 1000;
+  const diff = (t - now) / 1000;
   if (diff <= 0) return "expired";
   if (diff < 60) return `in ${Math.round(diff)}s`;
   if (diff < 3600) return `in ${Math.round(diff / 60)}m`;

@@ -47,6 +47,7 @@ import {
 } from "../components/notifications/FormParts";
 import { api, ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { hostDisplay } from "../lib/utils";
 import {
   AlertHistoryEntry,
   AuthConfig,
@@ -817,7 +818,7 @@ function RuleForm({
 
   const hostOptions = (hostsQuery.data?.hosts ?? []).map((h) => ({
     id: h.id,
-    primary: h.hostname,
+    primary: hostDisplay(h),
     secondary:
       h.tags.length > 0 ? (
         <span className="inline-flex flex-wrap gap-1">
@@ -1153,8 +1154,15 @@ function AdvancedParams({
 
 // ---- Alert history --------------------------------------------------------
 
+// Dedup-key prefixes that embed a host id as the trailing segment. Other
+// alert types (monitor_failed, cert_expiring, security_updates_pending) key
+// off a monitor id or are global, so they cannot be matched to a single host
+// and are hidden whenever a specific host is selected.
+const HOST_SCOPED_DEDUP_PREFIXES = ["host_offline:", "host_login_failed:"] as const;
+
 function AlertsPanel() {
   const [since, setSince] = useState("24h");
+  const [hostFilter, setHostFilter] = useState<string>("");
   const sinceISO = useMemo(() => {
     const map: Record<string, number> = { "1h": 3600, "24h": 86400, "7d": 604800, "30d": 2592000 };
     const sec = map[since] ?? 86400;
@@ -1170,6 +1178,31 @@ function AlertsPanel() {
     placeholderData: keepPreviousData,
     refetchInterval: 30_000,
   });
+
+  const hostsQuery = useQuery({
+    queryKey: ["hosts"],
+    queryFn: () => api<{ hosts: Host[] }>("/v1/hosts"),
+  });
+
+  const allAlerts = list.data?.alerts ?? [];
+  const filteredAlerts = useMemo(() => {
+    if (!hostFilter) return allAlerts;
+    const suffix = `:${hostFilter}`;
+    return allAlerts.filter((a) => {
+      const key = a.dedup_key ?? "";
+      // Only host-scoped alert types carry a host id in dedup_key. For other
+      // types (monitor_failed, cert_expiring, security_updates_pending) we
+      // can't tie them to a specific host, so suppress them when filtering.
+      const isHostScoped = HOST_SCOPED_DEDUP_PREFIXES.some((p) => key.startsWith(p));
+      return isHostScoped && key.endsWith(suffix);
+    });
+  }, [allAlerts, hostFilter]);
+
+  const sortedHosts = useMemo(() => {
+    const hs = [...(hostsQuery.data?.hosts ?? [])];
+    hs.sort((a, b) => hostDisplay(a).localeCompare(hostDisplay(b)));
+    return hs;
+  }, [hostsQuery.data]);
 
   return (
     <Panel>
@@ -1190,10 +1223,35 @@ function AlertsPanel() {
         </div>
       </PanelHeader>
       <PanelBody className="p-0 overflow-x-auto">
+        <div className="flex flex-wrap items-end gap-3 px-5 py-3 border-b border-border">
+          <Field label="Filter by host" hint="Only host-scoped alerts (offline, login-failed) will match.">
+            <select
+              value={hostFilter}
+              onChange={(e) => setHostFilter(e.target.value)}
+              className="w-full rounded-md border border-border bg-panel px-3 py-2 text-sm focus:border-accent focus:outline-none md:w-72"
+            >
+              <option value="">All hosts</option>
+              {sortedHosts.map((h) => (
+                <option key={h.id} value={h.id}>
+                  {hostDisplay(h)}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <p className="pb-2 text-xs text-fg-subtle tabular-nums">
+            {hostFilter && allAlerts.length !== filteredAlerts.length
+              ? `${filteredAlerts.length} of ${allAlerts.length}`
+              : `${allAlerts.length} alert${allAlerts.length === 1 ? "" : "s"}`}
+          </p>
+        </div>
         {list.isLoading ? (
           <p className="px-5 py-4 text-sm text-fg-subtle">Loading…</p>
-        ) : (list.data?.alerts ?? []).length === 0 ? (
-          <p className="px-5 py-8 text-center text-sm text-fg-subtle">No alerts in this window.</p>
+        ) : filteredAlerts.length === 0 ? (
+          <p className="px-5 py-8 text-center text-sm text-fg-subtle">
+            {allAlerts.length === 0
+              ? "No alerts in this window."
+              : "No alerts match the selected host."}
+          </p>
         ) : (
           <Table>
             <THead>
@@ -1206,7 +1264,7 @@ function AlertsPanel() {
               </tr>
             </THead>
             <TBody>
-              {(list.data?.alerts ?? []).map((a) => {
+              {filteredAlerts.map((a) => {
                 const errorCount = Object.keys(a.delivery_errors ?? {}).length;
                 return (
                   <tr key={a.id} className="hover:bg-panel-2">

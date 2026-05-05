@@ -47,6 +47,7 @@ import {
   TimeRangeSelector,
 } from "../components/ui";
 import { api } from "../lib/api";
+import { hostDisplay } from "../lib/utils";
 import {
   CrowdsecDecision,
   DiskSample,
@@ -296,7 +297,7 @@ function Header({ detail }: { detail: HostDetailT }) {
             </Link>
             <h1 className="mt-1.5 flex items-center gap-2.5 text-xl font-semibold tracking-tight">
               <DistroIcon family={h.distro_family} size={22} />
-              <span className="truncate">{h.hostname}</span>
+              <span className="truncate">{hostDisplay(h)}</span>
               <StatusPill status={h.status} />
             </h1>
             <p className="mt-1 text-sm text-fg-muted">
