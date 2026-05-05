@@ -167,32 +167,158 @@ func (m serviceMatcher) match(hay string) bool {
 }
 
 // Order matters: more specific matchers first. "timescaledb" before
-// "postgres" so a TimescaleDB image is reported as both.
+// "postgres" so a TimescaleDB image is reported as both. Each matcher's
+// keywords are searched in `lower(name) + " " + lower(image)` so a single
+// keyword can hit either a container name or its image reference.
 var serviceMatchers = []serviceMatcher{
-	{"postgres", []string{"postgres", "timescaledb"}},
+	// --- databases / caches ----------------------------------------------
+	{"postgres", []string{"postgres", "timescaledb", "pgvector", "/citus", "supabase/postgres"}},
 	{"mariadb", []string{"mariadb", "mysql"}},
 	{"mongodb", []string{"mongo"}},
 	{"redis", []string{"redis"}},
 	{"valkey", []string{"valkey"}},
+	{"dragonfly", []string{"dragonfly"}},
+	{"memcached", []string{"memcached"}},
+	{"clickhouse", []string{"clickhouse"}},
+	{"cassandra", []string{"cassandra"}},
+	{"cockroachdb", []string{"cockroach"}},
+	{"influxdb", []string{"influxdb", "/influx"}},
+	{"neo4j", []string{"neo4j"}},
+	{"couchdb", []string{"couchdb"}},
+	{"surrealdb", []string{"surrealdb"}},
+	{"qdrant", []string{"qdrant"}},
+	{"weaviate", []string{"weaviate"}},
+	{"milvus", []string{"milvus"}},
+	{"meilisearch", []string{"meilisearch"}},
+	{"typesense", []string{"typesense"}},
+	{"etcd", []string{"/etcd", "quay.io/coreos/etcd"}},
+
+	// --- web servers / reverse proxies / cdn -----------------------------
 	{"nginx", []string{"nginx"}},
 	{"caddy", []string{"caddy"}},
 	{"traefik", []string{"traefik"}},
 	{"haproxy", []string{"haproxy"}},
-	{"grafana", []string{"grafana"}},
-	{"prometheus", []string{"prom/prometheus", "prometheus"}},
+	{"apache", []string{"httpd:", "/httpd", "apache"}},
+	{"envoy", []string{"envoyproxy", "/envoy"}},
+	{"kong", []string{"/kong"}},
+	{"openresty", []string{"openresty"}},
+	{"varnish", []string{"varnish"}},
+	{"cloudflared", []string{"cloudflare/cloudflared", "cloudflared"}},
+
+	// --- observability ---------------------------------------------------
+	{"grafana", []string{"grafana/grafana"}},
+	{"prometheus", []string{"prom/prometheus", "/prometheus"}},
+	{"alertmanager", []string{"alertmanager"}},
 	{"loki", []string{"grafana/loki", "/loki"}},
+	{"tempo", []string{"grafana/tempo"}},
+	{"mimir", []string{"grafana/mimir"}},
+	{"jaeger", []string{"jaegertracing", "/jaeger"}},
+	{"uptime-kuma", []string{"uptime-kuma"}},
+	{"telegraf", []string{"telegraf"}},
+	{"vector", []string{"timberio/vector", "/vector:"}},
+	{"victoriametrics", []string{"victoriametrics", "/vmagent", "/vmselect", "/vminsert"}},
+	{"signoz", []string{"signoz"}},
+	{"fluentbit", []string{"fluent-bit", "fluentbit"}},
+	{"netdata", []string{"netdata"}},
+
+	// --- logging / search frontends --------------------------------------
 	{"elasticsearch", []string{"elasticsearch"}},
 	{"opensearch", []string{"opensearch"}},
+	{"kibana", []string{"kibana"}},
+	{"graylog", []string{"graylog"}},
+	{"dozzle", []string{"dozzle"}},
+
+	// --- messaging / streaming ------------------------------------------
 	{"rabbitmq", []string{"rabbitmq"}},
 	{"nats", []string{"nats:"}},
 	{"kafka", []string{"kafka"}},
+	{"redpanda", []string{"redpanda"}},
+	{"mosquitto", []string{"mosquitto"}},
+
+	// --- identity / auth ------------------------------------------------
 	{"vault", []string{"hashicorp/vault", "vault:"}},
 	{"keycloak", []string{"keycloak"}},
+	{"authelia", []string{"authelia"}},
+	{"authentik", []string{"goauthentik", "authentik"}},
+	{"pocketid", []string{"pocket-id", "pocketid"}},
+	{"lldap", []string{"lldap"}},
+	{"openldap", []string{"openldap"}},
+	{"vaultwarden", []string{"vaultwarden", "bitwarden"}},
+
+	// --- devops / code / ci / artifact -----------------------------------
 	{"gitea", []string{"gitea"}},
 	{"forgejo", []string{"forgejo"}},
 	{"gitlab", []string{"gitlab"}},
+	{"drone", []string{"/drone:", "drone/drone"}},
+	{"woodpecker", []string{"woodpecker"}},
+	{"jenkins", []string{"jenkins"}},
+	{"harbor", []string{"goharbor", "/harbor-"}},
+	{"registry", []string{"/registry:", "registry:2"}},
+	{"nexus", []string{"sonatype/nexus"}},
+	{"sonarqube", []string{"sonarqube"}},
+	{"argocd", []string{"argoproj", "argocd"}},
+	{"portainer", []string{"portainer"}},
+	{"watchtower", []string{"containrrr/watchtower", "watchtower"}},
+
+	// --- self-hosted apps -----------------------------------------------
 	{"nextcloud", []string{"nextcloud"}},
-	{"mon", []string{"mon-server"}},
+	{"immich", []string{"immich"}},
+	{"photoprism", []string{"photoprism"}},
+	{"paperless", []string{"paperless-ngx", "/paperless"}},
+	{"vikunja", []string{"vikunja"}},
+	{"syncthing", []string{"syncthing"}},
+	{"audiobookshelf", []string{"audiobookshelf"}},
+	{"bookstack", []string{"bookstack"}},
+	{"miniflux", []string{"miniflux"}},
+	{"wallabag", []string{"wallabag"}},
+	{"seafile", []string{"seafile"}},
+	{"freshrss", []string{"freshrss"}},
+	{"healthvault", []string{"healthvault"}},
+
+	// --- media / *arr / download clients --------------------------------
+	{"jellyfin", []string{"jellyfin"}},
+	{"plex", []string{"/plex"}},
+	{"emby", []string{"emby"}},
+	{"radarr", []string{"radarr"}},
+	{"sonarr", []string{"sonarr"}},
+	{"lidarr", []string{"lidarr"}},
+	{"bazarr", []string{"bazarr"}},
+	{"prowlarr", []string{"prowlarr"}},
+	{"jellyseerr", []string{"jellyseerr", "overseerr"}},
+	{"sabnzbd", []string{"sabnzbd"}},
+	{"qbittorrent", []string{"qbittorrent"}},
+	{"transmission", []string{"transmission"}},
+	{"navidrome", []string{"navidrome"}},
+
+	// --- smart home -----------------------------------------------------
+	{"homeassistant", []string{"homeassistant", "home-assistant", "ghcr.io/home-assistant"}},
+	{"zigbee2mqtt", []string{"zigbee2mqtt"}},
+	{"nodered", []string{"node-red", "nodered"}},
+	{"frigate", []string{"frigate"}},
+	{"esphome", []string{"esphome"}},
+
+	// --- networking / dns / vpn -----------------------------------------
+	{"pihole", []string{"pi-hole", "pihole"}},
+	{"adguard", []string{"adguardhome", "/adguard"}},
+	{"unbound", []string{"unbound"}},
+	{"headscale", []string{"headscale"}},
+	{"tailscale", []string{"tailscale"}},
+	{"wireguard", []string{"wireguard", "wg-easy"}},
+	{"netbird", []string{"netbird"}},
+
+	// --- mail / messaging gateways --------------------------------------
+	{"mailcow", []string{"mailcow"}},
+	{"postfix", []string{"postfix"}},
+	{"dovecot", []string{"dovecot"}},
+	{"ntfy", []string{"binwiederhier/ntfy", "/ntfy"}},
+	{"gotify", []string{"gotify"}},
+
+	// --- security / waf -------------------------------------------------
+	{"crowdsec", []string{"crowdsecurity", "crowdsec"}},
+	{"anubis", []string{"anubis"}},
+
+	// --- self ------------------------------------------------------------
+	{"mon", []string{"mon-server", "monsys"}},
 }
 
 // distroFamily collapses a /etc/os-release "PRETTY_NAME" string into one of a
