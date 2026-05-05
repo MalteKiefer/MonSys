@@ -110,7 +110,7 @@ func (e *Engine) handleLiveness(ctx context.Context, tr liveness.Transition) {
 			e.resolve(ctx, dedup, body)
 			continue
 		}
-		subj := fmt.Sprintf("[mon] %s is %s", tr.Hostname, tr.To)
+		subj := fmt.Sprintf("[MonSys] %s is %s", tr.Hostname, tr.To)
 		body := fmt.Sprintf("Host %s transitioned %s → %s at %s",
 			tr.Hostname, tr.From, tr.To, tr.At.UTC().Format(time.RFC3339))
 		e.fire(ctx, r, subj, body, dedup)
@@ -140,7 +140,7 @@ func (e *Engine) handleMonitor(ctx context.Context, ev probe.ResultEvent) {
 					continue
 				}
 				dedup := fmt.Sprintf("monitor_failed:%s", ev.MonitorID)
-				subj := fmt.Sprintf("[mon] monitor %s/%s failed", ev.Type, ev.Name)
+				subj := fmt.Sprintf("[MonSys] monitor %s/%s failed", ev.Type, ev.Name)
 				body := fmt.Sprintf("Monitor %q (%s) reported %s after %d ms\n%s",
 					ev.Name, ev.Type, ev.Result.Status, ev.Result.LatencyMS, ev.Result.Detail)
 				e.fire(ctx, r, subj, body, dedup)
@@ -159,7 +159,7 @@ func (e *Engine) handleMonitor(ctx context.Context, ev probe.ResultEvent) {
 		}
 		for _, r := range rules {
 			dedup := fmt.Sprintf("cert_expiring:%s", ev.MonitorID)
-			subj := fmt.Sprintf("[mon] cert %s expiring soon", ev.Name)
+			subj := fmt.Sprintf("[MonSys] cert %s expiring soon", ev.Name)
 			body := fmt.Sprintf("Cert monitor %q reported %s\n%s",
 				ev.Name, ev.Result.Status, ev.Result.Detail)
 			// cert_expiring rules inherit the cert monitor's severity
@@ -326,7 +326,7 @@ func (e *Engine) evalLoginFailed(ctx context.Context, r ruleRow) {
 			continue
 		}
 		dedup := fmt.Sprintf("login_failed:%s", id)
-		subj := fmt.Sprintf("[mon] %s: %d failed logins in %ds", hostname, n, windowSec)
+		subj := fmt.Sprintf("[MonSys] %s: %d failed logins in %ds", hostname, n, windowSec)
 		body := fmt.Sprintf("Host %s observed %d failed login attempts within the last %d seconds (threshold %d).",
 			hostname, n, windowSec, threshold)
 		e.fire(ctx, r, subj, body, dedup)
@@ -363,7 +363,7 @@ func (e *Engine) evalSecurityUpdates(ctx context.Context, r ruleRow) {
 			continue
 		}
 		dedup := fmt.Sprintf("security_updates:%s", id)
-		subj := fmt.Sprintf("[mon] host %s: %d pending security updates", id, sec)
+		subj := fmt.Sprintf("[MonSys] host %s: %d pending security updates", id, sec)
 		body := fmt.Sprintf("Host %s has %d security updates available (threshold %d, observed at %s).",
 			id, sec, threshold, t.UTC().Format(time.RFC3339))
 		e.fire(ctx, r, subj, body, dedup)

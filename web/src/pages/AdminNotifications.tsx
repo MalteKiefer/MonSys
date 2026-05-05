@@ -3,11 +3,20 @@ import {
   AlertTriangle,
   Bell,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  Code2,
+  Hash,
   History,
+  Mail,
+  MessageCircle,
+  MessageSquare,
   PencilLine,
   Plus,
   Send,
+  Server,
   Trash2,
+  Users,
   XCircle,
 } from "lucide-react";
 import { FormEvent, KeyboardEvent, useMemo, useRef, useState } from "react";
@@ -28,6 +37,14 @@ import {
   Table,
   TextInput,
 } from "../components/ui";
+import {
+  CheckboxGrid,
+  FormSection,
+  PillGroup,
+  TagChip,
+  Toggle,
+  TypeCardGrid,
+} from "../components/notifications/FormParts";
 import { api, ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import {
@@ -324,11 +341,11 @@ const CHANNEL_FIELDS: Record<Exclude<ChannelType, "email">, Array<{ key: string;
   ],
   mattermost: [
     { key: "webhook_url", label: "Incoming webhook URL", type: "password" },
-    { key: "username", label: "Display username (optional)", placeholder: "mon" },
+    { key: "username", label: "Display username (optional)", placeholder: "MonSys" },
   ],
   discord: [
     { key: "webhook_url", label: "Webhook URL", type: "password", placeholder: "https://discord.com/api/webhooks/…" },
-    { key: "username", label: "Display username (optional)", placeholder: "mon" },
+    { key: "username", label: "Display username (optional)", placeholder: "MonSys" },
   ],
   ntfy: [
     { key: "server_url", label: "Server URL", placeholder: "https://ntfy.sh" },
@@ -411,76 +428,86 @@ function ChannelForm({
         <h3 className="text-sm font-semibold">{initial ? `Edit ${initial.name}` : "New channel"}</h3>
       </PanelHeader>
       <PanelBody>
-        <form onSubmit={submit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Type">
-              <select
-                value={type}
-                disabled={!!initial}
-                onChange={(e) => {
-                  const next = e.target.value as ChannelType;
-                  setType(next);
-                  setConfig({});
-                  if (next === "email") setRecipientEmail(myEmail);
-                }}
-                className="w-full rounded-md border border-border bg-panel px-3 py-2 text-sm focus:border-accent focus:outline-none disabled:opacity-60"
-              >
-                <option value="email">email</option>
-                <option value="ntfy">ntfy</option>
-                <option value="slack">slack</option>
-                <option value="discord">discord</option>
-                <option value="mattermost">mattermost</option>
-              </select>
-            </Field>
-            <Field label="Name">
-              <TextInput required value={name} onChange={(e) => setName(e.target.value)} />
-            </Field>
-          </div>
+        <form onSubmit={submit} className="space-y-5">
+          <FormSection
+            label="Channel type"
+            hint={initial ? "Type cannot be changed after creation." : undefined}
+          >
+            <TypeCardGrid
+              value={type}
+              disabled={!!initial}
+              onChange={(next) => {
+                setType(next);
+                setConfig({});
+                if (next === "email") setRecipientEmail(myEmail);
+              }}
+              options={CHANNEL_TYPE_CARDS}
+            />
+          </FormSection>
 
-          {type === "email" ? (
-            <>
-              {authConfig.data && authConfig.data.smtp_configured === false && (
-                <p className="rounded-md border border-warn/30 bg-warn/10 px-3 py-2 text-sm text-warn">
-                  Outbound mail isn't configured yet — ask an admin to set up SMTP under Admin → Mail before this channel can deliver.
-                </p>
-              )}
-              <Field
-                label="Recipient email"
-                hint="Defaults to your account email. Outbound transport (SMTP host, auth, from address) is configured by an admin under Admin → Mail (SMTP)."
-              >
-                <TextInput
-                  type="email"
-                  required
-                  value={recipientEmail}
-                  onChange={(e) => setRecipientEmail(e.target.value)}
-                  placeholder={myEmail}
-                />
-              </Field>
-            </>
-          ) : (
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              {fields.map((f) => (
-                <Field key={f.key} label={f.label} hint={f.help}>
+          <FormSection label="Identification" divider={false}>
+            <Field label="Name">
+              <TextInput
+                required
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. ops-oncall"
+              />
+            </Field>
+
+            {type === "email" ? (
+              <>
+                {authConfig.data && authConfig.data.smtp_configured === false && (
+                  <p className="rounded-md border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-warn">
+                    Outbound mail isn't configured yet — ask an admin to set up SMTP under Admin → Mail before this channel can deliver.
+                  </p>
+                )}
+                <Field
+                  label="Recipient email"
+                  hint="Defaults to your account email. Outbound transport (SMTP host, auth, from address) is configured by an admin under Admin → Mail (SMTP)."
+                >
                   <TextInput
-                    type={f.type || "text"}
-                    placeholder={f.placeholder}
-                    value={config[f.key] ?? ""}
-                    onChange={(e) => setConfig({ ...config, [f.key]: e.target.value })}
-                    className={f.type === "password" ? "font-mono" : ""}
+                    type="email"
+                    required
+                    value={recipientEmail}
+                    onChange={(e) => setRecipientEmail(e.target.value)}
+                    placeholder={myEmail}
                   />
                 </Field>
-              ))}
-            </div>
-          )}
+              </>
+            ) : (
+              <div className="rounded-md border border-border bg-panel-2/40 p-3">
+                <div className="mb-3 flex items-center gap-2 text-[11px] uppercase tracking-[0.08em] text-fg-subtle">
+                  <Hash className="h-3 w-3" />
+                  {type} configuration
+                </div>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  {fields.map((f) => (
+                    <Field key={f.key} label={f.label} hint={f.help}>
+                      <TextInput
+                        type={f.type || "text"}
+                        placeholder={f.placeholder}
+                        value={config[f.key] ?? ""}
+                        onChange={(e) => setConfig({ ...config, [f.key]: e.target.value })}
+                        className={f.type === "password" ? "font-mono" : ""}
+                      />
+                    </Field>
+                  ))}
+                </div>
+              </div>
+            )}
 
-          <label className="flex items-center gap-2 text-sm text-fg-muted">
-            <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-            Enabled
-          </label>
+            <Toggle
+              checked={enabled}
+              onChange={setEnabled}
+              label="Enabled"
+              hint="Disable to keep the channel configured but skip deliveries."
+            />
+          </FormSection>
 
           {error && <ErrorBox>{error}</ErrorBox>}
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 pt-1">
             <Button variant="primary" type="submit" disabled={save.isPending}>
               {save.isPending ? "Saving…" : initial ? "Save" : "Create"}
             </Button>
@@ -493,6 +520,20 @@ function ChannelForm({
     </Panel>
   );
 }
+
+// Card data for the channel-type picker. Order matches the previous select.
+const CHANNEL_TYPE_CARDS: Array<{
+  value: ChannelType;
+  label: string;
+  description: string;
+  icon: typeof Mail;
+}> = [
+  { value: "email", label: "Email", description: "Send a templated email", icon: Mail },
+  { value: "slack", label: "Slack", description: "Post to a Slack channel via webhook", icon: MessageSquare },
+  { value: "mattermost", label: "Mattermost", description: "Post to a Mattermost channel via webhook", icon: MessageCircle },
+  { value: "discord", label: "Discord", description: "Post to a Discord channel via webhook", icon: MessageCircle },
+  { value: "ntfy", label: "ntfy", description: "Push to an ntfy topic", icon: Bell },
+];
 
 function parseConfig(_type: ChannelType, cfg: Record<string, string>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -749,6 +790,58 @@ function RuleForm({
   }
 
   const conditionMeta = RULE_CONDITIONS.find((c) => c.value === conditionType)!;
+  const conditionExample = CONDITION_PARAM_EXAMPLES[conditionType];
+
+  // Tag-chip rendering: parse the comma-separated free-text input into chips
+  // for visual feedback. The raw text remains the source of truth so the user
+  // can keep typing mid-tag without losing input focus.
+  const tagChips = useMemo(
+    () =>
+      tagsRaw
+        .split(",")
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean),
+    [tagsRaw],
+  );
+  function removeTag(tag: string) {
+    const next = tagChips.filter((t) => t !== tag);
+    setTagsRaw(next.join(", "));
+  }
+
+  const channelOptions = channels.map((c) => ({
+    id: c.id,
+    primary: c.name,
+    secondary: c.type,
+    icon: channelIcon(c.type),
+  }));
+
+  const hostOptions = (hostsQuery.data?.hosts ?? []).map((h) => ({
+    id: h.id,
+    primary: h.hostname,
+    secondary:
+      h.tags.length > 0 ? (
+        <span className="inline-flex flex-wrap gap-1">
+          {h.tags.map((t) => (
+            <span
+              key={t}
+              className="rounded-md bg-panel-2 px-1 font-mono text-[10px] text-accent"
+            >
+              #{t}
+            </span>
+          ))}
+        </span>
+      ) : (
+        <span className="text-fg-subtle">no tags</span>
+      ),
+    icon: Server,
+  }));
+
+  const groupOptions = (groupsQuery.data?.groups ?? []).map((g) => ({
+    id: g.id,
+    primary: g.name,
+    secondary: `${g.member_ids.length} member${g.member_ids.length === 1 ? "" : "s"}`,
+    icon: Users,
+  }));
 
   return (
     <Panel>
@@ -756,140 +849,99 @@ function RuleForm({
         <h3 className="text-sm font-semibold">{initial ? `Edit ${initial.name}` : "New rule"}</h3>
       </PanelHeader>
       <PanelBody>
-        <form onSubmit={submit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Name">
-              <TextInput required value={name} onChange={(e) => setName(e.target.value)} />
-            </Field>
-            <Field label="Severity">
-              <select
-                value={severity}
-                onChange={(e) => setSeverity(e.target.value as NotificationRule["severity"])}
-                className="w-full rounded-md border border-border bg-panel px-3 py-2 text-sm"
-              >
-                <option value="info">info</option>
-                <option value="warning">warning</option>
-                <option value="critical">critical</option>
-              </select>
-            </Field>
-          </div>
-
-          <Field label="Condition" hint={conditionMeta.desc}>
-            <select
-              value={conditionType}
-              onChange={(e) => setConditionType(e.target.value as NotificationRule["condition_type"])}
-              className="w-full rounded-md border border-border bg-panel px-3 py-2 text-sm"
-            >
-              {RULE_CONDITIONS.map((c) => (
-                <option key={c.value} value={c.value}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-
-          <Field
-            label="Condition params (JSON)"
-            hint='Examples: {"match_states":["offline","stale"]} · {"threshold":10,"window_sec":300} · {}'
-          >
-            <textarea
-              rows={4}
-              value={paramsRaw}
-              onChange={(e) => setParamsRaw(e.target.value)}
-              className="w-full rounded-md border border-border bg-panel px-3 py-2 font-mono text-xs text-fg focus:border-accent focus:outline-none"
-            />
-            {paramsParseError && (
-              <p className="mt-1 text-xs text-fail">Invalid JSON: {paramsParseError}</p>
-            )}
-          </Field>
-
-          <Field label="Channels" hint="Select one or more delivery channels (Ctrl/⌘ to multi-select).">
-            <select
-              multiple
-              size={Math.min(6, Math.max(3, channels.length))}
-              value={channelIDs}
-              onChange={(e) =>
-                setChannelIDs(Array.from(e.target.selectedOptions).map((o) => o.value))
-              }
-              className="w-full rounded-md border border-border bg-panel px-3 py-2 text-sm"
-            >
-              {channels.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.type} · {c.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Throttle (seconds)" hint="0 disables throttle.">
-              <TextInput
-                type="number"
-                min={0}
-                value={throttleSec}
-                onChange={(e) => setThrottleSec(parseInt(e.target.value || "0", 10))}
-              />
-            </Field>
-            <Field
-              label="Repeat reminder (seconds)"
-              hint="0 = fire once per outage. 60–86400 = re-send while still active."
-            >
-              <TextInput
-                type="number"
-                min={0}
-                max={86400}
-                value={repeatIntervalSec}
-                onChange={(e) => setRepeatIntervalSec(parseInt(e.target.value || "0", 10))}
-              />
-            </Field>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Notify on resolve" hint="Send an all-clear when the host/monitor recovers.">
-              <label className="mt-2 inline-flex items-center gap-2 text-sm text-fg-muted">
-                <input
-                  type="checkbox"
-                  checked={notifyOnResolve}
-                  onChange={(e) => setNotifyOnResolve(e.target.checked)}
+        <form onSubmit={submit} className="space-y-5">
+          {/* --- Identification --- */}
+          <FormSection label="Identification">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto] md:items-end">
+              <Field label="Name">
+                <TextInput
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. prod hosts offline"
                 />
-                On
-              </label>
-            </Field>
-            <Field label="Enabled">
-              <label className="mt-2 inline-flex items-center gap-2 text-sm text-fg-muted">
-                <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-                On
-              </label>
-            </Field>
-          </div>
+              </Field>
+              <Field label="Severity">
+                <PillGroup
+                  value={severity}
+                  onChange={(v) => setSeverity(v)}
+                  label="Severity"
+                  options={[
+                    {
+                      value: "info",
+                      label: "info",
+                      activeClass: "bg-ok/15 text-ok ring-ok/30",
+                    },
+                    {
+                      value: "warning",
+                      label: "warning",
+                      activeClass: "bg-warn/15 text-warn ring-warn/30",
+                    },
+                    {
+                      value: "critical",
+                      label: "critical",
+                      activeClass: "bg-fail/15 text-fail ring-fail/30",
+                    },
+                  ]}
+                />
+              </Field>
+            </div>
+          </FormSection>
 
-          <div className="rounded-md border border-border bg-panel-2/40 p-3">
-            <p className="mb-3 text-xs text-fg-subtle">
-              <strong className="text-fg-muted">Targets.</strong> Empty selectors = applies to every host.
-              Otherwise the rule fires when a host matches <em>any</em> selected host, tag, or group.
-            </p>
-
-            <Field label="Apply to hosts (Ctrl/⌘ to multi-select)">
+          {/* --- Trigger --- */}
+          <FormSection label="Trigger">
+            <Field label="Condition" hint={conditionMeta.desc}>
               <select
-                multiple
-                size={Math.min(8, Math.max(3, hostsQuery.data?.hosts.length ?? 3))}
-                value={hostIDs}
-                onChange={(e) =>
-                  setHostIDs(Array.from(e.target.selectedOptions).map((o) => o.value))
-                }
-                className="w-full rounded-md border border-border bg-panel px-3 py-2 text-sm"
+                value={conditionType}
+                onChange={(e) => {
+                  const next = e.target.value as NotificationRule["condition_type"];
+                  setConditionType(next);
+                  // If the user hasn't customised params, refresh the placeholder
+                  // hint to match the new condition.
+                  if (paramsRaw.trim() === "" || paramsRaw.trim() === "{}") {
+                    setParamsRaw("");
+                  }
+                }}
+                className="w-full rounded-md border border-border bg-panel px-3 py-2 text-sm focus:border-accent focus:outline-none"
               >
-                {(hostsQuery.data?.hosts ?? []).map((h) => (
-                  <option key={h.id} value={h.id}>
-                    {h.hostname}
+                {RULE_CONDITIONS.map((c) => (
+                  <option key={c.value} value={c.value}>
+                    {c.label}
                   </option>
                 ))}
               </select>
             </Field>
 
-            <div className="mt-3 grid grid-cols-2 gap-3">
+            <AdvancedParams
+              value={paramsRaw}
+              onChange={setParamsRaw}
+              placeholder={conditionExample}
+              parseError={paramsParseError}
+            />
+          </FormSection>
+
+          {/* --- Targets --- */}
+          <FormSection
+            label="Targets"
+            hint="Empty = every host. Otherwise host must match any selection."
+          >
+            <Field label={`Hosts (${hostIDs.length} selected)`}>
+              <CheckboxGrid
+                options={hostOptions}
+                selected={hostIDs}
+                onToggle={(id) =>
+                  setHostIDs((prev) =>
+                    prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+                  )
+                }
+                empty="No hosts known yet."
+                maxHeight="max-h-56"
+              />
+            </Field>
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <Field
-                label="Tags (comma-separated)"
+                label="Tags"
                 hint={
                   tagsQuery.data?.tags?.length
                     ? `Existing: ${tagsQuery.data.tags.map((t) => t.tag).join(", ")}`
@@ -902,31 +954,95 @@ function RuleForm({
                   placeholder="prod, db"
                   className="font-mono"
                 />
+                {tagChips.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {tagChips.map((t) => (
+                      <TagChip key={t} text={t} onRemove={() => removeTag(t)} />
+                    ))}
+                  </div>
+                )}
               </Field>
 
-              <Field label="Groups (Ctrl/⌘ to multi-select)">
-                <select
-                  multiple
-                  size={Math.min(5, Math.max(2, groupsQuery.data?.groups.length ?? 2))}
-                  value={groupIDs}
-                  onChange={(e) =>
-                    setGroupIDs(Array.from(e.target.selectedOptions).map((o) => o.value))
+              <Field label={`Groups (${groupIDs.length} selected)`}>
+                <CheckboxGrid
+                  options={groupOptions}
+                  selected={groupIDs}
+                  onToggle={(id) =>
+                    setGroupIDs((prev) =>
+                      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+                    )
                   }
-                  className="w-full rounded-md border border-border bg-panel px-3 py-2 text-sm"
-                >
-                  {(groupsQuery.data?.groups ?? []).map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.name} ({g.member_ids.length})
-                    </option>
-                  ))}
-                </select>
+                  empty="No groups defined yet."
+                  maxHeight="max-h-40"
+                  columns="grid-cols-1"
+                />
               </Field>
             </div>
-          </div>
+          </FormSection>
+
+          {/* --- Delivery --- */}
+          <FormSection label="Delivery">
+            <Field
+              label={`Channels (${channelIDs.length} selected)`}
+              hint="At least one channel must be selected."
+            >
+              <CheckboxGrid
+                options={channelOptions}
+                selected={channelIDs}
+                onToggle={(id) =>
+                  setChannelIDs((prev) =>
+                    prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+                  )
+                }
+                empty="No channels available."
+                maxHeight="max-h-56"
+              />
+            </Field>
+          </FormSection>
+
+          {/* --- Cadence --- */}
+          <FormSection label="Cadence" divider={false}>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <Field label="Throttle (seconds)" hint="0 disables throttle.">
+                <TextInput
+                  type="number"
+                  min={0}
+                  value={throttleSec}
+                  onChange={(e) => setThrottleSec(parseInt(e.target.value || "0", 10))}
+                />
+              </Field>
+              <Field
+                label="Repeat reminder (seconds)"
+                hint="0 = fire once per outage. 60–86400 = re-send while still active."
+              >
+                <TextInput
+                  type="number"
+                  min={0}
+                  max={86400}
+                  value={repeatIntervalSec}
+                  onChange={(e) => setRepeatIntervalSec(parseInt(e.target.value || "0", 10))}
+                />
+              </Field>
+            </div>
+            <div className="grid grid-cols-1 gap-3 rounded-md border border-border bg-panel-2/40 p-3 md:grid-cols-2">
+              <Toggle
+                checked={notifyOnResolve}
+                onChange={setNotifyOnResolve}
+                label="Notify on resolve"
+                hint="Send an all-clear when the host or monitor recovers."
+              />
+              <Toggle
+                checked={enabled}
+                onChange={setEnabled}
+                label="Enabled"
+                hint="Disable to keep the rule but stop firing alerts."
+              />
+            </div>
+          </FormSection>
 
           {error && <ErrorBox>{error}</ErrorBox>}
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 pt-1">
             <Button variant="primary" type="submit" disabled={save.isPending}>
               {save.isPending ? "Saving…" : initial ? "Save" : "Create"}
             </Button>
@@ -937,6 +1053,101 @@ function RuleForm({
         </form>
       </PanelBody>
     </Panel>
+  );
+}
+
+// Per-condition placeholder for the advanced params textarea. Mirrors the
+// docstring on each RULE_CONDITIONS entry; shown only as a hint, never
+// pre-filled into state so an empty body still serialises as `{}`.
+const CONDITION_PARAM_EXAMPLES: Record<NotificationRule["condition_type"], string> = {
+  host_offline: '{\n  "match_states": ["offline", "stale"]\n}',
+  monitor_failed: '{\n  "monitor_type": "http",\n  "monitor_name": "api"\n}',
+  cert_expiring: "{}",
+  login_failed_threshold: '{\n  "threshold": 10,\n  "window_sec": 300\n}',
+  security_updates_pending: '{\n  "threshold": 1\n}',
+};
+
+// Lucide icon picker for channel types. Keep in sync with CHANNEL_TYPE_CARDS.
+function channelIcon(type: ChannelType) {
+  switch (type) {
+    case "email":
+      return Mail;
+    case "slack":
+      return MessageSquare;
+    case "mattermost":
+    case "discord":
+      return MessageCircle;
+    case "ntfy":
+      return Bell;
+    default:
+      return Bell;
+  }
+}
+
+// Collapsible "Advanced" expander housing the JSON params textarea.
+// Closed by default for new rules; auto-opens when editing a rule that has
+// non-empty params (so the user can see what's there) or when the JSON fails
+// to parse (so the inline error isn't hidden behind a closed pane).
+function AdvancedParams({
+  value,
+  onChange,
+  placeholder,
+  parseError,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  parseError: string | null;
+}) {
+  const hasContent = value.trim() !== "" && value.trim() !== "{}";
+  const [open, setOpen] = useState<boolean>(hasContent || !!parseError);
+
+  return (
+    <div className="rounded-md border border-border bg-panel-2/40">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs font-medium text-fg-muted hover:text-fg"
+      >
+        <span className="inline-flex items-center gap-2">
+          <Code2 className="h-3.5 w-3.5" />
+          Advanced — condition params (JSON)
+          {hasContent && (
+            <span className="rounded bg-accent/15 px-1.5 py-0.5 font-mono text-[10px] text-accent">
+              custom
+            </span>
+          )}
+          {parseError && (
+            <span className="rounded bg-fail/15 px-1.5 py-0.5 text-[10px] text-fail">
+              invalid
+            </span>
+          )}
+        </span>
+        {open ? (
+          <ChevronDown className="h-3.5 w-3.5 text-fg-subtle" />
+        ) : (
+          <ChevronRight className="h-3.5 w-3.5 text-fg-subtle" />
+        )}
+      </button>
+      {open && (
+        <div className="border-t border-border px-3 pb-3 pt-2">
+          <textarea
+            rows={5}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={placeholder}
+            className="w-full rounded-md border border-border bg-panel px-3 py-2 font-mono text-xs text-fg placeholder:text-fg-subtle focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
+          />
+          {parseError ? (
+            <p className="mt-1 text-xs text-fail">Invalid JSON: {parseError}</p>
+          ) : (
+            <p className="mt-1 text-[11px] text-fg-subtle">
+              Leave blank to use the condition defaults.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -17,7 +17,7 @@ import (
 
 const (
 	BackupCodeCount = 10
-	Issuer          = "mon"
+	Issuer          = "MonSys"
 )
 
 // Generate provisions a fresh TOTP secret, the otpauth:// URL, a PNG QR code

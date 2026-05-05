@@ -171,7 +171,7 @@ function Header() {
       <div className="flex items-center gap-6">
         <Link to="/" className="flex items-center gap-2 text-sm font-semibold tracking-tight">
           <Activity className="h-4 w-4 text-accent" />
-          <span>mon</span>
+          <span>MonSys</span>
         </Link>
         <nav className="flex items-center gap-0.5">
           <NavItem to="/" icon={LayoutDashboard}>Overview</NavItem>

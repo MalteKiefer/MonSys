@@ -78,7 +78,7 @@ func New(s *store.Store) *Server {
 	r.Use(srv.requireSessionForDocs)
 	r.Use(middleware.Timeout(30 * time.Second))
 
-	cfg := huma.DefaultConfig("mon", version.Version)
+	cfg := huma.DefaultConfig("MonSys", version.Version)
 	cfg.Info.Description = "Self-hosted server-monitoring API. Agents push metrics; users query."
 	cfg.Servers = []*huma.Server{{URL: "/", Description: "current"}}
 	srv.API = humachi.New(r, cfg)
