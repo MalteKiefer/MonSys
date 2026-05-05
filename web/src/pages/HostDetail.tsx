@@ -725,6 +725,7 @@ function UsersTable({ rows }: { rows: HostDetailT["users"] }) {
 function SecurityPanel({ data, loading }: { data?: HostSecurity; loading: boolean }) {
   if (loading || !data) return <Skeleton className="h-32" />;
 
+  const firewalls = data.firewalls ?? [];
   const cs = data.crowdsec ?? [];
   const csByType = cs.reduce<Record<string, number>>((acc, d) => {
     const k = (d.type || "unknown").toLowerCase();
@@ -737,9 +738,9 @@ function SecurityPanel({ data, loading }: { data?: HostSecurity; loading: boolea
       <div className="grid gap-5 md:grid-cols-2">
         <div>
           <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">Firewalls</h4>
-          {data.firewalls.length === 0 ? <p className="text-sm text-fg-subtle">None detected.</p> : (
+          {firewalls.length === 0 ? <p className="text-sm text-fg-subtle">None detected.</p> : (
             <ul className="space-y-3 text-sm">
-              {data.firewalls.map((f: FirewallStatus) => (
+              {firewalls.map((f: FirewallStatus) => (
                 <li key={f.engine} className="rounded-md border border-border bg-panel-2 p-3">
                   <div className="flex items-center gap-2">
                     <StatusPill status={f.active ? "ok" : "unknown"}>{f.engine}</StatusPill>
