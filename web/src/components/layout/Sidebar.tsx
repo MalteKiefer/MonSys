@@ -46,14 +46,12 @@ type AdminSubGroup = {
   items: NavItem[];
 };
 
-// TODO(phase-d): wire /notifications/alerts (AlertTriangle) and
-// /notifications/channels (MessageSquare) into NOTIFICATION_GROUP.items
-// once the corresponding pages land. They are intentionally omitted today
-// because their routes are not yet mounted in App.tsx.
 export const NOTIFICATION_GROUP: NavGroup = {
   label: "Notifications",
   items: [
     { to: "/notifications", label: "Rules", icon: Bell, end: true },
+    { to: "/notifications/channels", label: "Channels", icon: MessageSquare },
+    { to: "/notifications/alerts", label: "Alerts", icon: AlertTriangle },
   ],
 };
 

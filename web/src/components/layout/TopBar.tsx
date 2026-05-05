@@ -4,6 +4,7 @@ import { useSyncExternalStore } from "react";
 import { Link } from "react-router-dom";
 
 import { ThemeToggle } from "../ThemeToggle";
+import { useCommandPalette } from "../../lib/palette-store";
 import { api } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 import { getConnectionStatus, subscribe as subscribeConnection } from "../../lib/connection";
@@ -36,18 +37,16 @@ function ConnectionPill() {
   );
 }
 
-// Cmd+K search trigger. Phase F replaces this with the actual command
-// palette. Until then we render a styled, focusable button so the spot
-// reserved for the palette already looks lived-in. We don't bind any
-// shortcut here on purpose — the palette will own the global key.
+// Cmd+K search trigger. The CommandPalette owns the global Cmd+K / Ctrl+K
+// listener; this button is just an alternate entry point for pointer users.
 function SearchTrigger() {
+  const toggle = useCommandPalette((s) => s.toggle);
   return (
     <button
       type="button"
-      disabled
-      aria-label="Open command palette (coming soon)"
-      title="Coming soon"
-      className="hidden w-72 cursor-not-allowed items-center gap-2 rounded-md border border-border bg-panel/60 px-2.5 py-1 text-xs text-fg-subtle transition-colors hover:bg-panel-2 hover:text-fg-muted md:inline-flex lg:w-80"
+      onClick={toggle}
+      aria-label="Open command palette (Cmd+K)"
+      className="hidden w-72 items-center gap-2 rounded-md border border-border bg-panel/60 px-2.5 py-1 text-xs text-fg-subtle transition-colors hover:bg-panel-2 hover:text-fg-muted md:inline-flex lg:w-80"
     >
       <Search className="h-3.5 w-3.5" aria-hidden />
       <span className="flex-1 text-left">Search…</span>

@@ -9,13 +9,6 @@
 //
 // Filtering: case-insensitive substring across `label + secondary`. No fuzzy
 // library — substring is enough and keeps the bundle small (no new deps).
-//
-// TODO(integration): mount this component once near the root of the
-// AppShell from Phase A (e.g. inside <AppShell />, alongside <Sidebar /> and
-// the main <Outlet />). It registers the global Cmd+K / Ctrl+K listener and
-// reads its open state from `useCommandPalette()`. The TopBar's placeholder
-// search button should call `useCommandPalette((s) => s.toggle)` from its
-// onClick — see the contract comment at the top of palette-store.ts.
 
 import { useQuery } from "@tanstack/react-query";
 import {

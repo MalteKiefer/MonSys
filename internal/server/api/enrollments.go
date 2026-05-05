@@ -12,6 +12,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
+	qrcode "github.com/skip2/go-qrcode"
 
 	"github.com/MalteKiefer/MonSys/internal/server/store"
 	"github.com/MalteKiefer/MonSys/internal/shared/apitypes"
@@ -210,6 +211,42 @@ func (s *Server) handleRevokeEnrollment(ctx context.Context, in *enrollmentIDInp
 	return out, nil
 }
 
+// handleInstallQR returns a PNG QR code that encodes the install URL for
+// the given token. Same auth model as /v1/agents/install.sh: the token in
+// the query string is the proof-of-possession; expired or consumed tokens
+// answer 404. The encoded payload is the *install URL* (curl-friendly), so
+// scanning the QR with a phone yields the same one-line install command
+// path operators copy-paste from the modal.
+func (s *Server) handleInstallQR(w http.ResponseWriter, r *http.Request) {
+	token := r.URL.Query().Get("t")
+	if token == "" || s.Store == nil {
+		http.NotFound(w, r)
+		return
+	}
+	hash := sha256Hash(token)
+	var used bool
+	err := s.Store.Pool.QueryRow(r.Context(),
+		`SELECT used_at IS NOT NULL FROM agent_tokens WHERE token_hash = $1 AND expires_at > now()`,
+		hash,
+	).Scan(&used)
+	if err != nil || used {
+		http.NotFound(w, r)
+		return
+	}
+
+	base := enrollBaseURL(r)
+	url := fmt.Sprintf("%s/v1/agents/install.sh?t=%s", base, token)
+	png, err := qrcode.Encode(url, qrcode.Medium, 320)
+	if err != nil {
+		slog.Warn("install qr encode", "err", err)
+		http.Error(w, "qr encode failed", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(png)
+}
+
 // --- Public install script -------------------------------------------------
 
 // handleInstallScript renders the dynamic /v1/agents/install.sh response.
@@ -232,9 +269,9 @@ func (s *Server) handleInstallScript(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Direct-DB lookup: cheap one-shot and keeps the store boundary clean.
-	// TODO(integration): swap for s.Store.LookupBootstrapTokenStatus once
-	// the parallel store agent exposes it.
+	// Direct-DB lookup keeps the store boundary clean for this read-only
+	// gate. A future store helper (LookupBootstrapTokenStatus) could replace
+	// this if the same query starts being used elsewhere.
 	hash := sha256Hash(token)
 	var used bool
 	err := s.Store.Pool.QueryRow(r.Context(),

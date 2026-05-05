@@ -354,24 +354,27 @@ function ResultView({
         </div>
       </div>
 
-      <div>
-        <button
-          type="button"
-          onClick={() => setShowScript((v) => !v)}
-          aria-expanded={showScript}
-          className="inline-flex items-center gap-1.5 text-xs text-fg-muted transition-colors hover:text-fg"
-        >
-          <Code2 className="h-3.5 w-3.5" />
-          View install script
-          {showScript ? (
-            <ChevronUp className="h-3.5 w-3.5" />
-          ) : (
-            <ChevronDown className="h-3.5 w-3.5" />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex-1">
+          <button
+            type="button"
+            onClick={() => setShowScript((v) => !v)}
+            aria-expanded={showScript}
+            className="inline-flex items-center gap-1.5 text-xs text-fg-muted transition-colors hover:text-fg"
+          >
+            <Code2 className="h-3.5 w-3.5" />
+            View install script
+            {showScript ? (
+              <ChevronUp className="h-3.5 w-3.5" />
+            ) : (
+              <ChevronDown className="h-3.5 w-3.5" />
+            )}
+          </button>
+          {showScript && (
+            <InstallScriptViewer url={created.install_url} tokenPrefix={tokenPrefix} />
           )}
-        </button>
-        {showScript && (
-          <InstallScriptViewer url={created.install_url} tokenPrefix={tokenPrefix} />
-        )}
+        </div>
+        <InstallQR url={created.install_url} />
       </div>
 
       <StatusRow
@@ -520,6 +523,38 @@ function InstallScriptViewer({
       <pre className="m-0 max-h-[400px] overflow-auto rounded-md border border-border bg-bg/60 px-3 py-2 font-mono text-[11px] text-fg-muted">
         {script}
       </pre>
+    </div>
+  );
+}
+
+// InstallQR shows the install URL as a scannable PNG, rendered server-side
+// so we don't ship a QR encoder in the bundle. Falls back silently if the
+// image fails to load (offline operator, blocked endpoint).
+function InstallQR({ url }: { url: string }) {
+  // The server endpoint /v1/agents/install-qr accepts ?t=<token>, so we
+  // re-extract the token from the URL the modal already holds.
+  const qrSrc = (() => {
+    try {
+      const u = new URL(url);
+      const t = u.searchParams.get("t") ?? "";
+      const base = `${u.protocol}//${u.host}`;
+      return `${base}/v1/agents/install-qr?t=${encodeURIComponent(t)}`;
+    } catch {
+      return "";
+    }
+  })();
+  if (!qrSrc) return null;
+  return (
+    <div className="flex flex-col items-center gap-1 rounded-md border border-border bg-bg/40 p-2">
+      <img
+        src={qrSrc}
+        alt="Scan with phone to copy install URL"
+        width={144}
+        height={144}
+        className="rounded-sm"
+        loading="lazy"
+      />
+      <span className="text-[10px] text-fg-subtle">Scan to copy URL</span>
     </div>
   );
 }

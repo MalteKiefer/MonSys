@@ -1,9 +1,3 @@
-// TODO(integration): Phase A owns App.tsx — once that lands, mount
-// `<DensityProvider />` once at the root (e.g. directly inside <App>) so the
-// `data-density` attribute on <html> is in sync from the first paint. Until
-// then the Profile page mounts it via its `useDensity()` consumer; the
-// effect is idempotent so double-mounting is safe.
-//
 // Density toggle store. Two modes:
 //   - "comfortable" (default) — current layout, larger paddings.
 //   - "compact"               — tighter table cells, panels, smaller font.

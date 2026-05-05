@@ -259,6 +259,7 @@ func (s *Server) registerRoutes() {
 	// the script). Wired on the chi router directly because the response
 	// body is raw shell, not a typed huma envelope.
 	s.Router.Get("/v1/agents/install.sh", s.handleInstallScript)
+	s.Router.Get("/v1/agents/install-qr", s.handleInstallQR)
 
 	// Auth: login + me + logout. Login itself is unauthenticated.
 	huma.Register(s.API, huma.Operation{
