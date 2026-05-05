@@ -15,6 +15,7 @@ import {
   Copy,
   Download,
   Loader,
+  QrCode,
   X,
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
@@ -279,6 +280,7 @@ function ResultView({
   const [copiedCmd, setCopiedCmd] = useState(false);
   const [copiedURL, setCopiedURL] = useState(false);
   const [showScript, setShowScript] = useState(false);
+  const [showQR, setShowQR] = useState(false);
 
   async function copyText(text: string, setFlag: (b: boolean) => void) {
     try {
@@ -354,8 +356,8 @@ function ResultView({
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex-1">
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center gap-4">
           <button
             type="button"
             onClick={() => setShowScript((v) => !v)}
@@ -370,11 +372,25 @@ function ResultView({
               <ChevronDown className="h-3.5 w-3.5" />
             )}
           </button>
-          {showScript && (
-            <InstallScriptViewer url={created.install_url} tokenPrefix={tokenPrefix} />
-          )}
+          <button
+            type="button"
+            onClick={() => setShowQR((v) => !v)}
+            aria-expanded={showQR}
+            className="inline-flex items-center gap-1.5 text-xs text-fg-muted transition-colors hover:text-fg"
+          >
+            <QrCode className="h-3.5 w-3.5" />
+            {showQR ? "Hide QR code" : "Show QR code"}
+            {showQR ? (
+              <ChevronUp className="h-3.5 w-3.5" />
+            ) : (
+              <ChevronDown className="h-3.5 w-3.5" />
+            )}
+          </button>
         </div>
-        <InstallQR url={created.install_url} />
+        {showScript && (
+          <InstallScriptViewer url={created.install_url} tokenPrefix={tokenPrefix} />
+        )}
+        {showQR && <InstallQR url={created.install_url} />}
       </div>
 
       <StatusRow
@@ -545,16 +561,16 @@ function InstallQR({ url }: { url: string }) {
   })();
   if (!qrSrc) return null;
   return (
-    <div className="flex flex-col items-center gap-1 rounded-md border border-border bg-bg/40 p-2">
+    <div className="mt-2 flex flex-col items-center gap-2 rounded-md border border-border bg-bg/40 p-4">
       <img
         src={qrSrc}
-        alt="Scan with phone to copy install URL"
-        width={144}
-        height={144}
-        className="rounded-sm"
+        alt="Scan with phone to open install URL"
+        width={224}
+        height={224}
+        className="rounded-sm bg-white p-2"
         loading="lazy"
       />
-      <span className="text-[10px] text-fg-subtle">Scan to copy URL</span>
+      <span className="text-xs text-fg-subtle">Scan with a phone to open the install URL.</span>
     </div>
   );
 }
