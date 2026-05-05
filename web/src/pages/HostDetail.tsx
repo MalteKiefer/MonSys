@@ -323,10 +323,10 @@ function Header({ detail }: { detail: HostDetailT }) {
 
         <div className="mt-4 flex flex-wrap items-start gap-3">
           <TagsEditor hostID={h.id} initial={h.tags} />
-          {h.groups.length > 0 && (
+          {(h.groups ?? []).length > 0 && (
             <div className="flex flex-wrap items-center gap-1">
               <span className="text-[11px] font-medium uppercase tracking-wider text-fg-subtle">Groups:</span>
-              {h.groups.map((g) => (
+              {(h.groups ?? []).map((g) => (
                 <span key={g.id} className="rounded-md bg-info/10 px-2 py-0.5 text-[11px] font-mono text-info ring-1 ring-inset ring-info/30">
                   {g.name}
                 </span>

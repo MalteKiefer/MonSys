@@ -386,10 +386,14 @@ chmod 0644 /etc/systemd/system/mon-agent.service
 systemctl daemon-reload
 
 # 7. one-shot bootstrap (only if no key file yet) — consumes the token.
+# mon-agent does not exit after a successful bootstrap; it continues into
+# its main loop. Wrap the call in coreutils timeout so this installer can
+# hand control back to systemd. Exit code 124 is the timeout fired AFTER
+# the key file was written, which is exactly the success path here.
 if [ ! -f /var/lib/mon-agent/agent.key ]; then
-  sudo -u monagent /usr/local/bin/mon-agent \
+  timeout 8 sudo -u monagent /usr/local/bin/mon-agent \
     --config=/etc/mon-agent/config.yaml \
-    --bootstrap-token="${BOOTSTRAP_TOKEN}"
+    --bootstrap-token="${BOOTSTRAP_TOKEN}" || true
 fi
 [ -f /var/lib/mon-agent/agent.key ] || { echo "BOOTSTRAP FAILED" >&2 ; exit 1 ; }
 

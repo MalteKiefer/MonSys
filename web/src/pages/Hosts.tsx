@@ -56,7 +56,7 @@ export function Hosts() {
       if (statusFilter !== "all" && h.status !== statusFilter) return false;
       if (needle === "") return true;
       if (hostDisplay(h).toLowerCase().includes(needle)) return true;
-      if (h.tags.some((t) => t.toLowerCase().includes(needle))) return true;
+      if ((h.tags ?? []).some((t) => t.toLowerCase().includes(needle))) return true;
       return false;
     });
   }, [hosts, search, statusFilter]);
@@ -196,12 +196,12 @@ export function Hosts() {
                   </TD>
                   <TD>
                     <div className="flex flex-wrap items-center gap-1">
-                      {h.tags.map((t) => (
+                      {(h.tags ?? []).map((t) => (
                         <span key={t} className="rounded-md bg-panel-2 px-1.5 py-0.5 font-mono text-[10px] text-accent">
                           #{t}
                         </span>
                       ))}
-                      {h.groups.map((g) => (
+                      {(h.groups ?? []).map((g) => (
                         <span
                           key={g.id}
                           className="rounded-md bg-info/10 px-1.5 py-0.5 font-mono text-[10px] text-info ring-1 ring-inset ring-info/30"
@@ -209,7 +209,7 @@ export function Hosts() {
                           {g.name}
                         </span>
                       ))}
-                      {h.tags.length === 0 && h.groups.length === 0 && (
+                      {(h.tags ?? []).length === 0 && (h.groups ?? []).length === 0 && (
                         <span className="text-fg-subtle">—</span>
                       )}
                     </div>

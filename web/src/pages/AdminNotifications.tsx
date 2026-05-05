@@ -820,9 +820,9 @@ function RuleForm({
     id: h.id,
     primary: hostDisplay(h),
     secondary:
-      h.tags.length > 0 ? (
+      (h.tags ?? []).length > 0 ? (
         <span className="inline-flex flex-wrap gap-1">
-          {h.tags.map((t) => (
+          {(h.tags ?? []).map((t) => (
             <span
               key={t}
               className="rounded-md bg-panel-2 px-1 font-mono text-[10px] text-accent"

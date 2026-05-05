@@ -158,11 +158,11 @@ function EnrollmentRow({
       </TD>
       <TD className="font-medium">{enrollment.label || "—"}</TD>
       <TD>
-        {enrollment.tags.length === 0 ? (
+        {(enrollment.tags ?? []).length === 0 ? (
           <span className="text-fg-subtle">—</span>
         ) : (
           <div className="flex flex-wrap items-center gap-1">
-            {enrollment.tags.map((t) => (
+            {(enrollment.tags ?? []).map((t) => (
               <span
                 key={t}
                 className="inline-flex items-center gap-1 rounded-md bg-panel-2 px-1.5 py-0.5 font-mono text-[10px] text-accent"
