@@ -178,10 +178,24 @@ export function ServiceBadges({ services, max = 3 }: { services?: string[]; max?
       ))}
       {overflow > 0 && (
         <span
-          className="cursor-help rounded-md bg-panel-2 px-1.5 py-0.5 font-mono text-[10px] font-medium text-fg-muted"
-          title={services.join(", ")}
+          tabIndex={0}
+          className="group relative inline-flex cursor-help items-center rounded-md bg-panel-2 px-1.5 py-0.5 font-mono text-[10px] font-medium text-fg-muted ring-1 ring-inset ring-border hover:text-fg focus:outline-none focus-visible:ring-accent"
+          aria-label={`${services.length} services: ${services.join(", ")}`}
         >
           +{overflow}
+          <span
+            role="tooltip"
+            className="pointer-events-none invisible absolute left-1/2 top-full z-30 mt-1.5 -translate-x-1/2 whitespace-normal rounded-md border border-border bg-panel px-2.5 py-2 text-[11px] leading-snug text-fg shadow-panel-strong opacity-0 transition-opacity duration-100 group-hover:visible group-hover:opacity-100 group-focus:visible group-focus:opacity-100 max-w-[16rem]"
+          >
+            <span className="mb-1 block text-[10px] font-medium uppercase tracking-wider text-fg-subtle">
+              All services ({services.length})
+            </span>
+            <span className="flex flex-wrap gap-1">
+              {services.map((s) => (
+                <ServiceBadge key={s} name={s} />
+              ))}
+            </span>
+          </span>
         </span>
       )}
     </div>

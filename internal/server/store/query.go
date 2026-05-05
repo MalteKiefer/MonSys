@@ -99,25 +99,16 @@ func (s *Store) ListHosts(ctx context.Context) ([]apitypes.Host, error) {
 	return out, nil
 }
 
-// detectServices peeks at workloads to fingerprint well-known services per
-// host. The returned map keys are host UUIDs as strings (matching apitypes.Host.ID).
+// detectServices fingerprints well-known services per host by combining two
+// inventory sources: container workloads (name + image) and OS packages
+// (name only). Containerised stacks were the original signal, but most home
+// installs run things like jellyfin or pihole as native dpkg/rpm packages,
+// so a workloads-only scan misses them entirely.
+//
+// The returned map keys are host UUIDs as strings (matching apitypes.Host.ID).
 func (s *Store) detectServices(ctx context.Context, hostIDs []uuid.UUID) (map[string][]string, error) {
-	rows, err := s.Pool.Query(ctx, `
-		SELECT host_id, lower(COALESCE(name,'')), lower(COALESCE(image,''))
-		FROM workloads WHERE host_id = ANY($1)`, hostIDs)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
 	hits := map[string]map[string]struct{}{}
-	for rows.Next() {
-		var hid uuid.UUID
-		var name, image string
-		if err := rows.Scan(&hid, &name, &image); err != nil {
-			return nil, err
-		}
-		hay := name + " " + image
+	add := func(hid uuid.UUID, hay string) {
 		key := hid.String()
 		set, ok := hits[key]
 		if !ok {
@@ -130,9 +121,57 @@ func (s *Store) detectServices(ctx context.Context, hostIDs []uuid.UUID) (map[st
 			}
 		}
 	}
-	if err := rows.Err(); err != nil {
+
+	// 1) Container workloads — image + name.
+	wlRows, err := s.Pool.Query(ctx, `
+		SELECT host_id, lower(COALESCE(name,'')), lower(COALESCE(image,''))
+		FROM workloads WHERE host_id = ANY($1)`, hostIDs)
+	if err != nil {
 		return nil, err
 	}
+	for wlRows.Next() {
+		var hid uuid.UUID
+		var name, image string
+		if err := wlRows.Scan(&hid, &name, &image); err != nil {
+			wlRows.Close()
+			return nil, err
+		}
+		add(hid, name+" "+image)
+	}
+	wlRows.Close()
+	if err := wlRows.Err(); err != nil {
+		return nil, err
+	}
+
+	// 2) OS packages — name only. Skip the obvious -dev/-doc/-data noise so
+	// a build-dep doesn't trigger a false positive (e.g. libpostgresql-dev
+	// must not paint a "postgres" badge on a plain dev workstation).
+	pkgRows, err := s.Pool.Query(ctx, `
+		SELECT host_id, lower(name)
+		FROM packages
+		WHERE host_id = ANY($1)
+		  AND name NOT ILIKE '%-dev'
+		  AND name NOT ILIKE '%-doc'
+		  AND name NOT ILIKE '%-data'
+		  AND name NOT ILIKE '%-common'
+		  AND name NOT ILIKE 'lib%'`, hostIDs)
+	if err != nil {
+		return nil, err
+	}
+	for pkgRows.Next() {
+		var hid uuid.UUID
+		var name string
+		if err := pkgRows.Scan(&hid, &name); err != nil {
+			pkgRows.Close()
+			return nil, err
+		}
+		add(hid, name)
+	}
+	pkgRows.Close()
+	if err := pkgRows.Err(); err != nil {
+		return nil, err
+	}
+
 	out := map[string][]string{}
 	for k, v := range hits {
 		list := make([]string, 0, len(v))
@@ -206,13 +245,13 @@ var serviceMatchers = []serviceMatcher{
 	{"cloudflared", []string{"cloudflare/cloudflared", "cloudflared"}},
 
 	// --- observability ---------------------------------------------------
-	{"grafana", []string{"grafana/grafana"}},
-	{"prometheus", []string{"prom/prometheus", "/prometheus"}},
+	{"grafana", []string{"grafana/grafana", "grafana"}},
+	{"prometheus", []string{"prom/prometheus", "prometheus"}},
 	{"alertmanager", []string{"alertmanager"}},
-	{"loki", []string{"grafana/loki", "/loki"}},
-	{"tempo", []string{"grafana/tempo"}},
-	{"mimir", []string{"grafana/mimir"}},
-	{"jaeger", []string{"jaegertracing", "/jaeger"}},
+	{"loki", []string{"grafana/loki", "loki"}},
+	{"tempo", []string{"grafana/tempo", "tempo"}},
+	{"mimir", []string{"grafana/mimir", "mimir"}},
+	{"jaeger", []string{"jaegertracing", "jaeger"}},
 	{"uptime-kuma", []string{"uptime-kuma"}},
 	{"telegraf", []string{"telegraf"}},
 	{"vector", []string{"timberio/vector", "/vector:"}},
