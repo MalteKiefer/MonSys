@@ -208,9 +208,7 @@ func scanEnrollment(scan func(...any) error) (apitypes.AgentEnrollment, error) {
 	if createdBy != nil {
 		out.CreatedBy = *createdBy
 	}
-	if usedAt != nil {
-		out.UsedAt = *usedAt
-	}
+	out.UsedAt = usedAt
 	if usedByHost != nil {
 		out.UsedByHostID = usedByHost.String()
 	}

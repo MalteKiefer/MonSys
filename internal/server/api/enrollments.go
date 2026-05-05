@@ -202,7 +202,7 @@ func (s *Server) handleRevokeEnrollment(ctx context.Context, in *enrollmentIDInp
 		}
 		return nil, internalErr(ctx, "enrollment revoke failed", err)
 	}
-	used := !e.UsedAt.IsZero()
+	used := e.UsedAt != nil
 	auditDetail := fmt.Sprintf("label=%q used=%v", e.Label, used)
 	s.audit(ctx, "agent.enroll.revoke", in.ID, auditDetail)
 	out := &emptyOutput{}

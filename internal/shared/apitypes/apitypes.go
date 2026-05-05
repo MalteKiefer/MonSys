@@ -789,17 +789,17 @@ type AgentEnrollmentInput struct {
 // is exposed exactly once (in CreateResponse below) — listings and reads only
 // surface metadata.
 type AgentEnrollment struct {
-	ID             string    `json:"id"`
-	Label          string    `json:"label,omitempty"`
-	Description    string    `json:"description,omitempty"`
-	Tags           []string  `json:"tags"`
-	GroupIDs       []string  `json:"group_ids"`
-	ExpiresAt      time.Time `json:"expires_at"`
-	CreatedAt      time.Time `json:"created_at"`
-	CreatedBy      string    `json:"created_by,omitempty"`
-	UsedAt         time.Time `json:"used_at,omitempty"`
-	UsedByHostID   string    `json:"used_by_host_id,omitempty"`
-	UsedByHostname string    `json:"used_by_hostname,omitempty"`
+	ID             string     `json:"id"`
+	Label          string     `json:"label,omitempty"`
+	Description    string     `json:"description,omitempty"`
+	Tags           []string   `json:"tags"`
+	GroupIDs       []string   `json:"group_ids"`
+	ExpiresAt      time.Time  `json:"expires_at"`
+	CreatedAt      time.Time  `json:"created_at"`
+	CreatedBy      string     `json:"created_by,omitempty"`
+	UsedAt         *time.Time `json:"used_at,omitempty"`
+	UsedByHostID   string     `json:"used_by_host_id,omitempty"`
+	UsedByHostname string     `json:"used_by_hostname,omitempty"`
 }
 
 // AgentEnrollmentCreateResponse is returned only by POST. The token field is
