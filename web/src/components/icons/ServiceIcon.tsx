@@ -167,7 +167,7 @@ export function ServiceBadge({ name }: { name: string }) {
   );
 }
 
-export function ServiceBadges({ services, max = 6 }: { services?: string[]; max?: number }) {
+export function ServiceBadges({ services, max = 3 }: { services?: string[]; max?: number }) {
   if (!services || services.length === 0) return null;
   const shown = services.slice(0, max);
   const overflow = services.length - shown.length;
@@ -177,7 +177,10 @@ export function ServiceBadges({ services, max = 6 }: { services?: string[]; max?
         <ServiceBadge key={s} name={s} />
       ))}
       {overflow > 0 && (
-        <span className="text-[10px] text-fg-subtle" title={services.slice(max).join(", ")}>
+        <span
+          className="cursor-help rounded-md bg-panel-2 px-1.5 py-0.5 font-mono text-[10px] font-medium text-fg-muted"
+          title={services.join(", ")}
+        >
           +{overflow}
         </span>
       )}
