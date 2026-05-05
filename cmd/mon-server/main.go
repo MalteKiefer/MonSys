@@ -29,6 +29,7 @@ import (
 func main() {
 	var (
 		showVersion       = flag.Bool("version", false, "print version and exit")
+		printSpec         = flag.Bool("print-spec", false, "print the OpenAPI spec (YAML) to stdout and exit")
 		dumpOpenAPI       = flag.String("dump-openapi", "", "write OpenAPI spec to this path (YAML by extension or JSON) and exit")
 		newToken          = flag.Bool("new-token", false, "issue a new bootstrap token, print it, and exit")
 		newTokenDesc      = flag.String("token-description", "", "description for the new bootstrap token")
@@ -58,6 +59,19 @@ func main() {
 	tlsKey := os.Getenv("MON_TLS_KEY")
 
 	// --- OpenAPI dump shortcut: skip DB; build a stub server with nil store. ---
+	if *printSpec {
+		s := api.New(nil)
+		spec, err := s.API.OpenAPI().YAML()
+		if err != nil {
+			slog.Error("print openapi", "err", err)
+			os.Exit(1)
+		}
+		if _, err := os.Stdout.Write(spec); err != nil {
+			slog.Error("print openapi", "err", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if *dumpOpenAPI != "" {
 		s := api.New(nil)
 		if err := writeOpenAPI(s, *dumpOpenAPI); err != nil {

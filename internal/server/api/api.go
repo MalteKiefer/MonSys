@@ -3,7 +3,9 @@ package api
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -74,13 +76,20 @@ func New(s *store.Store) *Server {
 	// ingest endpoints. Cheap routes like /healthz and /readyz are skipped
 	// inside the middleware itself.
 	r.Use(rateLimitByPath())
+	// AUDIT-702: per-agent-key (host) ingest quota. The per-IP limiter above
+	// caps request volume from any one source IP, but a single host behind a
+	// shared egress IP can still burn the quota for everyone else. This
+	// middleware adds a 600 req/min ceiling keyed on a SHA-256 of the
+	// Authorization header so each agent key is throttled independently.
+	r.Use(ingestQuotaPerHost)
 	// AUDIT-066: openapi/docs are session-protected.
 	r.Use(srv.requireSessionForDocs)
 	r.Use(middleware.Timeout(30 * time.Second))
 
-	cfg := huma.DefaultConfig("MonSys", version.Version)
-	cfg.Info.Description = "Self-hosted server-monitoring API. Agents push metrics; users query."
-	cfg.Servers = []*huma.Server{{URL: "/", Description: "current"}}
+	// AUDIT-201/202/207/208/209: bring the OpenAPI surface up to spec —
+	// security schemes, root-level security, license, real server URL.
+	// See internal/server/api/openapi_config.go for the policy.
+	cfg := openAPIConfig("MonSys", version.Version)
 	srv.API = humachi.New(r, cfg)
 
 	srv.registerRoutes()
@@ -111,7 +120,10 @@ func bodySizeLimiter(next http.Handler) http.Handler {
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
-		h.Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+		// AUDIT-502: include `preload` so the response is eligible for the
+		// HSTS preload list. Operators who do not want preload can strip the
+		// directive at the reverse proxy.
+		h.Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		h.Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
@@ -121,6 +133,37 @@ func securityHeaders(next http.Handler) http.Handler {
 				"script-src 'self'; style-src 'self' 'unsafe-inline'; "+
 				"connect-src 'self'; frame-ancestors 'none'")
 		next.ServeHTTP(w, r)
+	})
+}
+
+// ingestQuotaPerHost applies a per-agent-key rate limit (600 req/min) on the
+// /v1/ingest path on top of the per-IP cap. The httprate KeyFunc returns the
+// SHA-256 hex of the Authorization header so each agent throttles
+// independently — agents behind a shared NAT egress no longer burn each
+// other's per-IP quota. Other paths bypass this middleware entirely.
+// AUDIT-702.
+func ingestQuotaPerHost(next http.Handler) http.Handler {
+	limiter := httprate.Limit(
+		600,
+		time.Minute,
+		httprate.WithKeyFuncs(func(r *http.Request) (string, error) {
+			if r.URL.Path != "/v1/ingest" {
+				return "", nil
+			}
+			tok, _ := bearer(r.Header.Get("Authorization"))
+			if tok == "" {
+				return "", nil
+			}
+			h := sha256.Sum256([]byte(tok))
+			return "agent:" + hex.EncodeToString(h[:]), nil
+		}),
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/ingest" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		limiter(next).ServeHTTP(w, r)
 	})
 }
 
@@ -234,6 +277,7 @@ func (s *Server) registerRoutes() {
 		Summary:     "Register a new agent",
 		Description: "Trade a one-time bootstrap token (Authorization: Bearer …) for a per-host agent_key.",
 		Tags:        []string{"agents"},
+		Security:    secAgentRegister,
 	}, s.handleAgentRegister)
 
 	huma.Register(s.API, huma.Operation{
@@ -243,6 +287,7 @@ func (s *Server) registerRoutes() {
 		Summary:     "Ingest metrics + inventory",
 		Description: "Agents push samples here. Auth: Authorization: Bearer <agent_key>.",
 		Tags:        []string{"ingest"},
+		Security:    secIngest,
 	}, s.handleIngest)
 
 	huma.Register(s.API, huma.Operation{
@@ -252,6 +297,7 @@ func (s *Server) registerRoutes() {
 		Summary:     "Latest mon-agent build metadata for self-update",
 		Description: "Public. Returns the version, per-arch download URL, and SHA256 the agent's auto-updater verifies the binary against. Sourced from operator env (static mode) or the GitHub Releases API (default).",
 		Tags:        []string{"agents"},
+		Security:    secNoAuth,
 	}, s.handleAgentLatestVersion)
 
 	// Public: dynamic curl|bash installer. The token in ?t=… is the only

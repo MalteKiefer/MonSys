@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
@@ -24,6 +25,13 @@ import (
 	"strings"
 	"time"
 )
+
+// envInsecureOverride lets an operator bypass minisign verification when
+// recovering from a key-loss event. Setting it to "1" causes the updater to
+// proceed with sha256-only verification (the legacy AUDIT-401 path) and emit
+// a loud slog.Error every time. Any other value, including unset, keeps
+// signature verification enforced.
+const envInsecureOverride = "MON_AGENT_UPDATE_INSECURE"
 
 // Manifest mirrors the server's agentupdate.Manifest. Re-declared here to
 // avoid a server→agent import cycle.
@@ -38,6 +46,10 @@ type Manifest struct {
 type ManifestBin struct {
 	URL    string `json:"url"`
 	SHA256 string `json:"sha256"`
+	// MinisigURL points at the detached minisign signature that covers the
+	// binary at URL. When empty, the updater derives it as URL + ".minisig",
+	// matching the convention used by deploy/release.yaml.
+	MinisigURL string `json:"minisig_url,omitempty"`
 }
 
 // Result reports the outcome of an update attempt for telemetry/logging.
@@ -89,6 +101,18 @@ func Run(ctx context.Context, o Options) (Result, error) {
 		return res, nil
 	}
 
+	// AUDIT-402: downgrade protection. Refuse to install a published version
+	// that is older than what is currently running. compareSemver knows how
+	// to compare both real semvers ("v0.2.0") and rolling describe-style
+	// pseudo-versions ("v0.1.5-23-gabcd").
+	if o.CurrentVersion != "" && compareSemver(m.Version, o.CurrentVersion) <= 0 {
+		slog.Warn("self-update: downgrade refused",
+			"current", o.CurrentVersion,
+			"manifest", m.Version,
+			"channel", m.Channel)
+		return res, nil
+	}
+
 	key := runtime.GOOS + "/" + runtime.GOARCH
 	bin, ok := m.Binaries[key]
 	if !ok || bin.URL == "" || bin.SHA256 == "" {
@@ -96,6 +120,7 @@ func Run(ctx context.Context, o Options) (Result, error) {
 	}
 
 	tmpPath := filepath.Join(o.StagingDir, "mon-agent.new")
+	sigTmpPath := tmpPath + ".minisig"
 	if err := os.MkdirAll(filepath.Dir(tmpPath), 0o700); err != nil {
 		return res, fmt.Errorf("staging dir: %w", err)
 	}
@@ -118,8 +143,41 @@ func Run(ctx context.Context, o Options) (Result, error) {
 				_ = os.Remove(tmpPath)
 				return res, fmt.Errorf("post-refresh: %w", err2)
 			}
+			bin = bin2
 		} else {
 			return res, err
+		}
+	}
+
+	// AUDIT-401: cryptographic signature verification. Fetch the .minisig
+	// file matched to the binary URL and verify it against the embedded
+	// public key BEFORE the atomic rename. The MON_AGENT_UPDATE_INSECURE
+	// escape hatch is the only way to skip this, and it logs loudly.
+	insecure := os.Getenv(envInsecureOverride) == "1"
+	sigURL := bin.MinisigURL
+	if sigURL == "" {
+		sigURL = bin.URL + ".minisig"
+	}
+	sigErr := downloadFile(ctx, o.HTTPClient, sigURL, sigTmpPath)
+	if sigErr != nil {
+		if !insecure {
+			_ = os.Remove(tmpPath)
+			_ = os.Remove(sigTmpPath)
+			return res, fmt.Errorf("download signature %s: %w", sigURL, sigErr)
+		}
+		slog.Error("self-update: signature download failed but MON_AGENT_UPDATE_INSECURE=1; proceeding with sha256-only verification",
+			"url", sigURL, "err", sigErr)
+	} else {
+		ok, vErr := verifyMinisig(tmpPath, sigTmpPath, PublicKey)
+		_ = os.Remove(sigTmpPath)
+		if !ok {
+			if insecure {
+				slog.Error("self-update: minisign verification FAILED but MON_AGENT_UPDATE_INSECURE=1; proceeding anyway",
+					"err", vErr)
+			} else {
+				_ = os.Remove(tmpPath)
+				return res, fmt.Errorf("minisign verify: %w", vErr)
+			}
 		}
 	}
 	if err := os.Chmod(tmpPath, 0o755); err != nil {
@@ -128,6 +186,20 @@ func Run(ctx context.Context, o Options) (Result, error) {
 	}
 
 	finalPath := o.BinaryPath
+	prevPath := finalPath + ".prev"
+	// AUDIT-403: snapshot the running binary before swapping. Best-effort —
+	// a fresh install has no existing finalPath, in which case there is
+	// nothing to roll back to and we skip silently.
+	snapshotted := false
+	if _, statErr := os.Stat(finalPath); statErr == nil {
+		if cpErr := copyFile(finalPath, prevPath, 0o755); cpErr != nil {
+			slog.Warn("self-update: snapshot of previous binary failed; proceeding without rollback safety net",
+				"path", prevPath, "err", cpErr)
+		} else {
+			snapshotted = true
+		}
+	}
+
 	// Atomic rename only works within the same filesystem. If it fails
 	// (different fs / read-only fs), copy + replace.
 	if err := os.Rename(tmpPath, finalPath); err != nil {
@@ -140,11 +212,31 @@ func Run(ctx context.Context, o Options) (Result, error) {
 	res.Replaced = true
 
 	if len(o.RestartCmd) > 0 {
-		// Best effort — log failure but don't undo the swap. systemd may
-		// still pick up the new binary on its next scheduled restart.
-		c := exec.CommandContext(ctx, o.RestartCmd[0], o.RestartCmd[1:]...)
-		if out, err := c.CombinedOutput(); err != nil {
-			return res, fmt.Errorf("restart %v: %w (output: %s)", o.RestartCmd, err, strings.TrimSpace(string(out)))
+		c := exec.CommandContext(ctx, o.RestartCmd[0], o.RestartCmd[1:]...) //nolint:gosec // operator-supplied
+		out, err := c.CombinedOutput()
+		if err != nil {
+			// AUDIT-403: rollback. Restore the snapshot (if we have one) and
+			// kick the unit again so the previous binary is what ends up
+			// running. We surface BOTH errors in the returned message so the
+			// systemd journal shows the upgrade and the rollback.
+			if !snapshotted {
+				return res, fmt.Errorf("restart %v: %w (output: %s); no snapshot available, rollback skipped",
+					o.RestartCmd, err, strings.TrimSpace(string(out)))
+			}
+			rbErr := os.Rename(prevPath, finalPath)
+			if rbErr != nil {
+				return res, fmt.Errorf("restart %v: %w (output: %s); rollback failed: %v",
+					o.RestartCmd, err, strings.TrimSpace(string(out)), rbErr)
+			}
+			res.Replaced = false
+			res.To = res.From
+			c2 := exec.CommandContext(ctx, o.RestartCmd[0], o.RestartCmd[1:]...) //nolint:gosec // operator-supplied
+			if rOut, rErr := c2.CombinedOutput(); rErr != nil {
+				return res, fmt.Errorf("restart %v failed: %w (output: %s); rolled back to previous binary but post-rollback restart also failed: %v (output: %s)",
+					o.RestartCmd, err, strings.TrimSpace(string(out)), rErr, strings.TrimSpace(string(rOut)))
+			}
+			return res, fmt.Errorf("restart %v failed: %w (output: %s); rolled back to previous binary at %s and restarted successfully",
+				o.RestartCmd, err, strings.TrimSpace(string(out)), prevPath)
 		}
 	}
 	return res, nil
@@ -218,6 +310,59 @@ func downloadAndVerify(ctx context.Context, cli *http.Client, url, wantHex, dst 
 		return fmt.Errorf("sha256 mismatch: want %s got %s", wantHex, got)
 	}
 	return nil
+}
+
+// downloadFile fetches url to dst, capping the body at 1 MiB. It is used for
+// the .minisig signature blob, which is ~120 bytes — the cap is purely a
+// safety measure against an attacker-controlled redirect handing back a huge
+// payload that might exhaust staging-dir space.
+func downloadFile(ctx context.Context, cli *http.Client, url, dst string) error {
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := cli.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	f, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	const maxSig = 1 << 20 // 1 MiB cap; real .minisig files are ~150B.
+	if _, err := io.CopyN(f, resp.Body, maxSig); err != nil && !errors.Is(err, io.EOF) {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
+}
+
+// copyFile duplicates src to dst with the given mode. Used to snapshot the
+// running binary before the atomic swap so we can restore it on a failed
+// systemctl try-restart (AUDIT-403).
+func copyFile(src, dst string, mode os.FileMode) error {
+	in, err := os.Open(src) //nolint:gosec // operator-controlled path
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+		return err
+	}
+	if err := out.Sync(); err != nil {
+		_ = out.Close()
+		return err
+	}
+	return out.Close()
 }
 
 // copyReplace handles the cross-filesystem fallback when os.Rename rejects

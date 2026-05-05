@@ -72,3 +72,30 @@ jobs:
           #          monitors + probes), labelled in the UI.
           #   G703 - pwFile path is operator-set MON_DSN_PASSWORD_FILE env.
           gosec -severity=high -exclude=G115,G123,G402,G703 ./...
+
+  # AUDIT-203 / AUDIT-210: catch operators who change a route or schema
+  # but forget to regenerate api/openapi.yaml. The committed spec must
+  # match what `mon-server --print-spec` produces.
+  spec-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
+        with:
+          go-version: '1.26.x'
+          cache: true
+      - name: install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq \
+            https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+      - name: regenerate spec
+        run: |
+          go run ./cmd/mon-server --print-spec \
+            | yq -P 'sort_keys(..)' -o yaml > /tmp/openapi.yaml
+      - name: diff against committed spec
+        run: |
+          if ! diff -u api/openapi.yaml /tmp/openapi.yaml; then
+            echo "::error::api/openapi.yaml is stale. Run 'make generate-spec' and commit." >&2
+            exit 1
+          fi

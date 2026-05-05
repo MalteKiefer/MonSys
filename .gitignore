@@ -96,3 +96,20 @@ temp/
 !internal/server/spa/dist/
 !internal/server/spa/dist/index.html
 internal/server/spa/dist/assets/
+
+# === Test / coverage extras ===
+coverage/
+*.lcov
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# === Distribution artefacts ===
+*.snap
+*.AppImage
+
+# === OpenAPI tooling ===
+.redocly-cache/
+*.openapi.bundled.yaml
+*.openapi.bundled.json

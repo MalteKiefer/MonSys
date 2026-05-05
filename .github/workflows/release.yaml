@@ -69,6 +69,35 @@ jobs:
           sha256sum "mon-agent-linux-${ARCH}"  > "mon-agent-linux-${ARCH}.sha256"
           sha256sum "mon-server-linux-${ARCH}" > "mon-server-linux-${ARCH}.sha256"
 
+      # AUDIT-401: detached minisign signatures alongside each binary. The
+      # agent updater pulls these from the same release URL and verifies
+      # them against the public key compiled into the binary. We skip
+      # signing (with a warning, not a failure) when either secret is
+      # unset so the very first run after introducing this step doesn't
+      # break the release pipeline before secrets have been added.
+      - name: sign artifacts (minisign)
+        working-directory: out
+        env:
+          ARCH: ${{ matrix.goarch }}
+          MINISIGN_SECRET_KEY: ${{ secrets.MONSYS_MINISIGN_SECRET_KEY }}
+          MINISIGN_PASSWORD: ${{ secrets.MONSYS_MINISIGN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${MINISIGN_SECRET_KEY:-}" ] || [ -z "${MINISIGN_PASSWORD:-}" ]; then
+            echo "::warning title=minisign skipped::MONSYS_MINISIGN_SECRET_KEY and/or MONSYS_MINISIGN_PASSWORD not set; release will publish without signatures."
+            exit 0
+          fi
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends minisign
+          KEYFILE="${RUNNER_TEMP}/mon-agent.key"
+          umask 077
+          printf '%s' "$MINISIGN_SECRET_KEY" > "$KEYFILE"
+          for bin in "mon-agent-linux-${ARCH}" "mon-server-linux-${ARCH}"; do
+            minisign -S -s "$KEYFILE" -m "$bin" -x "${bin}.minisig" \
+              -t "MonSys ${ARCH} ${bin} signed by GH Actions"
+          done
+          shred -u "$KEYFILE" 2>/dev/null || rm -f "$KEYFILE"
+
       - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
         with:
           name: bin-linux-${{ matrix.goarch }}
@@ -91,6 +120,29 @@ jobs:
           sha256sum mon-* | sort > SHA256SUMS
           cat SHA256SUMS
 
+      # AUDIT-401: enumerate the .minisig files separately. They may not
+      # exist when the signing secrets aren't configured yet, so we don't
+      # fail the upload when they're missing — `fail_on_unmatched_files`
+      # is left on for the binaries themselves below.
+      - name: collect signature files
+        id: sigs
+        working-directory: artifacts
+        run: |
+          set -euo pipefail
+          files=""
+          for f in mon-agent-linux-amd64.minisig mon-agent-linux-arm64.minisig \
+                   mon-server-linux-amd64.minisig mon-server-linux-arm64.minisig; do
+            if [ -f "$f" ]; then
+              files="${files}artifacts/${f}\n"
+            fi
+          done
+          # GITHUB_OUTPUT multi-line: print the paths for the next step to read.
+          {
+            echo "files<<EOF"
+            printf '%b' "$files"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: release (tag)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@7b4da11513bf3f43f9999e90eabced41ab8bb048 # v2.2.2
@@ -101,6 +153,7 @@ jobs:
             artifacts/mon-server-linux-amd64
             artifacts/mon-server-linux-arm64
             artifacts/SHA256SUMS
+            ${{ steps.sigs.outputs.files }}
           generate_release_notes: true
           fail_on_unmatched_files: true
 
@@ -115,9 +168,18 @@ jobs:
             gh release create "$tag" --title "latest (rolling)" \
               --notes "Auto-built from main. Use a versioned tag for pinned installs." \
               --prerelease
-          gh release upload "$tag" --clobber \
-            artifacts/mon-agent-linux-amd64 \
-            artifacts/mon-agent-linux-arm64 \
-            artifacts/mon-server-linux-amd64 \
-            artifacts/mon-server-linux-arm64 \
+          uploads=(
+            artifacts/mon-agent-linux-amd64
+            artifacts/mon-agent-linux-arm64
+            artifacts/mon-server-linux-amd64
+            artifacts/mon-server-linux-arm64
             artifacts/SHA256SUMS
+          )
+          # AUDIT-401: include any minisig files that were produced.
+          for f in mon-agent-linux-amd64.minisig mon-agent-linux-arm64.minisig \
+                   mon-server-linux-amd64.minisig mon-server-linux-arm64.minisig; do
+            if [ -f "artifacts/${f}" ]; then
+              uploads+=("artifacts/${f}")
+            fi
+          done
+          gh release upload "$tag" --clobber "${uploads[@]}"

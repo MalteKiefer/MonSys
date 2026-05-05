@@ -1,0 +1,69 @@
+package main
+
+// TODO(wiring): main.go owns the flag block (see --print-spec section).
+// A future small wiring task should add a `--verify-audit-chain` flag and,
+// on its presence, call RunAuditChainVerify() and os.Exit() with its return
+// value before the regular server boot. Keeping this file self-contained so
+// the present change does not collide with concurrent edits to main.go.
+//
+// Suggested wiring:
+//
+//	verifyChain := flag.Bool("verify-audit-chain", false,
+//	    "verify the audit_log SHA-256 chain and exit (0=intact, 1=broken)")
+//	...
+//	if *verifyChain {
+//	    os.Exit(RunAuditChainVerify())
+//	}
+//
+// Until then, operators can invoke this from a small main shim or via tests.
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"time"
+
+	"github.com/MalteKiefer/MonSys/internal/server/store"
+)
+
+// RunAuditChainVerify connects to the database described by MON_DSN, runs
+// Store.VerifyAuditChain, prints a one-line human-readable summary to stdout
+// (or stderr on error), and returns a process exit code:
+//
+//	0 — chain intact (or empty audit_log).
+//	1 — chain broken: prints the `at` of the first tampered/inconsistent row.
+//	2 — operational error: MON_DSN missing, DB unreachable, query failed.
+//
+// The function is intentionally side-effect free aside from stdout/stderr
+// writes: it opens its own pool and closes it before returning.
+func RunAuditChainVerify() int {
+	dsn := os.Getenv("MON_DSN")
+	if dsn == "" {
+		fmt.Fprintln(os.Stderr, "verify-audit-chain: MON_DSN required")
+		return 2
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	st, err := store.Open(ctx, dsn)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "verify-audit-chain: db open: %v\n", err)
+		return 2
+	}
+	defer st.Close()
+
+	rows, brokenAt, err := st.VerifyAuditChain(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "verify-audit-chain: %v\n", err)
+		return 2
+	}
+	if !brokenAt.IsZero() {
+		fmt.Fprintf(os.Stdout,
+			"audit chain BROKEN: %d rows scanned, mismatch at %s\n",
+			rows, brokenAt.UTC().Format(time.RFC3339Nano))
+		return 1
+	}
+	fmt.Fprintf(os.Stdout, "audit chain OK: %d rows verified\n", rows)
+	return 0
+}

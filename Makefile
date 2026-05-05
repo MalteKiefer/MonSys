@@ -15,7 +15,8 @@ GOFLAGS_BASE := -trimpath -ldflags='$(LDFLAGS)'
 BIN_DIR := bin
 
 .PHONY: all build build-server build-agent build-all tidy test vet fmt clean \
-        web web-dev compose-up compose-down compose-logs install-hooks
+        web web-dev compose-up compose-down compose-logs install-hooks \
+        generate-spec
 
 all: web build
 
@@ -77,3 +78,9 @@ compose-down:
 
 compose-logs:
 	docker compose -f deploy/docker-compose.yaml logs -f
+
+# Regenerate api/openapi.yaml from the live API surface. Output is run
+# through yq for deterministic key ordering so the CI spec-drift gate
+# doesn't false-positive on map-iteration order. AUDIT-203 / AUDIT-210.
+generate-spec:
+	go run $(GOFLAGS_BASE) ./cmd/mon-server --print-spec | yq -P 'sort_keys(..)' -o yaml > api/openapi.yaml
