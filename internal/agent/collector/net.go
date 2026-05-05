@@ -2,6 +2,8 @@ package collector
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -47,13 +49,51 @@ func (Net) Inventory(ctx context.Context, snap *apitypes.InventorySnap) error {
 			}
 			addrs = append(addrs, a.Addr)
 		}
+		members, master := bridgeBondTopology(ifc.Name)
 		snap.Nics = append(snap.Nics, apitypes.NicInfo{
-			Name:  ifc.Name,
-			MAC:   ifc.HardwareAddr,
-			Addrs: addrs,
+			Name:         ifc.Name,
+			MAC:          ifc.HardwareAddr,
+			Addrs:        addrs,
+			Members:      members,
+			BridgeMaster: master,
 		})
 	}
 	return nil
+}
+
+// bridgeBondTopology consults /sys/class/net/<name> to discover whether the
+// interface is a bridge or bond master (Members) and/or enslaved to one
+// (BridgeMaster). Errors are swallowed: missing entries are normal for plain
+// NICs and on non-Linux platforms.
+func bridgeBondTopology(name string) (members []string, master string) {
+	base := filepath.Join("/sys/class/net", name)
+
+	// Bridge: members live as symlinks under brif/.
+	if entries, err := os.ReadDir(filepath.Join(base, "brif")); err == nil {
+		members = make([]string, 0, len(entries))
+		for _, e := range entries {
+			if n := e.Name(); n != "" {
+				members = append(members, n)
+			}
+		}
+	}
+
+	// Bond: slaves are space-separated in bonding/slaves.
+	if len(members) == 0 {
+		if data, err := os.ReadFile(filepath.Join(base, "bonding", "slaves")); err == nil {
+			for _, f := range strings.Fields(string(data)) {
+				members = append(members, f)
+			}
+		}
+	}
+
+	// master is a symlink to the enslaving iface (bridge or bond).
+	if target, err := os.Readlink(filepath.Join(base, "master")); err == nil {
+		if b := filepath.Base(target); b != "" && b != "." && b != "/" {
+			master = b
+		}
+	}
+	return members, master
 }
 
 func (Net) Collect(ctx context.Context, batch *apitypes.IngestRequest) error {

@@ -21,39 +21,76 @@ import (
 )
 
 type Collector struct {
-	hasVirsh bool
-	hasLxc   bool
+	hasVirsh   bool
+	hasLxc     bool
+	hasProxmox bool
 }
 
 func New() *Collector {
 	return &Collector{
-		hasVirsh: safeexec.Available("virsh"),
-		hasLxc:   safeexec.Available("lxc-ls"),
+		hasVirsh:   safeexec.Available("virsh"),
+		hasLxc:     safeexec.Available("lxc-ls"),
+		hasProxmox: proxmoxAvailable(),
 	}
 }
 
 func (c *Collector) Name() string { return "virt" }
 
 // Available is true when at least one virtualization manager is reachable.
-func (c *Collector) Available() bool { return c.hasVirsh || c.hasLxc }
+func (c *Collector) Available() bool { return c.hasVirsh || c.hasLxc || c.hasProxmox }
 
 // Inventory contributes VMInfo entries to the snapshot. We do not emit
 // time-series samples for VMs in this iteration — host-level CPU/RAM already
 // captures the resource cost; per-domain stats can come later via virsh dominfo.
+//
+// Sources are merged and de-duplicated by (Kind, ExternalID): a Proxmox host
+// commonly runs libvirt as well, so the same KVM domain can otherwise appear
+// twice (once via virsh and once via qm).
 func (c *Collector) Inventory(ctx context.Context, snap *apitypes.InventorySnap) error {
+	var collected []apitypes.VMInfo
 	if c.hasVirsh {
-		vms, err := c.libvirtDomains(ctx)
-		if err == nil {
-			snap.VMs = append(snap.VMs, vms...)
+		if vms, err := c.libvirtDomains(ctx); err == nil {
+			collected = append(collected, vms...)
 		}
 	}
 	if c.hasLxc {
-		vms, err := c.systemLXC(ctx)
-		if err == nil {
-			snap.VMs = append(snap.VMs, vms...)
+		if vms, err := c.systemLXC(ctx); err == nil {
+			collected = append(collected, vms...)
 		}
 	}
+	if c.hasProxmox {
+		if vms, err := c.proxmoxVMs(ctx); err == nil {
+			collected = append(collected, vms...)
+		}
+		if vms, err := c.proxmoxLXC(ctx); err == nil {
+			collected = append(collected, vms...)
+		}
+	}
+	snap.VMs = append(snap.VMs, dedupVMs(collected)...)
 	return nil
+}
+
+// dedupVMs removes duplicate entries by (Kind, ExternalID), preserving the
+// first occurrence. Order matters: callers populate libvirt/system-LXC first
+// so libvirt's UUID-based ExternalID wins over the numeric Proxmox VMID when
+// both stacks see the same domain. (They have different ExternalID shapes,
+// so a "duplicate" really only occurs when the Proxmox path is the only one
+// returning a given VMID — which is the common case.)
+func dedupVMs(in []apitypes.VMInfo) []apitypes.VMInfo {
+	if len(in) == 0 {
+		return in
+	}
+	seen := make(map[string]struct{}, len(in))
+	out := make([]apitypes.VMInfo, 0, len(in))
+	for _, v := range in {
+		key := v.Kind + "\x00" + v.ExternalID
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, v)
+	}
+	return out
 }
 
 // Collect is a no-op: VM time-series belong in a follow-up milestone.

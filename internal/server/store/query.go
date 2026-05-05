@@ -345,6 +345,9 @@ var serviceMatchers = []serviceMatcher{
 	{"frigate", []string{"frigate"}},
 	{"esphome", []string{"esphome"}},
 
+	// --- virtualization -------------------------------------------------
+	{"proxmox", []string{"pve-manager", "proxmox-ve", "pve-cluster", "/proxmox", "qemu-server"}},
+
 	// --- networking / dns / vpn -----------------------------------------
 	{"pihole", []string{"pi-hole", "pihole"}},
 	{"adguard", []string{"adguardhome", "/adguard"}},

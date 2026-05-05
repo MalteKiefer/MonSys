@@ -136,10 +136,12 @@ type DiskInfo struct {
 }
 
 type NicInfo struct {
-	Name      string   `json:"name"      maxLength:"64"`
-	MAC       string   `json:"mac"       maxLength:"64"`
-	SpeedMbps int      `json:"speed_mbps"`
-	Addrs     []string `json:"addrs,omitempty"     doc:"IPv4 + IPv6 addresses with prefix length, e.g. 10.0.0.5/24, fe80::1/64"`
+	Name         string   `json:"name"      maxLength:"64"`
+	MAC          string   `json:"mac"       maxLength:"64"`
+	SpeedMbps    int      `json:"speed_mbps"`
+	Addrs        []string `json:"addrs,omitempty"     doc:"IPv4 + IPv6 addresses with prefix length, e.g. 10.0.0.5/24, fe80::1/64"`
+	Members      []string `json:"members,omitempty"      maxLength:"4096" doc:"Member interfaces if this is a bridge or bond"`
+	BridgeMaster string   `json:"bridge_master,omitempty" maxLength:"64"   doc:"Master bridge/bond name when this NIC is enslaved"`
 }
 
 type WorkloadInfo struct {
@@ -595,15 +597,17 @@ type DiskRow struct {
 }
 
 type NicRow struct {
-	ID         string     `json:"id"           format:"uuid" maxLength:"36" readOnly:"true"`
-	Name       string     `json:"name"         maxLength:"64"`
-	MAC        string     `json:"mac"          maxLength:"64"`
-	SpeedMbps  int        `json:"speed_mbps"`
-	Addrs      []string   `json:"addrs"`
-	LastSeenAt time.Time  `json:"last_seen_at"  readOnly:"true"`
-	LatestTime *time.Time `json:"latest_time,omitempty" readOnly:"true"`
-	RxBytes    int64      `json:"rx_bytes"`
-	TxBytes    int64      `json:"tx_bytes"`
+	ID           string     `json:"id"           format:"uuid" maxLength:"36" readOnly:"true"`
+	Name         string     `json:"name"         maxLength:"64"`
+	MAC          string     `json:"mac"          maxLength:"64"`
+	SpeedMbps    int        `json:"speed_mbps"`
+	Addrs        []string   `json:"addrs"`
+	Members      []string   `json:"members"      doc:"Member interfaces if this NIC is a bridge or bond; empty otherwise"`
+	BridgeMaster string     `json:"bridge_master,omitempty" maxLength:"64" doc:"Master bridge/bond name when this NIC is enslaved"`
+	LastSeenAt   time.Time  `json:"last_seen_at"  readOnly:"true"`
+	LatestTime   *time.Time `json:"latest_time,omitempty" readOnly:"true"`
+	RxBytes      int64      `json:"rx_bytes"`
+	TxBytes      int64      `json:"tx_bytes"`
 }
 
 type WorkloadRow struct {

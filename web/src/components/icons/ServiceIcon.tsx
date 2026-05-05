@@ -150,6 +150,9 @@ const PALETTE: Record<string, { bg: string; text: string }> = {
   crowdsec: { bg: "#3a1c1c", text: "#fb7185" },
   anubis: { bg: "#1f1f1f", text: "#fafafa" },
 
+  // virtualization
+  proxmox: { bg: "#3a1c1c", text: "#fb7185" },
+
   // self
   mon: { bg: "#1e3324", text: "#10b981" },
 };

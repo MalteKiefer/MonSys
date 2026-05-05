@@ -204,15 +204,25 @@ func saveInventoryTx(ctx context.Context, tx pgx.Tx, hostID uuid.UUID, snap apit
 		if addrs == nil {
 			addrs = []string{}
 		}
+		// members defaults to []. bridge_master is nullable so partial
+		// reports (older agents that don't populate it) don't blow away a
+		// previously-known value — see 0028_nic_members.sql.
+		members := n.Members
+		if members == nil {
+			members = []string{}
+		}
+		master := nullableString(n.BridgeMaster)
 		_, err := tx.Exec(ctx, `
-			INSERT INTO nics (host_id, name, mac, speed_mbps, addrs)
-			VALUES ($1,$2,$3,$4,$5)
+			INSERT INTO nics (host_id, name, mac, speed_mbps, addrs, members, bridge_master)
+			VALUES ($1,$2,$3,$4,$5,$6,$7)
 			ON CONFLICT (host_id, name) DO UPDATE SET
-				mac          = EXCLUDED.mac,
-				speed_mbps   = EXCLUDED.speed_mbps,
-				addrs        = EXCLUDED.addrs,
-				last_seen_at = now()`,
-			hostID, n.Name, n.MAC, n.SpeedMbps, addrs)
+				mac           = EXCLUDED.mac,
+				speed_mbps    = EXCLUDED.speed_mbps,
+				addrs         = EXCLUDED.addrs,
+				members       = EXCLUDED.members,
+				bridge_master = COALESCE(EXCLUDED.bridge_master, nics.bridge_master),
+				last_seen_at  = now()`,
+			hostID, n.Name, n.MAC, n.SpeedMbps, addrs, members, master)
 		if err != nil {
 			return fmt.Errorf("nics upsert: %w", err)
 		}

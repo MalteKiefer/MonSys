@@ -2477,9 +2477,21 @@ components:
           type:
             - array
             - "null"
+        bridge_master:
+          description: Master bridge/bond name when this NIC is enslaved
+          maxLength: 64
+          type: string
         mac:
           maxLength: 64
           type: string
+        members:
+          description: Member interfaces if this is a bridge or bond
+          items:
+            maxLength: 4096
+            type: string
+          type:
+            - array
+            - "null"
         name:
           maxLength: 64
           type: string
@@ -2500,6 +2512,10 @@ components:
           type:
             - array
             - "null"
+        bridge_master:
+          description: Master bridge/bond name when this NIC is enslaved
+          maxLength: 64
+          type: string
         id:
           format: uuid
           maxLength: 36
@@ -2516,6 +2532,13 @@ components:
         mac:
           maxLength: 64
           type: string
+        members:
+          description: Member interfaces if this NIC is a bridge or bond; empty otherwise
+          items:
+            type: string
+          type:
+            - array
+            - "null"
         name:
           maxLength: 64
           type: string
@@ -2534,6 +2557,7 @@ components:
         - mac
         - speed_mbps
         - addrs
+        - members
         - last_seen_at
         - rx_bytes
         - tx_bytes

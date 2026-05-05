@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Network as NetworkIcon } from "lucide-react";
+import { GitMerge, Network as NetworkIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import {
@@ -68,16 +68,31 @@ function NicsTable({ rows }: { rows: NicRow[] }) {
   return (
     <Table>
       <THead>
-        <tr><TH>Name</TH><TH>MAC</TH><TH>Addresses</TH><TH>Speed</TH><TH>RX total</TH><TH>TX total</TH></tr>
+        <tr>
+          <TH>Name</TH>
+          <TH>MAC</TH>
+          <TH>Addresses</TH>
+          <TH>Master/Members</TH>
+          <TH>Speed</TH>
+          <TH>RX total</TH>
+          <TH>TX total</TH>
+        </tr>
       </THead>
       <TBody>
         {rows.map((n) => {
           const addrs = (n.addrs ?? []).filter(Boolean);
           const v4 = addrs.filter((a) => !a.includes(":"));
           const v6 = addrs.filter((a) => a.includes(":"));
+          const members = (n.members ?? []).filter(Boolean);
+          const isBridge = members.length > 0;
           return (
             <tr key={n.id} className="hover:bg-panel-2 align-top">
-              <TD className="font-mono text-xs">{n.name}</TD>
+              <TD className="font-mono text-xs">
+                <span className="inline-flex items-center gap-1.5">
+                  {isBridge && <GitMerge className="h-3.5 w-3.5 text-fg-muted" aria-label="bridge or bond" />}
+                  {n.name}
+                </span>
+              </TD>
               <TD className="font-mono text-xs text-fg-muted">{n.mac || "—"}</TD>
               <TD className="font-mono text-xs">
                 {addrs.length === 0 ? (
@@ -91,6 +106,15 @@ function NicsTable({ rows }: { rows: NicRow[] }) {
                       <div key={a} className="text-fg-muted" title="IPv6">{a}</div>
                     ))}
                   </div>
+                )}
+              </TD>
+              <TD className="font-mono text-xs">
+                {isBridge ? (
+                  <span title="Bridge / bond members">bridge: {members.join(", ")}</span>
+                ) : n.bridge_master ? (
+                  <span className="text-fg-muted" title={`Enslaved to ${n.bridge_master}`}>→ {n.bridge_master}</span>
+                ) : (
+                  <span className="text-fg-subtle">—</span>
                 )}
               </TD>
               <TD className="text-fg-muted">{n.speed_mbps ? `${n.speed_mbps} Mb/s` : "—"}</TD>
