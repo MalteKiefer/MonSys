@@ -17,6 +17,7 @@ import {
 } from "../components/ui";
 import { api } from "../lib/api";
 import { Host, IngestPayload, IngestSummary } from "../lib/types";
+import { hostDisplay } from "../lib/utils";
 
 export function AdminIngests() {
   const [hostID, setHostID] = useState("");
@@ -70,7 +71,7 @@ export function AdminIngests() {
         >
           <option value="">All hosts</option>
           {(hosts.data?.hosts ?? []).map((h) => (
-            <option key={h.id} value={h.id}>{h.hostname}</option>
+            <option key={h.id} value={h.id}>{hostDisplay(h)}</option>
           ))}
         </select>
       </header>
@@ -113,6 +114,7 @@ export function AdminIngests() {
                             onClick={(ev) => ev.stopPropagation()}
                             className="text-accent hover:underline"
                           >
+                            {/* TODO: pass labels for display */}
                             {e.hostname || e.host_id.substring(0, 8)}
                           </Link>
                         </TD>

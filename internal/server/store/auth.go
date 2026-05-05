@@ -64,6 +64,24 @@ func (s *Store) CreateBootstrapToken(ctx context.Context, description string, tt
 
 // RegisterAgent consumes a bootstrap token, upserts the host row by machine_id,
 // generates a fresh agent_key, and returns it together with the host id.
+//
+// Audit surface (all rows are inside the same transaction; either both fire
+// or neither does):
+//
+//  1. agent.register — always emitted. Records the physical event that a host
+//     came online. actor = "agent:<remoteAddr>", target = host UUID, detail
+//     map carries token_id, hostname, tags_applied, groups_applied, and
+//     label_applied (when non-empty).
+//  2. agent.enroll.consume — emitted only when the bootstrap token carried any
+//     enrollment policy (default_tags, default_group_ids, or default_label).
+//     Same actor/target as the register row but action is set so operators
+//     can correlate the enroll.create → enroll.consume pair without joining
+//     on token_id. detail carries enrollment_id, tags_applied, groups_applied,
+//     and label_applied.
+//
+// Operators reading the log should treat agent.register as the canonical "host
+// onboarded" event; agent.enroll.consume is supplementary and only present
+// when the host went through the "Add Agent" enrollment flow.
 func (s *Store) RegisterAgent(ctx context.Context, token string, req apitypes.AgentRegisterRequest, remoteAddr string) (apitypes.AgentRegisterResponse, error) {
 	var resp apitypes.AgentRegisterResponse
 
@@ -209,6 +227,26 @@ func (s *Store) RegisterAgent(ctx context.Context, token string, req apitypes.Ag
 		"agent:"+remoteAddr, hostID.String(), auditDetail)
 	if err != nil {
 		return resp, fmt.Errorf("audit insert: %w", err)
+	}
+
+	// 5a) Emit an explicit agent.enroll.consume row when the token carried any
+	// enrollment policy (default tags / groups / label). agent.register above
+	// covers the physical "host came online" event; this row tracks the
+	// logical "enrollment X was consumed by host Y" lifecycle so operators
+	// can correlate the create→consume pair without joining on token_id.
+	if len(defaultTags) > 0 || len(defaultGroupIDs) > 0 || (defaultLabel != nil && *defaultLabel != "") {
+		consumeDetail := map[string]any{
+			"enrollment_id":  tokenID,
+			"tags_applied":   tagsApplied,
+			"groups_applied": groupsApplied,
+			"label_applied":  labelApplied,
+		}
+		_, err = tx.Exec(ctx,
+			`INSERT INTO audit_log (actor, action, target, detail) VALUES ($1, 'agent.enroll.consume', $2, $3)`,
+			"agent:"+remoteAddr, hostID.String(), consumeDetail)
+		if err != nil {
+			return resp, fmt.Errorf("audit insert (enroll.consume): %w", err)
+		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {

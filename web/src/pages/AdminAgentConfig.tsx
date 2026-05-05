@@ -27,6 +27,7 @@ import {
   Host,
   HostGroup,
 } from "../lib/types";
+import { hostDisplay } from "../lib/utils";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -94,7 +95,7 @@ export function AdminAgentConfig() {
             >
               <option value="">Preview merged config…</option>
               {(hosts.data?.hosts ?? []).map((h) => (
-                <option key={h.id} value={h.id}>{h.hostname}</option>
+                <option key={h.id} value={h.id}>{hostDisplay(h)}</option>
               ))}
             </select>
             <Button
@@ -195,7 +196,7 @@ function PreviewPanel({ host, onClose }: { host: Host; onClose: () => void }) {
       <PanelHeader>
         <div className="flex items-center gap-2">
           <Eye className="h-4 w-4 text-fg-muted" />
-          <h3 className="text-sm font-semibold">Preview · {host.hostname}</h3>
+          <h3 className="text-sm font-semibold">Preview · {hostDisplay(host)}</h3>
         </div>
         <Button onClick={onClose}>Close</Button>
       </PanelHeader>
@@ -343,7 +344,7 @@ function ConfigForm({
                         <option key={g.id} value={g.id}>{g.name} ({g.member_ids.length})</option>
                       ))
                     : hosts.map((h) => (
-                        <option key={h.id} value={h.id}>{h.hostname}</option>
+                        <option key={h.id} value={h.id}>{hostDisplay(h)}</option>
                       ))}
                 </select>
               </Field>

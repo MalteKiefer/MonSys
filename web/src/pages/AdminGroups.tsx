@@ -19,6 +19,7 @@ import {
 } from "../components/ui";
 import { api, ApiError } from "../lib/api";
 import { Host, HostGroup } from "../lib/types";
+import { hostDisplay } from "../lib/utils";
 
 export function AdminGroups() {
   const qc = useQueryClient();
@@ -250,7 +251,7 @@ function MembersPanel({
                   <TD>
                     <input type="checkbox" checked={checked} onChange={() => toggle(h.id)} />
                   </TD>
-                  <TD className="font-medium">{h.hostname}</TD>
+                  <TD className="font-medium">{hostDisplay(h)}</TD>
                   <TD className="text-fg-muted">{h.distro || "—"}</TD>
                   <TD className="text-fg-muted font-mono text-xs">{h.tags.join(", ") || "—"}</TD>
                 </tr>

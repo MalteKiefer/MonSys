@@ -18,6 +18,7 @@ import {
 } from "../components/ui";
 import { api } from "../lib/api";
 import { GlobalPackageRow, Host } from "../lib/types";
+import { hostDisplay } from "../lib/utils";
 
 const MANAGERS = ["", "dpkg", "rpm", "pacman", "apk"] as const;
 const PAGE_SIZE = 50;
@@ -108,7 +109,7 @@ export function Packages() {
               <option value="">All hosts</option>
               {hosts.data?.hosts?.map((h) => (
                 <option key={h.id} value={h.id}>
-                  {h.hostname}
+                  {hostDisplay(h)}
                 </option>
               ))}
             </select>
@@ -144,6 +145,7 @@ export function Packages() {
                         to={`/hosts/${p.host_id}`}
                         className="text-accent hover:text-accent-hover hover:underline"
                       >
+                        {/* TODO: pass labels for display */}
                         {p.hostname}
                       </Link>
                     </TD>

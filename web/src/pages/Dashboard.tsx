@@ -21,6 +21,7 @@ import {
 } from "../components/ui";
 import { api } from "../lib/api";
 import { AlertHistoryEntry, Host, Monitor } from "../lib/types";
+import { hostDisplay } from "../lib/utils";
 
 export function Dashboard() {
   const hosts = useQuery({
@@ -151,7 +152,7 @@ export function Dashboard() {
                       <TD>
                         <Link to={`/hosts/${h.id}`} className="inline-flex items-center gap-2 font-medium text-fg hover:underline">
                           <DistroIcon family={h.distro_family} size={14} />
-                          {h.hostname}
+                          {hostDisplay(h)}
                         </Link>
                       </TD>
                       <TD className="text-fg-muted">{relTime(h.last_seen_at)}</TD>

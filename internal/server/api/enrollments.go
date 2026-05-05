@@ -119,7 +119,12 @@ func (s *Server) handleCreateEnrollment(ctx context.Context, in *createEnrollmen
 	installURL := fmt.Sprintf("%s/v1/agents/install.sh?t=%s", base, plaintext)
 	installCmd := fmt.Sprintf("curl -fsSL '%s' | sudo bash", installURL)
 
-	s.audit(ctx, "agent.enroll.create", enrollment.ID, enrollment.Label)
+	// Compact key=value detail so audit log readers can grep on label/tag/group/ttl
+	// without parsing JSON. ttl_min reflects the *requested* value; the store
+	// clamps to [5,1440] so the on-disk row may differ.
+	auditDetail := fmt.Sprintf("label=%q tags=%d groups=%d ttl_min=%d",
+		enrollment.Label, len(in.Body.Tags), len(in.Body.GroupIDs), in.Body.TTLMinutes)
+	s.audit(ctx, "agent.enroll.create", enrollment.ID, auditDetail)
 
 	out := &createEnrollmentOutput{}
 	out.Body.Enrollment = enrollment
@@ -181,13 +186,25 @@ func (s *Server) handleRevokeEnrollment(ctx context.Context, in *enrollmentIDInp
 	if err != nil {
 		return nil, huma.Error400BadRequest("invalid id")
 	}
+	// Look up the enrollment first so the audit row records what was actually
+	// revoked (label, used-state). GetEnrollment surfaces ErrEnrollmentNotFound
+	// the same way RevokeEnrollment does, so the 404 path is consistent.
+	e, err := s.Store.GetEnrollment(ctx, id)
+	if err != nil {
+		if errors.Is(err, store.ErrEnrollmentNotFound) {
+			return nil, huma.Error404NotFound("enrollment not found")
+		}
+		return nil, internalErr(ctx, "enrollment lookup failed", err)
+	}
 	if err := s.Store.RevokeEnrollment(ctx, id); err != nil {
 		if errors.Is(err, store.ErrEnrollmentNotFound) {
 			return nil, huma.Error404NotFound("enrollment not found")
 		}
 		return nil, internalErr(ctx, "enrollment revoke failed", err)
 	}
-	s.audit(ctx, "agent.enroll.revoke", in.ID, "")
+	used := !e.UsedAt.IsZero()
+	auditDetail := fmt.Sprintf("label=%q used=%v", e.Label, used)
+	s.audit(ctx, "agent.enroll.revoke", in.ID, auditDetail)
 	out := &emptyOutput{}
 	out.Body.OK = true
 	return out, nil

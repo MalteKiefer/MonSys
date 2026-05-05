@@ -18,6 +18,7 @@ import {
 } from "../components/ui";
 import { api } from "../lib/api";
 import { Host, ServerLogEntry } from "../lib/types";
+import { hostDisplay } from "../lib/utils";
 
 const PAGE_SIZE = 100;
 const LEVELS = ["", "debug", "info", "warn", "error"] as const;
@@ -50,7 +51,7 @@ export function AdminLogs() {
   });
   const hostMap = useMemo(() => {
     const m = new Map<string, string>();
-    for (const h of hosts.data?.hosts ?? []) m.set(h.id, h.hostname);
+    for (const h of hosts.data?.hosts ?? []) m.set(h.id, hostDisplay(h));
     return m;
   }, [hosts.data]);
 
@@ -120,7 +121,7 @@ export function AdminLogs() {
               <option value="">All hosts</option>
               {(hosts.data?.hosts ?? []).map((h) => (
                 <option key={h.id} value={h.id}>
-                  {h.hostname}
+                  {hostDisplay(h)}
                 </option>
               ))}
             </select>
