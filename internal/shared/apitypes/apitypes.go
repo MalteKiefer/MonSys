@@ -773,3 +773,41 @@ type AgentConfigResolved struct {
 type GroupMembersInput struct {
 	HostIDs []string `json:"host_ids" doc:"Replaces the group's member set entirely"`
 }
+
+// AgentEnrollmentInput drives the "Add Agent" flow. The token created from this
+// payload is single-use; default_tags / default_group_ids / default_label are
+// applied when the agent first calls /v1/agents/register and never again.
+type AgentEnrollmentInput struct {
+	Label           string   `json:"label,omitempty"        maxLength:"100" doc:"Optional human label, displayed until the host is renamed"`
+	Tags            []string `json:"tags,omitempty"         doc:"Tags applied on first registration"`
+	GroupIDs        []string `json:"group_ids,omitempty"    doc:"Group memberships applied on first registration"`
+	TTLMinutes      int      `json:"ttl_minutes,omitempty"  minimum:"5" maximum:"1440" doc:"Token lifetime; default 30, clamped to [5, 1440]"`
+	Description     string   `json:"description,omitempty"  maxLength:"200" doc:"Free-form note shown in the enrollment list"`
+}
+
+// AgentEnrollment is the resource returned after creation. The plain-text token
+// is exposed exactly once (in CreateResponse below) — listings and reads only
+// surface metadata.
+type AgentEnrollment struct {
+	ID             string    `json:"id"`
+	Label          string    `json:"label,omitempty"`
+	Description    string    `json:"description,omitempty"`
+	Tags           []string  `json:"tags"`
+	GroupIDs       []string  `json:"group_ids"`
+	ExpiresAt      time.Time `json:"expires_at"`
+	CreatedAt      time.Time `json:"created_at"`
+	CreatedBy      string    `json:"created_by,omitempty"`
+	UsedAt         time.Time `json:"used_at,omitempty"`
+	UsedByHostID   string    `json:"used_by_host_id,omitempty"`
+	UsedByHostname string    `json:"used_by_hostname,omitempty"`
+}
+
+// AgentEnrollmentCreateResponse is returned only by POST. The token field is
+// the only place the plain-text token is ever surfaced — store it client-side
+// and show it once. Subsequent GETs omit it entirely.
+type AgentEnrollmentCreateResponse struct {
+	Enrollment     AgentEnrollment `json:"enrollment"`
+	Token          string          `json:"token"           doc:"One-shot bootstrap token. Shown once; cannot be retrieved later."`
+	InstallCommand string          `json:"install_command" doc:"Single-line shell command the operator runs on the target host"`
+	InstallURL     string          `json:"install_url"     doc:"URL of the installer script (token included as ?t=…)"`
+}

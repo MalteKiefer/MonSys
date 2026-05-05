@@ -532,3 +532,37 @@ export type AuditEntry = {
   detail: string;
   at: string;
 };
+
+// Agent self-enrollment. An admin issues a short-lived enrollment token bound
+// to optional defaults (label/tags/groups), and a fresh agent installs itself
+// via `curl /v1/agents/install.sh?t=<token> | sh`. The token is single-use and
+// the server records which host claimed it (`used_*`).
+
+export type AgentEnrollment = {
+  id: string;
+  label?: string;
+  description?: string;
+  tags: string[];
+  group_ids: string[];
+  expires_at: string;
+  created_at: string;
+  created_by?: string;
+  used_at?: string;
+  used_by_host_id?: string;
+  used_by_hostname?: string;
+};
+
+export type AgentEnrollmentInput = {
+  label?: string;
+  description?: string;
+  tags?: string[];
+  group_ids?: string[];
+  ttl_minutes?: number;
+};
+
+export type AgentEnrollmentCreateResponse = {
+  enrollment: AgentEnrollment;
+  token: string;
+  install_command: string;
+  install_url: string;
+};

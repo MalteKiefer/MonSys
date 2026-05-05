@@ -254,6 +254,12 @@ func (s *Server) registerRoutes() {
 		Tags:        []string{"agents"},
 	}, s.handleAgentLatestVersion)
 
+	// Public: dynamic curl|bash installer. The token in ?t=… is the only
+	// credential and is single-use (consumed by the bootstrap call inside
+	// the script). Wired on the chi router directly because the response
+	// body is raw shell, not a typed huma envelope.
+	s.Router.Get("/v1/agents/install.sh", s.handleInstallScript)
+
 	// Auth: login + me + logout. Login itself is unauthenticated.
 	huma.Register(s.API, huma.Operation{
 		OperationID: "auth-login",
@@ -849,6 +855,42 @@ func (s *Server) registerRoutes() {
 		Tags:        []string{"admin"},
 		Middlewares: adminOnly,
 	}, s.handleSetPasswordPolicy)
+
+	// Admin: agent self-enrollments. The plaintext token is surfaced on
+	// POST only; subsequent GETs return metadata. The companion installer
+	// is rendered at the public /v1/agents/install.sh endpoint above.
+	huma.Register(s.API, huma.Operation{
+		OperationID: "admin-create-agent-enrollment",
+		Method:      http.MethodPost,
+		Path:        "/v1/admin/agents/enrollments",
+		Summary:     "Create a one-shot agent enrollment (returns plaintext token + install URL)",
+		Tags:        []string{"agents"},
+		Middlewares: adminOnly,
+	}, s.handleCreateEnrollment)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "admin-list-agent-enrollments",
+		Method:      http.MethodGet,
+		Path:        "/v1/admin/agents/enrollments",
+		Summary:     "List agent enrollments created in the last 24h",
+		Tags:        []string{"agents"},
+		Middlewares: adminOnly,
+	}, s.handleListEnrollments)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "admin-get-agent-enrollment",
+		Method:      http.MethodGet,
+		Path:        "/v1/admin/agents/enrollments/{id}",
+		Summary:     "Get a single agent enrollment",
+		Tags:        []string{"agents"},
+		Middlewares: adminOnly,
+	}, s.handleGetEnrollment)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "admin-revoke-agent-enrollment",
+		Method:      http.MethodDelete,
+		Path:        "/v1/admin/agents/enrollments/{id}",
+		Summary:     "Revoke an unused agent enrollment",
+		Tags:        []string{"agents"},
+		Middlewares: adminOnly,
+	}, s.handleRevokeEnrollment)
 
 	// Admin: audit log
 	huma.Register(s.API, huma.Operation{

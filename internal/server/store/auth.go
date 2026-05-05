@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -142,10 +143,70 @@ func (s *Store) RegisterAgent(ctx context.Context, token string, req apitypes.Ag
 		return resp, fmt.Errorf("token mark used: %w", err)
 	}
 
+	// 4a) Apply enrollment metadata. Failures here are logged but do not abort
+	// the registration: the host comes online and an operator can fix gaps.
+	var (
+		defaultTags     []string
+		defaultGroupIDs []uuid.UUID
+		defaultLabel    *string
+	)
+	if err := tx.QueryRow(ctx,
+		`SELECT default_tags, default_group_ids, default_label FROM agent_tokens WHERE id = $1`,
+		tokenID).Scan(&defaultTags, &defaultGroupIDs, &defaultLabel); err != nil {
+		slog.Warn("agent.register: load enrollment metadata", "token_id", tokenID, "err", err)
+	}
+
+	tagsApplied := 0
+	for _, t := range defaultTags {
+		ct, err := tx.Exec(ctx,
+			`INSERT INTO host_tags (host_id, tag) VALUES ($1, $2) ON CONFLICT (host_id, tag) DO NOTHING`,
+			hostID, t)
+		if err != nil {
+			slog.Warn("agent.register: apply default tag", "host_id", hostID, "tag", t, "err", err)
+			continue
+		}
+		tagsApplied += int(ct.RowsAffected())
+	}
+
+	groupsApplied := 0
+	for _, g := range defaultGroupIDs {
+		ct, err := tx.Exec(ctx,
+			`INSERT INTO host_group_members (group_id, host_id) VALUES ($1, $2) ON CONFLICT (group_id, host_id) DO NOTHING`,
+			g, hostID)
+		if err != nil {
+			slog.Warn("agent.register: apply default group", "host_id", hostID, "group_id", g, "err", err)
+			continue
+		}
+		groupsApplied += int(ct.RowsAffected())
+	}
+
+	labelApplied := ""
+	if defaultLabel != nil && *defaultLabel != "" {
+		if _, ok := req.Labels["host"]; !ok {
+			if _, err := tx.Exec(ctx,
+				`UPDATE hosts SET labels = labels || jsonb_build_object('host', $2::text)
+				 WHERE id = $1 AND NOT (labels ? 'host')`,
+				hostID, *defaultLabel); err != nil {
+				slog.Warn("agent.register: apply default label", "host_id", hostID, "err", err)
+			} else {
+				labelApplied = *defaultLabel
+			}
+		}
+	}
+
 	// 5) Audit.
+	auditDetail := map[string]any{
+		"token_id":       tokenID,
+		"hostname":       req.Hostname,
+		"tags_applied":   tagsApplied,
+		"groups_applied": groupsApplied,
+	}
+	if labelApplied != "" {
+		auditDetail["label_applied"] = labelApplied
+	}
 	_, err = tx.Exec(ctx,
 		`INSERT INTO audit_log (actor, action, target, detail) VALUES ($1, 'agent.register', $2, $3)`,
-		"agent:"+remoteAddr, hostID.String(), map[string]any{"token_id": tokenID, "hostname": req.Hostname})
+		"agent:"+remoteAddr, hostID.String(), auditDetail)
 	if err != nil {
 		return resp, fmt.Errorf("audit insert: %w", err)
 	}

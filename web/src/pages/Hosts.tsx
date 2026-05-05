@@ -1,11 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
-import { Server } from "lucide-react";
+import { Plus, Server } from "lucide-react";
 import { KeyboardEvent, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import { EnrollAgentModal } from "../components/EnrollAgentModal";
 import { DistroIcon } from "../components/icons/DistroIcon";
 import { ServiceBadges } from "../components/icons/ServiceIcon";
 import {
+  Button,
   Field,
   Panel,
   SectionHeading,
@@ -18,6 +20,7 @@ import {
   TextInput,
 } from "../components/ui";
 import { api } from "../lib/api";
+import { useAuth } from "../lib/auth";
 import { Host } from "../lib/types";
 
 type HostsResponse = { hosts: Host[] };
@@ -33,6 +36,7 @@ const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
 
 export function Hosts() {
   const navigate = useNavigate();
+  const isAdmin = useAuth((s) => s.user?.role === "admin");
   const { data, isLoading, error } = useQuery({
     queryKey: ["hosts"],
     queryFn: () => api<HostsResponse>("/v1/hosts"),
@@ -41,6 +45,7 @@ export function Hosts() {
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [enrollOpen, setEnrollOpen] = useState(false);
 
   const hosts = data?.hosts ?? [];
 
@@ -71,14 +76,23 @@ export function Hosts() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-4 p-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <SectionHeading>Hosts</SectionHeading>
-        <p className="text-xs text-fg-subtle tabular-nums">
-          {filtered.length === hosts.length
-            ? `${hosts.length} known`
-            : `${filtered.length} of ${hosts.length}`}
-        </p>
+        <div className="flex items-center gap-3">
+          <p className="text-xs text-fg-subtle tabular-nums">
+            {filtered.length === hosts.length
+              ? `${hosts.length} known`
+              : `${filtered.length} of ${hosts.length}`}
+          </p>
+          {isAdmin && (
+            <Button variant="primary" onClick={() => setEnrollOpen(true)}>
+              <Plus className="h-3.5 w-3.5" /> Add agent
+            </Button>
+          )}
+        </div>
       </div>
+
+      {enrollOpen && <EnrollAgentModal onClose={() => setEnrollOpen(false)} />}
 
       {hosts.length > 0 && (
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
