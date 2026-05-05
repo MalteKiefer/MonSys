@@ -39,7 +39,7 @@ func (s *Store) ListHosts(ctx context.Context) ([]apitypes.Host, error) {
 		) g ON TRUE
 		LEFT JOIN LATERAL (
 			SELECT updates_count, security_updates
-			FROM package_summary
+			FROM metrics_packages_summary
 			WHERE host_id = h.id
 			ORDER BY time DESC
 			LIMIT 1
