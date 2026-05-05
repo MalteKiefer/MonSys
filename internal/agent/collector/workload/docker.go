@@ -11,13 +11,17 @@ package workload
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/MalteKiefer/MonSys/internal/agent/registry"
 	"github.com/MalteKiefer/MonSys/internal/shared/apitypes"
 )
 
@@ -26,10 +30,43 @@ import (
 // read-only docker socket proxy (operator's choice — see deploy/ docs).
 const DefaultDockerEndpoint = "unix:///var/run/docker.sock"
 
+// updateCheckInterval is how often the agent will hit upstream registries to
+// re-check for newer image manifests. The collector ingests workloads on
+// every tick (typically 60s), but the registry probe is throttled to this
+// cadence to stay well under the Docker Hub anonymous rate-limit (~100
+// manifest requests / 6h / IP) and to be a good citizen of GHCR / Quay.
+//
+// TODO(operator-config): expose this via the agent's remote config so admins
+// can tighten or loosen the cadence per host.
+const updateCheckInterval = 6 * time.Hour
+
 // Docker is a Source + InventoryProvider for the Docker workload.
 type Docker struct {
 	endpoint string
 	hc       *http.Client
+
+	// reg is the upstream-registry probe client. It carries its own response
+	// cache so concurrent containers sharing an image only trigger one HTTP
+	// HEAD per (registry, repo, tag, CacheTTL) window.
+	reg *registry.Client
+
+	// updateMu guards lastUpdateCheck. The check runs at most once per
+	// updateCheckInterval per host; in between, we serve the previously
+	// computed (currentDigest, latestDigest, updateAvailable) tuple from
+	// updateState below so the inventory snapshot still carries the badge.
+	updateMu        sync.Mutex
+	lastUpdateCheck time.Time
+	updateState     map[string]updateProbe // key = container ID
+}
+
+// updateProbe is the cached output of a single registry comparison. We keep
+// a copy in-process so the inventory snapshot (which is rebuilt on every
+// tick) always carries the most recent verdict, even on ticks where the
+// registry probe itself is suppressed by the 6h throttle.
+type updateProbe struct {
+	currentDigest   string
+	latestDigest    string
+	updateAvailable bool
 }
 
 // NewDocker returns a Docker collector. endpoint may be:
@@ -41,8 +78,10 @@ func NewDocker(endpoint string) *Docker {
 		endpoint = DefaultDockerEndpoint
 	}
 	return &Docker{
-		endpoint: endpoint,
-		hc:       newHTTPClient(endpoint),
+		endpoint:    endpoint,
+		hc:          newHTTPClient(endpoint),
+		reg:         registry.New(),
+		updateState: map[string]updateProbe{},
 	}
 }
 
@@ -70,15 +109,35 @@ func (d *Docker) Inventory(ctx context.Context, snap *apitypes.InventorySnap) er
 	if err != nil {
 		return err
 	}
+
+	// Refresh the registry-probe cache at most every updateCheckInterval.
+	// Network failures are non-fatal: any container we can't probe is
+	// reported with empty digest fields, and the server treats that as
+	// "no upstream info available".
+	d.maybeRefreshUpdates(ctx, containers)
+
+	d.updateMu.Lock()
+	state := make(map[string]updateProbe, len(d.updateState))
+	for k, v := range d.updateState {
+		state[k] = v
+	}
+	d.updateMu.Unlock()
+
 	for _, c := range containers {
-		snap.Workloads = append(snap.Workloads, apitypes.WorkloadInfo{
+		info := apitypes.WorkloadInfo{
 			Kind:       "docker",
 			ExternalID: c.ID,
 			Name:       firstName(c.Names),
 			Image:      c.Image,
 			State:      c.State,
 			Labels:     c.Labels,
-		})
+		}
+		if probe, ok := state[c.ID]; ok {
+			info.CurrentDigest = probe.currentDigest
+			info.LatestDigest = probe.latestDigest
+			info.UpdateAvailable = probe.updateAvailable
+		}
+		snap.Workloads = append(snap.Workloads, info)
 	}
 	return nil
 }
@@ -120,6 +179,99 @@ func (d *Docker) Collect(ctx context.Context, batch *apitypes.IngestRequest) err
 		})
 	}
 	return nil
+}
+
+// --- image-update detection -------------------------------------------------
+//
+// maybeRefreshUpdates re-evaluates "is there a newer image upstream?" for
+// every running container, but at most once per updateCheckInterval. When
+// the throttle is active, callers continue to read the previous verdict
+// out of d.updateState — see Inventory() above.
+//
+// All errors are swallowed at WARN level: we never fail the inventory
+// because we couldn't reach a registry. The collector's goal is to add
+// signal when it can, not to block ingest when it can't.
+//
+// Operator-disable note: a future config toggle (see registry.go's TODO)
+// will be wired to short-circuit this method.
+func (d *Docker) maybeRefreshUpdates(ctx context.Context, containers []dockerContainer) {
+	d.updateMu.Lock()
+	if !d.lastUpdateCheck.IsZero() && time.Since(d.lastUpdateCheck) < updateCheckInterval {
+		d.updateMu.Unlock()
+		return
+	}
+	d.lastUpdateCheck = time.Now()
+	d.updateMu.Unlock()
+
+	// Use a per-tick deadline so a single slow registry can't stall the
+	// whole inventory pass.
+	probeCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	fresh := map[string]updateProbe{}
+	for _, c := range containers {
+		// Skip containers we don't have an image for, or pinned digests
+		// (image@sha256:…). The latter has no concept of "newer".
+		if c.Image == "" || strings.Contains(c.Image, "@sha256:") {
+			continue
+		}
+		// Inspect to read the local image digest. A missing digest is
+		// non-fatal; we can still return the upstream digest alone, which
+		// at least tells the UI "current container's tag points to this
+		// upstream digest."
+		curDigest, err := d.imageDigestForContainer(probeCtx, c.ID)
+		if err != nil {
+			slog.Debug("docker inspect failed", "container", c.ID, "err", err)
+		}
+		latest, err := d.reg.LatestDigest(probeCtx, c.Image)
+		if err != nil {
+			if !errors.Is(err, registry.ErrPinnedDigest) {
+				slog.Debug("registry probe failed", "image", c.Image, "err", err)
+			}
+			// Even on probe failure, keep the local digest if we have one
+			// so the server can render "current digest" in the tooltip.
+			fresh[c.ID] = updateProbe{currentDigest: curDigest}
+			continue
+		}
+		fresh[c.ID] = updateProbe{
+			currentDigest:   curDigest,
+			latestDigest:    latest,
+			updateAvailable: curDigest != "" && latest != "" && curDigest != latest,
+		}
+	}
+
+	d.updateMu.Lock()
+	d.updateState = fresh
+	d.updateMu.Unlock()
+}
+
+// imageDigestForContainer returns the runtime digest of a container's image
+// as recorded by the local engine. Docker exposes this in two places under
+// `docker inspect`: ImageID is the local content-addressable id (often the
+// same as the upstream digest for images pulled by tag), and Image
+// historically held the user-supplied reference. We prefer ImageID — that's
+// the one that actually compares apples-to-apples with the registry's
+// Docker-Content-Digest header.
+func (d *Docker) imageDigestForContainer(ctx context.Context, containerID string) (string, error) {
+	req, err := d.req(ctx, "GET", "/containers/"+containerID+"/json", nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := d.hc.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("docker inspect: status %d", resp.StatusCode)
+	}
+	var body struct {
+		Image string `json:"Image"` // "sha256:…" since 1.10
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return "", fmt.Errorf("decode inspect: %w", err)
+	}
+	return strings.TrimSpace(body.Image), nil
 }
 
 // --- internal HTTP plumbing ------------------------------------------------

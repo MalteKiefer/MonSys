@@ -24,7 +24,8 @@ func (s *Store) ListHosts(ctx context.Context) ([]apitypes.Host, error) {
 		       COALESCE(hs.status, 'unknown'),
 		       hs.since,
 		       COALESCE(t.tags, '{}') AS tags,
-		       COALESCE(g.groups, '{}'::jsonb) AS groups
+		       COALESCE(g.groups, '{}'::jsonb) AS groups,
+		       ps.updates_count, ps.security_updates
 		FROM hosts h
 		LEFT JOIN host_status hs ON hs.host_id = h.id
 		LEFT JOIN LATERAL (
@@ -36,6 +37,13 @@ func (s *Store) ListHosts(ctx context.Context) ([]apitypes.Host, error) {
 			FROM host_group_members m JOIN host_groups hg ON hg.id = m.group_id
 			WHERE m.host_id = h.id
 		) g ON TRUE
+		LEFT JOIN LATERAL (
+			SELECT updates_count, security_updates
+			FROM package_summary
+			WHERE host_id = h.id
+			ORDER BY time DESC
+			LIMIT 1
+		) ps ON TRUE
 		WHERE h.revoked_at IS NULL
 		ORDER BY h.hostname`)
 	if err != nil {
@@ -56,7 +64,8 @@ func (s *Store) ListHosts(ctx context.Context) ([]apitypes.Host, error) {
 		if err := rows.Scan(&id, &h.Hostname, &h.Distro, &h.Arch,
 			&h.CPUCores, &h.RAMTotalBytes, &h.AgentVersion,
 			&h.FirstSeenAt, &h.LastSeenAt, &labels,
-			&h.Status, &statusSince, &tags, &groupsRaw); err != nil {
+			&h.Status, &statusSince, &tags, &groupsRaw,
+			&h.PendingUpdates, &h.SecurityUpdates); err != nil {
 			return nil, err
 		}
 		h.ID = id.String()

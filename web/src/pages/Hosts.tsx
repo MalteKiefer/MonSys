@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Plus, Server } from "lucide-react";
+import { AlertTriangle, Plus, Server } from "lucide-react";
 import { KeyboardEvent, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -47,19 +47,46 @@ export function Hosts() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [enrollOpen, setEnrollOpen] = useState(false);
+  // Sort modes for the Updates column. Cycles: off → pending desc → security desc → off.
+  const [updatesSort, setUpdatesSort] = useState<"off" | "pending" | "security">("off");
 
   const hosts = data?.hosts ?? [];
 
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    return hosts.filter((h) => {
+    const out = hosts.filter((h) => {
       if (statusFilter !== "all" && h.status !== statusFilter) return false;
       if (needle === "") return true;
       if (hostDisplay(h).toLowerCase().includes(needle)) return true;
       if ((h.tags ?? []).some((t) => t.toLowerCase().includes(needle))) return true;
       return false;
     });
-  }, [hosts, search, statusFilter]);
+    if (updatesSort === "off") return out;
+    const key = updatesSort === "security" ? "security_updates" : "pending_updates";
+    // Stable desc; hosts without package data sink to the bottom.
+    return [...out].sort((a, b) => {
+      const av = a[key];
+      const bv = b[key];
+      const aDef = typeof av === "number";
+      const bDef = typeof bv === "number";
+      if (!aDef && !bDef) return 0;
+      if (!aDef) return 1;
+      if (!bDef) return -1;
+      return (bv as number) - (av as number);
+    });
+  }, [hosts, search, statusFilter, updatesSort]);
+
+  const cycleUpdatesSort = () => {
+    setUpdatesSort((s) => (s === "off" ? "pending" : s === "pending" ? "security" : "off"));
+  };
+
+  const updatesSortLabel =
+    updatesSort === "pending"
+      ? "sorted by pending desc"
+      : updatesSort === "security"
+        ? "sorted by security desc"
+        : "unsorted";
+  const updatesSortGlyph = updatesSort === "pending" ? "↓" : updatesSort === "security" ? "⚠↓" : "";
 
   const onRowKeyDown = (e: KeyboardEvent<HTMLTableRowElement>, id: string) => {
     if (e.key === "Enter" || e.key === " ") {
@@ -160,6 +187,21 @@ export function Hosts() {
                     <TH>Tags / Groups</TH>
                     <TH>CPU / RAM</TH>
                     <TH>Agent</TH>
+                    <TH>
+                      <button
+                        type="button"
+                        onClick={cycleUpdatesSort}
+                        aria-label={`Updates column, ${updatesSortLabel}, click to change`}
+                        className="inline-flex items-center gap-1 text-inherit hover:text-fg focus:outline-none focus-visible:underline"
+                      >
+                        Updates
+                        {updatesSortGlyph && (
+                          <span aria-hidden="true" className="text-[10px] text-accent">
+                            {updatesSortGlyph}
+                          </span>
+                        )}
+                      </button>
+                    </TH>
                     <TH>Last seen</TH>
                   </tr>
                 </THead>
@@ -217,6 +259,9 @@ export function Hosts() {
                       <TD className="font-mono text-xs text-fg-muted whitespace-nowrap">
                         {h.agent_version || "—"}
                       </TD>
+                      <TD className="tabular-nums whitespace-nowrap">
+                        <UpdatesCell pending={h.pending_updates} security={h.security_updates} />
+                      </TD>
                       <TD className="text-fg-muted whitespace-nowrap">{relativeTime(h.last_seen_at)}</TD>
                     </tr>
                   ))}
@@ -228,6 +273,25 @@ export function Hosts() {
       )}
     </Page>
   );
+}
+
+function UpdatesCell({ pending, security }: { pending?: number; security?: number }) {
+  if (typeof pending !== "number") {
+    return <span className="text-fg-subtle">—</span>;
+  }
+  const sec = typeof security === "number" ? security : 0;
+  if (sec > 0) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 text-warn"
+        title={`${sec} security`}
+      >
+        <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+        {pending}
+      </span>
+    );
+  }
+  return <span className="text-fg-muted">{pending}</span>;
 }
 
 function formatBytes(n: number): string {

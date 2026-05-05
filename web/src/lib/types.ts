@@ -20,6 +20,8 @@ export type Host = {
   groups: HostGroupRef[];
   distro_family?: string;
   services?: string[];
+  pending_updates?: number;
+  security_updates?: number;
 };
 
 export type HostGroup = {
@@ -125,6 +127,15 @@ export type WorkloadRow = {
   latest_time?: string;
   cpu_usage_pct: number;
   mem_used_bytes: number;
+  // Image-update detection (Docker only for now). The agent compares the
+  // running container's image digest against the upstream registry's digest
+  // for the same image:tag and reports the verdict here. Empty strings mean
+  // "not yet checked" or "couldn't reach the registry" — render the badge
+  // only when update_available is true.
+  current_digest?: string;
+  latest_digest?: string;
+  update_available?: boolean;
+  update_checked_at?: string;
 };
 
 export type VMRow = {

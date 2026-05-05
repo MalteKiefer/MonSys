@@ -226,16 +226,37 @@ func saveInventoryTx(ctx context.Context, tx pgx.Tx, hostID uuid.UUID, snap apit
 		if err != nil {
 			return err
 		}
+		// Image-update detection (see migration 0027): the agent reports
+		// current_digest (from `docker inspect`) and latest_digest (HEAD on
+		// the upstream registry's manifest). Empty strings are persisted as
+		// NULLs so partial reports (e.g. registry unreachable on this tick)
+		// don't clobber a previously-known good digest. update_checked_at
+		// is only stamped when the agent had something meaningful to say —
+		// i.e. either side of the comparison is populated.
+		curDigest := nullableString(w.CurrentDigest)
+		latDigest := nullableString(w.LatestDigest)
+		var checkedAt any
+		if w.CurrentDigest != "" || w.LatestDigest != "" {
+			checkedAt = time.Now().UTC()
+		}
 		_, err = tx.Exec(ctx, `
-			INSERT INTO workloads (host_id, kind, external_id, name, image, state, labels)
-			VALUES ($1,$2,$3,$4,$5,$6,$7)
+			INSERT INTO workloads (
+				host_id, kind, external_id, name, image, state, labels,
+				current_digest, latest_digest, update_available, update_checked_at
+			)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
 			ON CONFLICT (host_id, kind, external_id) DO UPDATE SET
-				name         = EXCLUDED.name,
-				image        = EXCLUDED.image,
-				state        = EXCLUDED.state,
-				labels       = EXCLUDED.labels,
-				last_seen_at = now()`,
-			hostID, w.Kind, w.ExternalID, w.Name, w.Image, w.State, labelsJSON)
+				name              = EXCLUDED.name,
+				image             = EXCLUDED.image,
+				state             = EXCLUDED.state,
+				labels            = EXCLUDED.labels,
+				current_digest    = COALESCE(EXCLUDED.current_digest,    workloads.current_digest),
+				latest_digest     = COALESCE(EXCLUDED.latest_digest,     workloads.latest_digest),
+				update_available  = EXCLUDED.update_available,
+				update_checked_at = COALESCE(EXCLUDED.update_checked_at, workloads.update_checked_at),
+				last_seen_at      = now()`,
+			hostID, w.Kind, w.ExternalID, w.Name, w.Image, w.State, labelsJSON,
+			curDigest, latDigest, w.UpdateAvailable, checkedAt)
 		if err != nil {
 			return fmt.Errorf("workloads upsert: %w", err)
 		}

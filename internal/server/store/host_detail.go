@@ -199,10 +199,16 @@ func (s *Store) hostNics(ctx context.Context, id uuid.UUID) ([]apitypes.NicRow, 
 }
 
 func (s *Store) hostWorkloads(ctx context.Context, id uuid.UUID) ([]apitypes.WorkloadRow, error) {
+	// current_digest / latest_digest / update_available / update_checked_at
+	// were added in migration 0027 to back the per-workload "update available"
+	// badge. They're returned even when null so the UI can distinguish
+	// "checked, no update" from "never checked".
 	rows, err := s.Pool.Query(ctx, `
 		SELECT w.id, w.kind, w.external_id, COALESCE(w.name,''), COALESCE(w.image,''),
 		       COALESCE(w.state,''), w.labels, w.last_seen_at,
-		       m.time, COALESCE(m.cpu_usage_pct,0), COALESCE(m.mem_used_bytes,0)
+		       m.time, COALESCE(m.cpu_usage_pct,0), COALESCE(m.mem_used_bytes,0),
+		       COALESCE(w.current_digest,''), COALESCE(w.latest_digest,''),
+		       COALESCE(w.update_available,false), w.update_checked_at
 		FROM workloads w
 		LEFT JOIN LATERAL (
 			SELECT time, cpu_usage_pct, mem_used_bytes
@@ -223,7 +229,8 @@ func (s *Store) hostWorkloads(ctx context.Context, id uuid.UUID) ([]apitypes.Wor
 		var labelsRaw []byte
 		if err := rows.Scan(&idVal, &r.Kind, &r.ExternalID, &r.Name, &r.Image,
 			&r.State, &labelsRaw, &r.LastSeenAt,
-			&r.LatestTime, &r.CPUUsagePct, &r.MemUsedBytes); err != nil {
+			&r.LatestTime, &r.CPUUsagePct, &r.MemUsedBytes,
+			&r.CurrentDigest, &r.LatestDigest, &r.UpdateAvailable, &r.UpdateCheckedAt); err != nil {
 			return nil, err
 		}
 		r.ID = idVal.String()

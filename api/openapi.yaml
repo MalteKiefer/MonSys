@@ -1368,8 +1368,18 @@ components:
           format: date-time
           readOnly: true
           type: string
+        pending_updates:
+          description: OS package updates pending; null when no package data
+          format: int64
+          readOnly: true
+          type: integer
         ram_total_bytes:
           format: int64
+          type: integer
+        security_updates:
+          description: OS security updates pending; null when no package data
+          format: int64
+          readOnly: true
           type: integer
         services:
           description: Detected services (postgres, redis, nginx, …)
@@ -3645,6 +3655,9 @@ components:
     WorkloadInfo:
       additionalProperties: false
       properties:
+        current_digest:
+          maxLength: 128
+          type: string
         external_id:
           maxLength: 253
           type: string
@@ -3658,12 +3671,17 @@ components:
           additionalProperties:
             type: string
           type: object
+        latest_digest:
+          maxLength: 128
+          type: string
         name:
           maxLength: 253
           type: string
         state:
           maxLength: 64
           type: string
+        update_available:
+          type: boolean
       required:
         - kind
         - external_id
@@ -3676,6 +3694,9 @@ components:
         cpu_usage_pct:
           format: double
           type: number
+        current_digest:
+          maxLength: 128
+          type: string
         external_id:
           maxLength: 253
           type: string
@@ -3698,6 +3719,9 @@ components:
           format: date-time
           readOnly: true
           type: string
+        latest_digest:
+          maxLength: 128
+          type: string
         latest_time:
           format: date-time
           readOnly: true
@@ -3711,6 +3735,12 @@ components:
         state:
           maxLength: 64
           type: string
+        update_available:
+          type: boolean
+        update_checked_at:
+          format: date-time
+          readOnly: true
+          type: string
       required:
         - id
         - kind
@@ -3720,6 +3750,7 @@ components:
         - last_seen_at
         - cpu_usage_pct
         - mem_used_bytes
+        - update_available
       type: object
     WorkloadSample:
       additionalProperties: false

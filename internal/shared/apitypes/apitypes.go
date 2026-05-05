@@ -149,6 +149,18 @@ type WorkloadInfo struct {
 	Image      string            `json:"image,omitempty" maxLength:"500"`
 	State      string            `json:"state"       maxLength:"64"`
 	Labels     map[string]string `json:"labels,omitempty"`
+	// CurrentDigest is the runtime digest of the container's image as
+	// reported by the local engine (e.g. via `docker inspect`). May be empty
+	// for non-Docker workloads or when the engine has not exposed it yet.
+	CurrentDigest string `json:"current_digest,omitempty" maxLength:"128"`
+	// LatestDigest is the upstream registry's digest for the same image:tag.
+	// Empty when the agent could not (or chose not to) reach the registry —
+	// e.g. air-gapped host, anonymous-rate-limited, or digest-pinned image.
+	LatestDigest string `json:"latest_digest,omitempty" maxLength:"128"`
+	// UpdateAvailable is the agent's verdict — true iff CurrentDigest and
+	// LatestDigest are both populated and differ. Servers persist this as
+	// authoritative so the UI can render badges without re-comparing.
+	UpdateAvailable bool `json:"update_available,omitempty"`
 }
 
 type SystemSample struct {
@@ -606,6 +618,21 @@ type WorkloadRow struct {
 	LatestTime *time.Time        `json:"latest_time,omitempty" readOnly:"true"`
 	CPUUsagePct float64          `json:"cpu_usage_pct"`
 	MemUsedBytes int64            `json:"mem_used_bytes"`
+	// CurrentDigest is the digest the container is currently running on; it
+	// matches the local image at start time. Empty until the agent reports
+	// it once.
+	CurrentDigest string `json:"current_digest,omitempty" maxLength:"128"`
+	// LatestDigest is the most recent upstream digest the agent observed for
+	// the same image:tag. Empty when the lookup failed (offline host, rate
+	// limit, digest-pinned reference, …).
+	LatestDigest string `json:"latest_digest,omitempty" maxLength:"128"`
+	// UpdateAvailable is the persisted verdict computed by the agent. The UI
+	// uses this to render the "↑ update available" badge in Workloads.tsx.
+	UpdateAvailable bool `json:"update_available"`
+	// UpdateCheckedAt is the wall-clock time the server last accepted an
+	// update-availability report from the agent. Useful for the UI to render
+	// "checked Xm ago" tooltips.
+	UpdateCheckedAt *time.Time `json:"update_checked_at,omitempty" readOnly:"true"`
 }
 
 type VMRow struct {
@@ -677,6 +704,8 @@ type Host struct {
 	Groups        []HostGroupRef    `json:"groups"      doc:"Groups this host belongs to"`
 	DistroFamily  string            `json:"distro_family,omitempty" maxLength:"32" doc:"arch/debian/ubuntu/fedora/rhel/alpine/suse — derived"`
 	Services      []string          `json:"services,omitempty"      doc:"Detected services (postgres, redis, nginx, …)"`
+	PendingUpdates  *int `json:"pending_updates,omitempty"  readOnly:"true" doc:"OS package updates pending; null when no package data"`
+	SecurityUpdates *int `json:"security_updates,omitempty" readOnly:"true" doc:"OS security updates pending; null when no package data"`
 }
 
 type HostGroupRef struct {
