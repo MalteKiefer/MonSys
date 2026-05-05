@@ -350,6 +350,28 @@ func (s *Store) GetUser(ctx context.Context, id uuid.UUID) (User, error) {
 	return u, nil
 }
 
+// SetPassword unconditionally rewrites the user's bcrypt hash. Used by the
+// admin reset-password CLI flag — there is no current-password check, so the
+// caller must already have shell-level trust on the box.
+func (s *Store) SetPassword(ctx context.Context, email, newPassword string) error {
+	if email == "" || newPassword == "" {
+		return errors.New("email and password required")
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcryptCost)
+	if err != nil {
+		return err
+	}
+	tag, err := s.Pool.Exec(ctx,
+		`UPDATE users SET password_hash = $2 WHERE email = $1`, email, string(hash))
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrUserNotFound
+	}
+	return nil
+}
+
 // ChangePassword verifies the current password and writes a new bcrypt hash.
 // Returns ErrPasswordMismatch if the current password is wrong. The new
 // password is policy-checked by the caller (api layer) to keep this layer

@@ -38,6 +38,7 @@ func main() {
 		createUserEmail   = flag.String("user-email", "", "email for --create-user")
 		createUserRole    = flag.String("user-role", "user", "role for --create-user (admin|user)")
 		createUserPassword = flag.String("user-password", "", "password for --create-user; if empty, read from stdin")
+		resetPassword      = flag.Bool("reset-password", false, "reset a user's password (use --user-email + --user-password) and exit")
 	)
 	flag.Parse()
 
@@ -117,6 +118,28 @@ func main() {
 			os.Exit(1)
 		}
 		_, _ = os.Stdout.WriteString(plaintext + "\n")
+		return
+	}
+
+	if *resetPassword {
+		if *createUserEmail == "" {
+			slog.Error("--reset-password requires --user-email")
+			os.Exit(2)
+		}
+		pw := *createUserPassword
+		if pw == "" {
+			line, err := readLine(os.Stdin)
+			if err != nil || line == "" {
+				slog.Error("password required (pass --user-password or pipe via stdin)")
+				os.Exit(2)
+			}
+			pw = line
+		}
+		if err := st.SetPassword(openCtx, *createUserEmail, pw); err != nil {
+			slog.Error("reset password", "err", err)
+			os.Exit(1)
+		}
+		slog.Info("password reset", "email", *createUserEmail)
 		return
 	}
 
