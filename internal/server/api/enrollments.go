@@ -400,5 +400,70 @@ fi
 # 8. enable + start
 systemctl enable --now mon-agent.service
 
-echo "mon-agent installed and started."
+# 9. self-update timer — checks the server every 6h, sha256-verifies the
+# fetched binary, atomic-replaces, and restarts mon-agent. The agent's
+# main loop never updates itself; it's always the timer-driven oneshot.
+cat >/etc/systemd/system/mon-agent-update.service <<'EOF'
+[Unit]
+Description=mon agent self-updater (one-shot, root)
+Documentation=https://github.com/MalteKiefer/MonSys
+ConditionPathExists=/usr/local/bin/mon-agent
+After=network-online.target mon-agent.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/usr/local/bin/mon-agent --self-update --config=/etc/mon-agent/config.yaml
+
+ProtectSystem=strict
+ReadWritePaths=/usr/local/bin /var/lib/mon-agent /run/systemd
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectHostname=yes
+ProtectClock=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+ProcSubset=pid
+
+NoNewPrivileges=yes
+LockPersonality=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources @mount @swap @reboot @raw-io @debug @cpu-emulation @obsolete
+
+UMask=0022
+TimeoutStartSec=5min
+EOF
+chmod 0644 /etc/systemd/system/mon-agent-update.service
+
+cat >/etc/systemd/system/mon-agent-update.timer <<'EOF'
+[Unit]
+Description=mon agent self-update timer
+Documentation=https://github.com/MalteKiefer/MonSys
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=6h
+RandomizedDelaySec=15min
+Persistent=true
+Unit=mon-agent-update.service
+
+[Install]
+WantedBy=timers.target
+EOF
+chmod 0644 /etc/systemd/system/mon-agent-update.timer
+systemctl daemon-reload
+systemctl enable --now mon-agent-update.timer
+
+echo "mon-agent installed and started; self-update timer enabled."
 `
