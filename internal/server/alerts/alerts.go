@@ -189,6 +189,110 @@ func (e *Engine) runPeriodic(ctx context.Context) {
 			e.evalSecurityUpdates(ctx, r)
 		}
 	}
+	e.runRepeatReminders(ctx)
+}
+
+// runRepeatReminders re-dispatches an open alert through its rule's channels
+// when repeat_interval_sec has elapsed since the last fire. The condition
+// itself is not re-evaluated here; we trust that resolve() (driven by the
+// transition handlers) clears alert_state the moment the underlying state
+// recovers, so any row still open with resolved_at IS NULL means the alert
+// is genuinely still active.
+func (e *Engine) runRepeatReminders(ctx context.Context) {
+	rows, err := e.Pool.Query(ctx, `
+		SELECT s.dedup_key, s.subject, s.channel_ids, s.severity,
+		       r.repeat_interval_sec, r.name,
+		       EXTRACT(EPOCH FROM (now() - s.last_fired_at))::INT AS elapsed_sec,
+		       EXTRACT(EPOCH FROM (now() - s.opened_at))::INT     AS open_sec
+		FROM alert_state s
+		JOIN notification_rules r ON r.id = s.rule_id
+		WHERE s.resolved_at IS NULL
+		  AND r.enabled = TRUE
+		  AND r.repeat_interval_sec >= 60
+		  AND now() - s.last_fired_at >= make_interval(secs => r.repeat_interval_sec)`)
+	if err != nil {
+		slog.Warn("alerts: repeat-reminder query", "err", err)
+		return
+	}
+	defer rows.Close()
+
+	type reminder struct {
+		dedup, subject, severity, ruleName string
+		channels                           []uuid.UUID
+		repeatSec, elapsedSec, openSec     int
+	}
+	var pending []reminder
+	for rows.Next() {
+		var rm reminder
+		if err := rows.Scan(&rm.dedup, &rm.subject, &rm.channels, &rm.severity,
+			&rm.repeatSec, &rm.ruleName, &rm.elapsedSec, &rm.openSec); err != nil {
+			slog.Warn("alerts: repeat-reminder scan", "err", err)
+			continue
+		}
+		pending = append(pending, rm)
+	}
+	if err := rows.Err(); err != nil {
+		slog.Warn("alerts: repeat-reminder iter", "err", err)
+	}
+
+	if len(pending) == 0 {
+		return
+	}
+	if e.inQuietHours(ctx, time.Now()) {
+		// Honour the quiet window the same way fire() does. Don't bump
+		// last_fired_at so the next non-quiet tick sends the reminder.
+		return
+	}
+
+	for _, rm := range pending {
+		body := fmt.Sprintf("Reminder: incident still active.\nOpen for %s; previous notification %s ago.",
+			fmtDurationSecs(rm.openSec), fmtDurationSecs(rm.elapsedSec))
+		m := notify.Message{
+			Subject:  "[Reminder] " + rm.subject,
+			Body:     body,
+			Severity: rm.severity,
+		}
+		delivered := []string{}
+		errMap := map[string]string{}
+		for _, chID := range rm.channels {
+			if err := e.sendChannel(ctx, chID, m); err != nil {
+				errMap[chID.String()] = err.Error()
+				continue
+			}
+			delivered = append(delivered, chID.String())
+		}
+
+		errJSON, _ := json.Marshal(errMap)
+		if _, err := e.Pool.Exec(ctx, `
+			INSERT INTO alert_history (rule_id, rule_name, severity, subject, body,
+			                           dedup_key, delivered_to, delivery_errors)
+			SELECT s.rule_id, $2, s.severity, $3, $4, $1, $5, $6
+			FROM alert_state s WHERE s.dedup_key = $1`,
+			rm.dedup, rm.ruleName, m.Subject, body, delivered, errJSON); err != nil {
+			slog.Warn("alerts: repeat-reminder history insert", "dedup", rm.dedup, "err", err)
+		}
+
+		// Bump last_fired_at only when at least one channel delivered, so a
+		// total dispatch failure causes the next tick to retry the reminder
+		// instead of silently waiting another full repeat_interval.
+		if len(delivered) > 0 {
+			if _, err := e.Pool.Exec(ctx,
+				`UPDATE alert_state SET last_fired_at = now()
+				   WHERE dedup_key = $1 AND resolved_at IS NULL`, rm.dedup); err != nil {
+				slog.Warn("alerts: repeat-reminder last_fired update", "err", err)
+			}
+		}
+	}
+}
+
+func fmtDurationSecs(secs int) string {
+	if secs < 60 {
+		return fmt.Sprintf("%ds", secs)
+	}
+	if secs < 3600 {
+		return fmt.Sprintf("%dm%02ds", secs/60, secs%60)
+	}
+	return fmt.Sprintf("%dh%02dm", secs/3600, (secs%3600)/60)
 }
 
 // evalLoginFailed counts failed login_events in the last `window_sec` per host
@@ -385,18 +489,36 @@ func (e *Engine) fire(ctx context.Context, r ruleRow, subject, body, dedup strin
 //     for silence.
 func (e *Engine) resolve(ctx context.Context, dedup, body string) {
 	var (
-		subject    string
-		channelIDs []uuid.UUID
+		subject         string
+		channelIDs      []uuid.UUID
+		notifyOnResolve bool
 	)
+	// LEFT JOIN so an orphaned alert_state (rule deleted while firing) still
+	// resolves cleanly; COALESCE gives those orphans the historical "send the
+	// all-clear" behaviour.
 	err := e.Pool.QueryRow(ctx, `
-		SELECT subject, channel_ids FROM alert_state
-		WHERE dedup_key = $1 AND resolved_at IS NULL`, dedup,
-	).Scan(&subject, &channelIDs)
+		SELECT s.subject, s.channel_ids, COALESCE(r.notify_on_resolve, TRUE)
+		FROM alert_state s
+		LEFT JOIN notification_rules r ON r.id = s.rule_id
+		WHERE s.dedup_key = $1 AND s.resolved_at IS NULL`, dedup,
+	).Scan(&subject, &channelIDs, &notifyOnResolve)
 	if err != nil {
 		// No open row is the common case (most transitions don't clear
 		// anything because nothing was firing). Only log other errors.
 		if !errors.Is(err, pgx.ErrNoRows) {
 			slog.Warn("alerts: alert_state lookup", "dedup", dedup, "err", err)
+		}
+		return
+	}
+
+	// Operator opted out of all-clear notifications for this rule. We still
+	// stamp resolved_at so dashboards close the incident; only the channel
+	// dispatch is skipped.
+	if !notifyOnResolve {
+		if _, err := e.Pool.Exec(ctx,
+			`UPDATE alert_state SET resolved_at = now()
+			   WHERE dedup_key = $1 AND resolved_at IS NULL`, dedup); err != nil {
+			slog.Warn("alerts: alert_state resolve update (notify_on_resolve=false)", "err", err)
 		}
 		return
 	}
@@ -736,15 +858,17 @@ func (e *Engine) recentlyFired(ctx context.Context, dedup string, within time.Du
 // --- rule loader -----------------------------------------------------------
 
 type ruleRow struct {
-	ID              uuid.UUID
-	Name            string
-	ConditionParams map[string]any
-	ChannelIDs      []string
-	Severity        string
-	ThrottleSec     int
-	TargetHostIDs   []uuid.UUID
-	TargetTags      []string
-	TargetGroupIDs  []uuid.UUID
+	ID                uuid.UUID
+	Name              string
+	ConditionParams   map[string]any
+	ChannelIDs        []string
+	Severity          string
+	ThrottleSec       int
+	RepeatIntervalSec int
+	NotifyOnResolve   bool
+	TargetHostIDs     []uuid.UUID
+	TargetTags        []string
+	TargetGroupIDs    []uuid.UUID
 }
 
 // matchesHost decides whether a rule applies to a specific host. All-empty
@@ -780,6 +904,7 @@ func (r ruleRow) matchesHost(hostID uuid.UUID, tags []string, groupIDs []uuid.UU
 func (e *Engine) loadRules(ctx context.Context, conditionType string) ([]ruleRow, error) {
 	rows, err := e.Pool.Query(ctx, `
 		SELECT id, name, condition_params, channel_ids, severity, throttle_sec,
+		       repeat_interval_sec, notify_on_resolve,
 		       target_host_ids, target_tags, target_group_ids
 		FROM notification_rules
 		WHERE enabled = TRUE AND condition_type = $1`, conditionType)
@@ -793,6 +918,7 @@ func (e *Engine) loadRules(ctx context.Context, conditionType string) ([]ruleRow
 		var paramsRaw []byte
 		var channelUUIDs []uuid.UUID
 		if err := rows.Scan(&r.ID, &r.Name, &paramsRaw, &channelUUIDs, &r.Severity, &r.ThrottleSec,
+			&r.RepeatIntervalSec, &r.NotifyOnResolve,
 			&r.TargetHostIDs, &r.TargetTags, &r.TargetGroupIDs); err != nil {
 			return nil, err
 		}

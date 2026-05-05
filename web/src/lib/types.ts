@@ -317,6 +317,8 @@ export type NotificationRule = {
   channel_ids: string[];
   severity: "info" | "warning" | "critical";
   throttle_sec: number;
+  repeat_interval_sec: number;
+  notify_on_resolve: boolean;
   target_host_ids: string[];
   target_tags: string[];
   target_group_ids: string[];
@@ -332,6 +334,8 @@ export type NotificationRuleInput = {
   channel_ids: string[];
   severity: NotificationRule["severity"];
   throttle_sec: number;
+  repeat_interval_sec: number;
+  notify_on_resolve: boolean;
   target_host_ids?: string[];
   target_tags?: string[];
   target_group_ids?: string[];

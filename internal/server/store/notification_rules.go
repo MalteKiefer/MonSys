@@ -20,6 +20,7 @@ func (s *Store) ListRules(ctx context.Context) ([]apitypes.NotificationRule, err
 	rows, err := s.Pool.Query(ctx, `
 		SELECT id, name, enabled, condition_type, condition_params,
 		       channel_ids, severity, throttle_sec,
+		       repeat_interval_sec, notify_on_resolve,
 		       target_host_ids, target_tags, target_group_ids,
 		       created_at, COALESCE(created_by,'')
 		FROM notification_rules ORDER BY name`)
@@ -42,6 +43,7 @@ func (s *Store) GetRule(ctx context.Context, id uuid.UUID) (apitypes.Notificatio
 	rows, err := s.Pool.Query(ctx, `
 		SELECT id, name, enabled, condition_type, condition_params,
 		       channel_ids, severity, throttle_sec,
+		       repeat_interval_sec, notify_on_resolve,
 		       target_host_ids, target_tags, target_group_ids,
 		       created_at, COALESCE(created_by,'')
 		FROM notification_rules WHERE id = $1`, id)
@@ -74,6 +76,9 @@ func (s *Store) CreateRule(ctx context.Context, in apitypes.NotificationRuleInpu
 	if in.ThrottleSec < 0 {
 		in.ThrottleSec = 0
 	}
+	if err := validateRepeat(in.RepeatIntervalSec); err != nil {
+		return apitypes.NotificationRule{}, err
+	}
 
 	hostIDs, err := parseChannelIDs(in.TargetHostIDs)
 	if err != nil {
@@ -89,12 +94,14 @@ func (s *Store) CreateRule(ctx context.Context, in apitypes.NotificationRuleInpu
 	err = s.Pool.QueryRow(ctx, `
 		INSERT INTO notification_rules (name, enabled, condition_type, condition_params,
 		                                channel_ids, severity, throttle_sec,
+		                                repeat_interval_sec, notify_on_resolve,
 		                                target_host_ids, target_tags, target_group_ids,
 		                                created_by)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
 		RETURNING id`,
 		in.Name, in.Enabled, in.ConditionType, params, channels, severity,
-		in.ThrottleSec, hostIDs, tags, groupIDs, nullableString(createdBy),
+		in.ThrottleSec, in.RepeatIntervalSec, in.NotifyOnResolve,
+		hostIDs, tags, groupIDs, nullableString(createdBy),
 	).Scan(&id)
 	if err != nil {
 		if pgIsUniqueViolation(err) {
@@ -118,6 +125,12 @@ func (s *Store) UpdateRule(ctx context.Context, id uuid.UUID, in apitypes.Notifi
 	if severity == "" {
 		severity = "warning"
 	}
+	if in.ThrottleSec < 0 {
+		in.ThrottleSec = 0
+	}
+	if err := validateRepeat(in.RepeatIntervalSec); err != nil {
+		return apitypes.NotificationRule{}, err
+	}
 	hostIDs, err := parseChannelIDs(in.TargetHostIDs)
 	if err != nil {
 		return apitypes.NotificationRule{}, fmt.Errorf("target_host_ids: %w", err)
@@ -132,10 +145,12 @@ func (s *Store) UpdateRule(ctx context.Context, id uuid.UUID, in apitypes.Notifi
 		UPDATE notification_rules SET
 			name = $2, enabled = $3, condition_type = $4, condition_params = $5,
 			channel_ids = $6, severity = $7, throttle_sec = $8,
-			target_host_ids = $9, target_tags = $10, target_group_ids = $11
+			repeat_interval_sec = $9, notify_on_resolve = $10,
+			target_host_ids = $11, target_tags = $12, target_group_ids = $13
 		WHERE id = $1`,
 		id, in.Name, in.Enabled, in.ConditionType, params,
 		channels, severity, in.ThrottleSec,
+		in.RepeatIntervalSec, in.NotifyOnResolve,
 		hostIDs, tags, groupIDs)
 	if err != nil {
 		if pgIsUniqueViolation(err) {
@@ -241,6 +256,7 @@ func scanRule(scan func(...any) error) (apitypes.NotificationRule, error) {
 	)
 	if err := scan(&idVal, &r.Name, &r.Enabled, &r.ConditionType, &paramsRaw,
 		&channelIDs, &r.Severity, &r.ThrottleSec,
+		&r.RepeatIntervalSec, &r.NotifyOnResolve,
 		&hostIDs, &tags, &groupIDs,
 		&r.CreatedAt, &r.CreatedBy); err != nil {
 		return r, err
@@ -270,6 +286,19 @@ func scanRule(scan func(...any) error) (apitypes.NotificationRule, error) {
 		r.TargetTags = []string{}
 	}
 	return r, nil
+}
+
+// validateRepeat enforces the same range as the migration's CHECK constraint
+// so the API surface returns a friendly 400 instead of a raw constraint
+// violation. 0 = "fire once per outage", 60..86400 = reminder cadence.
+func validateRepeat(secs int) error {
+	if secs == 0 {
+		return nil
+	}
+	if secs < 60 || secs > 86400 {
+		return errors.New("repeat_interval_sec must be 0 or between 60 and 86400")
+	}
+	return nil
 }
 
 func parseChannelIDs(in []string) ([]uuid.UUID, error) {

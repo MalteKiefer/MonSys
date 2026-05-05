@@ -257,26 +257,30 @@ type NotificationRule struct {
 	ConditionType   string         `json:"condition_type"   enum:"host_offline,monitor_failed,cert_expiring,login_failed_threshold,security_updates_pending"`
 	ConditionParams map[string]any `json:"condition_params,omitempty"`
 	ChannelIDs      []string       `json:"channel_ids"`
-	Severity        string         `json:"severity"         enum:"info,warning,critical"`
-	ThrottleSec     int            `json:"throttle_sec"     minimum:"0" doc:"0 disables throttling"`
-	TargetHostIDs   []string       `json:"target_host_ids"  doc:"empty = all hosts"`
-	TargetTags      []string       `json:"target_tags"      doc:"empty = ignore tag filter"`
-	TargetGroupIDs  []string       `json:"target_group_ids" doc:"empty = ignore group filter"`
-	CreatedAt       time.Time      `json:"created_at"`
-	CreatedBy       string         `json:"created_by,omitempty"`
+	Severity          string         `json:"severity"            enum:"info,warning,critical"`
+	ThrottleSec       int            `json:"throttle_sec"        minimum:"0" doc:"0 disables throttling"`
+	RepeatIntervalSec int            `json:"repeat_interval_sec" minimum:"0" doc:"0 fires once per outage; >=60 re-sends a reminder while still active"`
+	NotifyOnResolve   bool           `json:"notify_on_resolve"   doc:"if false, suppresses the all-clear dispatch on recovery"`
+	TargetHostIDs     []string       `json:"target_host_ids"     doc:"empty = all hosts"`
+	TargetTags        []string       `json:"target_tags"         doc:"empty = ignore tag filter"`
+	TargetGroupIDs    []string       `json:"target_group_ids"    doc:"empty = ignore group filter"`
+	CreatedAt         time.Time      `json:"created_at"`
+	CreatedBy         string         `json:"created_by,omitempty"`
 }
 
 type NotificationRuleInput struct {
-	Name            string         `json:"name"            minLength:"1" maxLength:"100"`
-	Enabled         bool           `json:"enabled"`
-	ConditionType   string         `json:"condition_type"  enum:"host_offline,monitor_failed,cert_expiring,login_failed_threshold,security_updates_pending"`
-	ConditionParams map[string]any `json:"condition_params,omitempty"`
-	ChannelIDs      []string       `json:"channel_ids"     minItems:"1"`
-	Severity        string         `json:"severity"        enum:"info,warning,critical"`
-	ThrottleSec     int            `json:"throttle_sec"    minimum:"0"`
-	TargetHostIDs   []string       `json:"target_host_ids,omitempty"`
-	TargetTags      []string       `json:"target_tags,omitempty"`
-	TargetGroupIDs  []string       `json:"target_group_ids,omitempty"`
+	Name              string         `json:"name"                minLength:"1" maxLength:"100"`
+	Enabled           bool           `json:"enabled"`
+	ConditionType     string         `json:"condition_type"      enum:"host_offline,monitor_failed,cert_expiring,login_failed_threshold,security_updates_pending"`
+	ConditionParams   map[string]any `json:"condition_params,omitempty"`
+	ChannelIDs        []string       `json:"channel_ids"         minItems:"1"`
+	Severity          string         `json:"severity"            enum:"info,warning,critical"`
+	ThrottleSec       int            `json:"throttle_sec"        minimum:"0"`
+	RepeatIntervalSec int            `json:"repeat_interval_sec" minimum:"0"`
+	NotifyOnResolve   bool           `json:"notify_on_resolve"`
+	TargetHostIDs     []string       `json:"target_host_ids,omitempty"`
+	TargetTags        []string       `json:"target_tags,omitempty"`
+	TargetGroupIDs    []string       `json:"target_group_ids,omitempty"`
 }
 
 type AlertHistoryEntry struct {

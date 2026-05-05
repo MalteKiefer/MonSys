@@ -672,6 +672,8 @@ function RuleForm({
   );
   const [severity, setSeverity] = useState<NotificationRule["severity"]>(initial?.severity ?? "warning");
   const [throttleSec, setThrottleSec] = useState(initial?.throttle_sec ?? 300);
+  const [repeatIntervalSec, setRepeatIntervalSec] = useState(initial?.repeat_interval_sec ?? 0);
+  const [notifyOnResolve, setNotifyOnResolve] = useState(initial?.notify_on_resolve ?? true);
   const [tagsRaw, setTagsRaw] = useState((initial?.target_tags ?? []).join(", "));
   const [groupIDs, setGroupIDs] = useState<string[]>(initial?.target_group_ids ?? []);
   const [hostIDs, setHostIDs] = useState<string[]>(initial?.target_host_ids ?? []);
@@ -704,6 +706,9 @@ function RuleForm({
       if (channelIDs.length === 0) {
         throw new Error("Pick at least one channel");
       }
+      if (repeatIntervalSec !== 0 && (repeatIntervalSec < 60 || repeatIntervalSec > 86400)) {
+        throw new Error("Repeat interval must be 0 or between 60 and 86400 seconds");
+      }
       const tagList = tagsRaw
         .split(",")
         .map((s) => s.trim().toLowerCase())
@@ -716,6 +721,8 @@ function RuleForm({
         channel_ids: channelIDs,
         severity,
         throttle_sec: throttleSec,
+        repeat_interval_sec: repeatIntervalSec,
+        notify_on_resolve: notifyOnResolve,
         target_host_ids: hostIDs,
         target_tags: tagList,
         target_group_ids: groupIDs,
@@ -822,6 +829,31 @@ function RuleForm({
                 value={throttleSec}
                 onChange={(e) => setThrottleSec(parseInt(e.target.value || "0", 10))}
               />
+            </Field>
+            <Field
+              label="Repeat reminder (seconds)"
+              hint="0 = fire once per outage. 60–86400 = re-send while still active."
+            >
+              <TextInput
+                type="number"
+                min={0}
+                max={86400}
+                value={repeatIntervalSec}
+                onChange={(e) => setRepeatIntervalSec(parseInt(e.target.value || "0", 10))}
+              />
+            </Field>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Notify on resolve" hint="Send an all-clear when the host/monitor recovers.">
+              <label className="mt-2 inline-flex items-center gap-2 text-sm text-fg-muted">
+                <input
+                  type="checkbox"
+                  checked={notifyOnResolve}
+                  onChange={(e) => setNotifyOnResolve(e.target.checked)}
+                />
+                On
+              </label>
             </Field>
             <Field label="Enabled">
               <label className="mt-2 inline-flex items-center gap-2 text-sm text-fg-muted">
