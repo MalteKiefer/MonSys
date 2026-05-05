@@ -76,7 +76,7 @@ func Run(ctx context.Context, o Options) (Result, error) {
 		return res, errors.New("updater: ServerURL and BinaryPath are required")
 	}
 
-	m, err := fetchManifest(ctx, o.HTTPClient, o.ServerURL)
+	m, err := fetchManifest(ctx, o.HTTPClient, o.ServerURL, false)
 	if err != nil {
 		return res, fmt.Errorf("manifest: %w", err)
 	}
@@ -101,7 +101,26 @@ func Run(ctx context.Context, o Options) (Result, error) {
 	}
 	if err := downloadAndVerify(ctx, o.HTTPClient, bin.URL, bin.SHA256, tmpPath); err != nil {
 		_ = os.Remove(tmpPath)
-		return res, err
+		// SHA mismatch is the canonical "server cache is stale" symptom: the
+		// manifest's hash points at an asset that GitHub has since overwritten.
+		// Ask the server to bypass its cache and try once more before failing.
+		if isSHAMismatch(err) {
+			m2, mErr := fetchManifest(ctx, o.HTTPClient, o.ServerURL, true)
+			if mErr != nil {
+				return res, fmt.Errorf("%w; force-refresh failed: %v", err, mErr)
+			}
+			bin2, ok2 := m2.Binaries[key]
+			if !ok2 || bin2.URL == "" || bin2.SHA256 == "" {
+				return res, fmt.Errorf("%w; refreshed manifest has no entry for %s", err, key)
+			}
+			res.To = m2.Version
+			if err2 := downloadAndVerify(ctx, o.HTTPClient, bin2.URL, bin2.SHA256, tmpPath); err2 != nil {
+				_ = os.Remove(tmpPath)
+				return res, fmt.Errorf("post-refresh: %w", err2)
+			}
+		} else {
+			return res, err
+		}
 	}
 	if err := os.Chmod(tmpPath, 0o755); err != nil {
 		_ = os.Remove(tmpPath)
@@ -131,8 +150,11 @@ func Run(ctx context.Context, o Options) (Result, error) {
 	return res, nil
 }
 
-func fetchManifest(ctx context.Context, cli *http.Client, base string) (*Manifest, error) {
+func fetchManifest(ctx context.Context, cli *http.Client, base string, force bool) (*Manifest, error) {
 	url := strings.TrimRight(base, "/") + "/v1/agents/latest-version"
+	if force {
+		url += "?fresh=1"
+	}
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, err
@@ -234,6 +256,14 @@ func copyReplace(src, dst string) error {
 		return err
 	}
 	return os.Rename(tmp.Name(), dst)
+}
+
+// isSHAMismatch matches the error string downloadAndVerify produces when the
+// fetched binary's hash disagrees with the manifest. We compare on substring
+// rather than introducing a sentinel error so the existing detail (want/got
+// hashes) stays visible in the wrapped %w chain.
+func isSHAMismatch(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "sha256 mismatch")
 }
 
 // normalizeVersion strips a leading "v" so "v0.1.5" matches "0.1.5". Returns

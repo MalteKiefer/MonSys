@@ -260,7 +260,7 @@ func (s *Server) handleInstallScript(w http.ResponseWriter, r *http.Request) {
 	if s.AgentUpdate != nil {
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
-		if m, err := s.AgentUpdate.Latest(ctx); err == nil && m != nil {
+		if m, err := s.AgentUpdate.Latest(ctx, false); err == nil && m != nil {
 			if b, ok := m.Binaries["linux/amd64"]; ok {
 				amd64URL, amd64Sum = b.URL, b.SHA256
 			}

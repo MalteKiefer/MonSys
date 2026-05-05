@@ -960,19 +960,21 @@ type ingestOutput struct {
 	Body apitypes.IngestResponse
 }
 
-type agentLatestInput struct{}
+type agentLatestInput struct {
+	Fresh bool `query:"fresh" doc:"if true, force the resolver to bypass its cache and re-fetch the upstream manifest. Rate-limited server-side; safe to call after a SHA mismatch."`
+}
 
 type agentLatestOutput struct {
 	Body agentupdate.Manifest
 }
 
-func (s *Server) handleAgentLatestVersion(ctx context.Context, _ *agentLatestInput) (*agentLatestOutput, error) {
+func (s *Server) handleAgentLatestVersion(ctx context.Context, in *agentLatestInput) (*agentLatestOutput, error) {
 	if s.AgentUpdate == nil {
 		return nil, huma.Error404NotFound("agent update resolver not configured")
 	}
-	m, err := s.AgentUpdate.Latest(ctx)
+	m, err := s.AgentUpdate.Latest(ctx, in.Fresh)
 	if err != nil {
-		slog.Warn("agent latest-version: resolver failed", "err", err)
+		slog.Warn("agent latest-version: resolver failed", "err", err, "fresh", in.Fresh)
 		return nil, huma.Error503ServiceUnavailable("agent update resolver unavailable")
 	}
 	return &agentLatestOutput{Body: *m}, nil

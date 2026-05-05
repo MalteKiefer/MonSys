@@ -41,14 +41,19 @@ type Manifest struct {
 
 // Resolver fetches and caches the latest manifest.
 type Resolver struct {
-	mu     sync.Mutex
-	cached *Manifest
+	mu             sync.Mutex
+	cached         *Manifest
+	lastForceFetch time.Time
 
 	repo      string // owner/repo for github mode (default "MalteKiefer/MonSys")
 	tag       string // "latest" rolling pre-release, or a specific tag like "v0.1.5"
 	staticVer string // if set, static mode — env-driven manifest
 	cli       *http.Client
 }
+
+// forceMinInterval rate-limits ?fresh=1 callers so an agent stuck in a SHA
+// mismatch loop can't drown the upstream API with refresh requests.
+const forceMinInterval = 60 * time.Second
 
 // NewFromEnv reads operator overrides and returns a configured resolver.
 //
@@ -72,11 +77,22 @@ func NewFromEnv() *Resolver {
 }
 
 // Latest returns the cached manifest, refreshing if older than 1h or absent.
-func (r *Resolver) Latest(ctx context.Context) (*Manifest, error) {
+// `force` bypasses the cache entirely and re-fetches upstream, but is itself
+// rate-limited to one forced refresh per forceMinInterval to keep a flapping
+// agent from hammering the GitHub API.
+func (r *Resolver) Latest(ctx context.Context, force bool) (*Manifest, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.cached != nil && time.Since(r.cached.CheckedAt) < time.Hour {
+	if force && time.Since(r.lastForceFetch) < forceMinInterval {
+		// Within the cooldown window: act as if force=false. The caller still
+		// gets the freshest data we have without us reaching out again.
+		force = false
+	}
+	if !force && r.cached != nil && time.Since(r.cached.CheckedAt) < time.Hour {
 		return r.cached, nil
+	}
+	if force {
+		r.lastForceFetch = time.Now()
 	}
 	var (
 		m   *Manifest
