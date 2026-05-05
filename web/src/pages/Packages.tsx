@@ -1,14 +1,15 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { Search } from "lucide-react";
+import { ChevronDown, ChevronRight, Search, ShieldAlert } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
+import { Page } from "../components/page";
 import {
   Empty,
   Panel,
   PanelBody,
   PanelHeader,
-  SectionHeading,
+  Skeleton,
   TBody,
   TD,
   TH,
@@ -20,18 +21,42 @@ import { api } from "../lib/api";
 import { GlobalPackageRow, Host } from "../lib/types";
 import { hostDisplay } from "../lib/utils";
 
-const MANAGERS = ["", "dpkg", "rpm", "pacman", "apk"] as const;
-const PAGE_SIZE = 50;
+// Manager option list. Internally the API uses dpkg/rpm/pacman/apk; the spec
+// asks for human-friendly labels (apt/dnf/pacman/apk) — we map between them.
+const MANAGERS: Array<{ value: string; label: string }> = [
+  { value: "", label: "All managers" },
+  { value: "dpkg", label: "apt (dpkg)" },
+  { value: "rpm", label: "dnf (rpm)" },
+  { value: "pacman", label: "pacman" },
+  { value: "apk", label: "apk" },
+];
+
+const PAGE_SIZE = 200;
+const HOST_PREVIEW = 5;
 
 type Resp = { total: number; limit: number; offset: number; packages: GlobalPackageRow[] };
 type HostsResp = { hosts: Host[] };
+
+// `is_security` isn't on GlobalPackageRow. As a best-effort heuristic for the
+// security-only toggle, look for `*-security` source repos (Debian/Ubuntu's
+// suite naming) or "security" tokens in the source path. Other distros tend
+// not to encode that signal here, so the toggle is a pragmatic filter, not a
+// CVE classifier.
+function isSecurityRow(p: GlobalPackageRow): boolean {
+  const repo = (p.source_repo ?? "").toLowerCase();
+  return repo.includes("security");
+}
 
 export function Packages() {
   const [q, setQ] = useState("");
   const [debounced, setDebounced] = useState("");
   const [manager, setManager] = useState<string>("");
   const [hostID, setHostID] = useState<string>("");
+  const [securityOnly, setSecurityOnly] = useState(false);
   const [offset, setOffset] = useState(0);
+  // Track which host sections are expanded. Default = collapsed; we open the
+  // first group below so the user always sees something useful at-a-glance.
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   // Debounce the query so we don't hit the server on every keystroke.
   useEffect(() => {
@@ -42,7 +67,7 @@ export function Packages() {
   // Reset pagination when filters change.
   useEffect(() => {
     setOffset(0);
-  }, [debounced, manager, hostID]);
+  }, [debounced, manager, hostID, securityOnly]);
 
   const hosts = useQuery({
     queryKey: ["hosts-for-filter"],
@@ -67,19 +92,60 @@ export function Packages() {
 
   const data = search.data;
   const total = data?.total ?? 0;
-  const rows = data?.packages ?? [];
+  const allRows = data?.packages ?? [];
+  const rows = useMemo(
+    () => (securityOnly ? allRows.filter(isSecurityRow) : allRows),
+    [allRows, securityOnly],
+  );
+
+  // Group rows by host for the collapsible-per-host layout. Order groups by
+  // descending row count so heavy hosts sort first.
+  const groups = useMemo(() => {
+    const byHost = new Map<string, { hostID: string; hostname: string; rows: GlobalPackageRow[] }>();
+    for (const r of rows) {
+      const cur = byHost.get(r.host_id) ?? { hostID: r.host_id, hostname: r.hostname, rows: [] };
+      cur.rows.push(r);
+      byHost.set(r.host_id, cur);
+    }
+    return [...byHost.values()].sort((a, b) => b.rows.length - a.rows.length);
+  }, [rows]);
+
+  // Auto-expand the first group when results change so the page never reads
+  // as a wall of collapsed sections.
+  useEffect(() => {
+    if (groups.length === 0) return;
+    setExpanded((prev) => {
+      if (Object.keys(prev).length > 0) return prev;
+      return { [groups[0].hostID]: true };
+    });
+  }, [groups]);
+
+  // Map host_id → Host so we can render the canonical hostDisplay (which
+  // also surfaces friendly labels). The packages endpoint only returns the
+  // raw hostname; this lookup fills in the rest.
+  const hostByID = useMemo(() => {
+    const m = new Map<string, Host>();
+    for (const h of hosts.data?.hosts ?? []) m.set(h.id, h);
+    return m;
+  }, [hosts.data?.hosts]);
+
+  function toggle(id: string) {
+    setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
+  }
+
+  const subtitle = (
+    <span className="tabular-nums">
+      {securityOnly ? `${rows.length} security · ` : ""}
+      {total} total matches
+    </span>
+  );
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4 p-6">
-      <div className="flex items-center justify-between">
-        <SectionHeading>Packages</SectionHeading>
-        <p className="text-xs tabular-nums text-fg-subtle">{total} matches</p>
-      </div>
-
+    <Page title="Packages" subtitle={subtitle}>
       <Panel>
         <PanelHeader>
-          <div className="flex w-full items-center gap-3">
-            <div className="relative flex-1">
+          <div className="flex w-full flex-wrap items-center gap-3">
+            <div className="relative min-w-[220px] flex-1">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-subtle" />
               <TextInput
                 type="search"
@@ -94,10 +160,11 @@ export function Packages() {
               value={manager}
               onChange={(e) => setManager(e.target.value)}
               className="rounded-md border border-border bg-panel px-3 py-2 text-sm text-fg focus:border-accent focus:outline-none"
+              aria-label="Filter by package manager"
             >
               {MANAGERS.map((m) => (
-                <option key={m} value={m}>
-                  {m === "" ? "All managers" : m}
+                <option key={m.value} value={m.value}>
+                  {m.label}
                 </option>
               ))}
             </select>
@@ -105,6 +172,7 @@ export function Packages() {
               value={hostID}
               onChange={(e) => setHostID(e.target.value)}
               className="max-w-[220px] truncate rounded-md border border-border bg-panel px-3 py-2 text-sm text-fg focus:border-accent focus:outline-none"
+              aria-label="Filter by host"
             >
               <option value="">All hosts</option>
               {hosts.data?.hosts?.map((h) => (
@@ -113,52 +181,111 @@ export function Packages() {
                 </option>
               ))}
             </select>
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border bg-panel px-3 py-2 text-sm text-fg-muted hover:border-border-strong">
+              <input
+                type="checkbox"
+                checked={securityOnly}
+                onChange={(e) => setSecurityOnly(e.target.checked)}
+                className="h-3.5 w-3.5 accent-accent"
+              />
+              <ShieldAlert className={`h-3.5 w-3.5 ${securityOnly ? "text-warn" : "text-fg-subtle"}`} />
+              Security only
+            </label>
           </div>
         </PanelHeader>
         <PanelBody className="p-0">
           {search.isLoading ? (
-            <p className="px-5 py-8 text-sm text-fg-subtle">Loading…</p>
-          ) : rows.length === 0 ? (
+            <div className="p-5">
+              <Skeleton className="h-48" />
+            </div>
+          ) : groups.length === 0 ? (
             <Empty>No packages match.</Empty>
           ) : (
-            <Table>
-              <THead>
-                <tr>
-                  <TH>Manager</TH>
-                  <TH>Name</TH>
-                  <TH>Version</TH>
-                  <TH>Arch</TH>
-                  <TH>Source</TH>
-                  <TH>Host</TH>
-                </tr>
-              </THead>
-              <TBody>
-                {rows.map((p, i) => (
-                  <tr key={`${p.host_id}-${p.manager}-${p.name}-${i}`} className="hover:bg-panel-2">
-                    <TD className="text-fg-muted">{p.manager}</TD>
-                    <TD className="font-mono text-fg">{p.name}</TD>
-                    <TD className="font-mono text-xs text-fg-muted">{p.version}</TD>
-                    <TD className="text-fg-subtle">{p.arch || "—"}</TD>
-                    <TD className="text-fg-subtle">{p.source_repo || "—"}</TD>
-                    <TD>
+            <ul className="divide-y divide-border">
+              {groups.map((g) => {
+                const isOpen = !!expanded[g.hostID];
+                const host = hostByID.get(g.hostID);
+                const display = host ? hostDisplay(host) : g.hostname;
+                const preview = isOpen ? g.rows : g.rows.slice(0, HOST_PREVIEW);
+                const remaining = Math.max(0, g.rows.length - HOST_PREVIEW);
+                return (
+                  <li key={g.hostID}>
+                    <button
+                      type="button"
+                      onClick={() => toggle(g.hostID)}
+                      aria-expanded={isOpen}
+                      className="flex w-full items-center gap-2 px-5 py-2.5 text-left text-sm font-medium text-fg hover:bg-panel-2"
+                    >
+                      {isOpen ? (
+                        <ChevronDown className="h-3.5 w-3.5 text-fg-subtle" />
+                      ) : (
+                        <ChevronRight className="h-3.5 w-3.5 text-fg-subtle" />
+                      )}
                       <Link
-                        to={`/hosts/${p.host_id}`}
-                        className="text-accent hover:text-accent-hover hover:underline"
+                        to={`/hosts/${g.hostID}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="hover:text-accent hover:underline"
                       >
-                        {/* TODO: pass labels for display */}
-                        {p.hostname}
+                        {display}
                       </Link>
-                    </TD>
-                  </tr>
-                ))}
-              </TBody>
-            </Table>
+                      <span className="ml-auto text-xs tabular-nums text-fg-subtle">
+                        {g.rows.length} {g.rows.length === 1 ? "package" : "packages"}
+                      </span>
+                    </button>
+                    {(isOpen || preview.length > 0) && (
+                      <div className="overflow-x-auto">
+                        <Table>
+                          <THead>
+                            <tr>
+                              <TH>Manager</TH>
+                              <TH>Name</TH>
+                              <TH>Version</TH>
+                              <TH>Arch</TH>
+                              <TH>Source</TH>
+                            </tr>
+                          </THead>
+                          <TBody>
+                            {preview.map((p, i) => (
+                              <tr
+                                key={`${p.host_id}-${p.manager}-${p.name}-${i}`}
+                                className="hover:bg-panel-2"
+                              >
+                                <TD className="text-fg-muted">{p.manager}</TD>
+                                <TD className="font-mono text-fg">{p.name}</TD>
+                                <TD className="font-mono text-xs text-fg-muted">{p.version}</TD>
+                                <TD className="text-fg-subtle">{p.arch || "—"}</TD>
+                                <TD
+                                  className={
+                                    isSecurityRow(p) ? "text-warn" : "text-fg-subtle"
+                                  }
+                                >
+                                  {p.source_repo || "—"}
+                                </TD>
+                              </tr>
+                            ))}
+                          </TBody>
+                        </Table>
+                      </div>
+                    )}
+                    {!isOpen && remaining > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => toggle(g.hostID)}
+                        className="block w-full px-5 py-2 text-left text-xs text-accent hover:bg-panel-2 hover:underline"
+                      >
+                        View all {g.rows.length} packages →
+                      </button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
           )}
         </PanelBody>
         {total > PAGE_SIZE && (
           <div className="flex items-center justify-between border-t border-border px-5 py-3 text-xs text-fg-muted">
             <span className="tabular-nums">
-              {offset + 1}–{Math.min(offset + rows.length, total)} of {total}
+              {offset + 1}–{Math.min(offset + allRows.length, total)} of {total}
             </span>
             <div className="flex items-center gap-2">
               <button
@@ -179,6 +306,6 @@ export function Packages() {
           </div>
         )}
       </Panel>
-    </div>
+    </Page>
   );
 }

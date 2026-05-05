@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, PencilLine, Plus, Settings, Trash2 } from "lucide-react";
-import { FormEvent, useState } from "react";
+import { Eye, Layers, PencilLine, Plus, Settings, Trash2 } from "lucide-react";
+import { FormEvent, useMemo, useState } from "react";
 
+import { Page } from "../components/page";
 import {
   Button,
   Empty,
@@ -10,6 +11,7 @@ import {
   Panel,
   PanelBody,
   PanelHeader,
+  Skeleton,
   StatusPill,
   TBody,
   TD,
@@ -52,16 +54,10 @@ export function AdminAgentConfig() {
   const [previewHost, setPreviewHost] = useState<Host | null>(null);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-5 p-6">
-      <header>
-        <h2 className="text-lg font-semibold tracking-tight">Agent configuration</h2>
-        <p className="text-sm text-fg-muted">
-          Server-managed knobs the agent applies after first start. Host
-          overrides take precedence over group overrides, group overrides over
-          global. Missing keys fall back to the agent's compiled defaults.
-        </p>
-      </header>
-
+    <Page
+      title="Agent configuration"
+      subtitle="Server-managed knobs the agent applies after first start. Host overrides take precedence over group overrides, group overrides over global. Missing keys fall back to the agent's compiled defaults."
+    >
       {(creating || editing) && (
         <ConfigForm
           initial={editing}
@@ -79,7 +75,13 @@ export function AdminAgentConfig() {
         />
       )}
 
-      {previewHost && <PreviewPanel host={previewHost} onClose={() => setPreviewHost(null)} />}
+      {previewHost && (
+        <PreviewPanel
+          host={previewHost}
+          allConfigs={list.data?.configs ?? []}
+          onClose={() => setPreviewHost(null)}
+        />
+      )}
 
       <Panel>
         <PanelHeader>
@@ -114,7 +116,9 @@ export function AdminAgentConfig() {
         </PanelHeader>
         <PanelBody className="p-0 overflow-x-auto">
           {list.isLoading ? (
-            <p className="px-5 py-4 text-sm text-fg-subtle">Loading…</p>
+            <div className="p-5">
+              <Skeleton className="h-32" />
+            </div>
           ) : (list.data?.configs ?? []).length === 0 ? (
             <Empty>No configs yet.</Empty>
           ) : (
@@ -176,7 +180,7 @@ export function AdminAgentConfig() {
           )}
         </PanelBody>
       </Panel>
-    </div>
+    </Page>
   );
 }
 
@@ -186,33 +190,286 @@ function scopeColor(scope: AgentConfigEntry["scope"]): "ok" | "warn" | "info" {
   return "ok";
 }
 
-function PreviewPanel({ host, onClose }: { host: Host; onClose: () => void }) {
+// ---- Resolved config preview / diff view ----------------------------------
+
+type Origin = "default" | "global" | "group" | "host";
+
+// Walk the resolved config and tag each leaf field with the origin layer that
+// supplied it. The server returns the merge result + the ordered list of
+// scopes that contributed; we walk the per-scope drafts (computed from the
+// list query) in the same order to attribute each leaf to its winning layer.
+// Pure JSON tree-view — no diff library.
+
+type LeafValue = string | number | boolean | null;
+
+// Flatten a config object into a map of dotted keypath → leaf value. Arrays
+// are stringified as JSON because the agent treats `days` and `schedules` as
+// opaque list overrides (the engine replaces, not merges).
+function flatten(obj: unknown, prefix = "", out: Record<string, LeafValue> = {}): Record<string, LeafValue> {
+  if (obj === null || obj === undefined) return out;
+  if (Array.isArray(obj)) {
+    out[prefix] = JSON.stringify(obj);
+    return out;
+  }
+  if (typeof obj !== "object") {
+    out[prefix] = obj as LeafValue;
+    return out;
+  }
+  for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+    const key = prefix ? `${prefix}.${k}` : k;
+    if (v !== null && typeof v === "object" && !Array.isArray(v)) {
+      flatten(v, key, out);
+    } else if (Array.isArray(v)) {
+      out[key] = JSON.stringify(v);
+    } else {
+      out[key] = (v ?? null) as LeafValue;
+    }
+  }
+  return out;
+}
+
+// For each leaf in `final`, find which layer (global/group/host) supplied the
+// winning value by scanning layers from most specific to least specific. If
+// no layer has the key, attribute to "default" (agent's compiled fallback).
+function attributeOrigins(
+  final: AgentConfig,
+  layers: { scope: Origin; cfg: AgentConfig }[],
+): Record<string, Origin> {
+  const flat = flatten(final);
+  const layerFlat = layers.map((l) => ({ scope: l.scope, flat: flatten(l.cfg) }));
+  const origin: Record<string, Origin> = {};
+  for (const [key, finalVal] of Object.entries(flat)) {
+    let attributed: Origin = "default";
+    // Most-specific first: host wins, then group, then global. We compare
+    // string-encoded values so arrays/objects collapse identically.
+    for (const layer of [...layerFlat].reverse()) {
+      if (key in layer.flat && String(layer.flat[key]) === String(finalVal)) {
+        attributed = layer.scope;
+        break;
+      }
+    }
+    origin[key] = attributed;
+  }
+  return origin;
+}
+
+function originLabel(o: Origin): string {
+  return o;
+}
+
+function originPillStatus(o: Origin): "info" | "warn" | "ok" | "offline" {
+  if (o === "global") return "info";
+  if (o === "group") return "warn";
+  if (o === "host") return "ok";
+  return "offline";
+}
+
+// Render a JSON tree with per-leaf origin tags. Host-sourced leaves get a
+// `text-accent` highlight per spec.
+function JsonTree({
+  value,
+  origins,
+  path = "",
+}: {
+  value: unknown;
+  origins: Record<string, Origin>;
+  path?: string;
+}) {
+  if (value === null || value === undefined) {
+    return <span className="text-fg-subtle">null</span>;
+  }
+  if (Array.isArray(value)) {
+    const o = origins[path] ?? "default";
+    const cls = o === "host" ? "text-accent" : "text-fg";
+    return (
+      <span className={`font-mono ${cls}`}>{JSON.stringify(value)}</span>
+    );
+  }
+  if (typeof value !== "object") {
+    const o = origins[path] ?? "default";
+    const cls = o === "host" ? "text-accent" : "text-fg";
+    return (
+      <span className={`font-mono ${cls}`}>{JSON.stringify(value)}</span>
+    );
+  }
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.length === 0) {
+    return <span className="text-fg-subtle">{"{}"}</span>;
+  }
+  return (
+    <div className="space-y-0.5">
+      {entries.map(([k, v]) => {
+        const childPath = path ? `${path}.${k}` : k;
+        const isObj = v !== null && typeof v === "object" && !Array.isArray(v);
+        // Find the deepest origin attached to anything inside this subtree;
+        // for object nodes we surface the children's origins individually so
+        // the parent label is "—". For leaves and arrays we look up directly.
+        const leafOrigin: Origin | null = isObj ? null : origins[childPath] ?? "default";
+        const keyCls = leafOrigin === "host" ? "text-accent" : "text-fg-muted";
+        return (
+          <div key={k} className="flex items-baseline gap-2 text-[12px] leading-relaxed">
+            <span className={`font-mono ${keyCls}`}>{k}:</span>
+            {isObj ? (
+              <div className="border-l border-border pl-3">
+                <JsonTree value={v} origins={origins} path={childPath} />
+              </div>
+            ) : (
+              <>
+                <JsonTree value={v} origins={origins} path={childPath} />
+                {leafOrigin && leafOrigin !== "default" && (
+                  <span
+                    className={`ml-1 rounded px-1 py-px text-[9px] font-mono uppercase tracking-wide ring-1 ring-inset ${
+                      leafOrigin === "host"
+                        ? "bg-accent/15 text-accent ring-accent/30"
+                        : leafOrigin === "group"
+                          ? "bg-warn/10 text-warn ring-warn/30"
+                          : "bg-info/10 text-info ring-info/30"
+                    }`}
+                  >
+                    {leafOrigin}
+                  </span>
+                )}
+              </>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function PreviewPanel({
+  host,
+  allConfigs,
+  onClose,
+}: {
+  host: Host;
+  allConfigs: AgentConfigEntry[];
+  onClose: () => void;
+}) {
   const preview = useQuery({
     queryKey: ["agent-config-preview", host.id],
     queryFn: () => api<AgentConfigResolved>(`/v1/admin/agent-config/preview/${host.id}`),
   });
+
+  // Source layers, ordered global → group(s) → host. Group rows are kept in
+  // the order the host's group memberships are listed; the server applies
+  // them in deterministic order so any ordering difference would surface as
+  // a mismatched origin pill, which is itself a useful signal.
+  const layers = useMemo(() => {
+    const enabled = allConfigs.filter((c) => c.enabled);
+    const globalCfg = enabled.find((c) => c.scope === "global");
+    const hostCfg = enabled.find((c) => c.scope === "host" && c.target_id === host.id);
+    const groupIDs = new Set(host.groups.map((g) => g.id));
+    const groupCfgs = enabled.filter(
+      (c) => c.scope === "group" && c.target_id && groupIDs.has(c.target_id),
+    );
+    const list: {
+      scope: Origin;
+      label: string;
+      entry?: AgentConfigEntry;
+      cfg: AgentConfig;
+    }[] = [];
+    if (globalCfg) list.push({ scope: "global", label: "global", entry: globalCfg, cfg: globalCfg.config });
+    for (const g of groupCfgs) {
+      list.push({
+        scope: "group",
+        label: `group · ${g.target_name ?? g.target_id?.slice(0, 8) ?? ""}`,
+        entry: g,
+        cfg: g.config,
+      });
+    }
+    if (hostCfg) list.push({ scope: "host", label: `host · ${hostDisplay(host)}`, entry: hostCfg, cfg: hostCfg.config });
+    return list;
+  }, [allConfigs, host]);
+
+  const origins = useMemo(() => {
+    const cfg = preview.data?.config ?? {};
+    return attributeOrigins(cfg, layers.map((l) => ({ scope: l.scope, cfg: l.cfg })));
+  }, [preview.data, layers]);
+
   return (
     <Panel>
       <PanelHeader>
         <div className="flex items-center gap-2">
           <Eye className="h-4 w-4 text-fg-muted" />
-          <h3 className="text-sm font-semibold">Preview · {hostDisplay(host)}</h3>
+          <h3 className="text-sm font-semibold">Resolved config preview · {hostDisplay(host)}</h3>
         </div>
         <Button onClick={onClose}>Close</Button>
       </PanelHeader>
       <PanelBody>
         {preview.isLoading ? (
-          <p className="text-sm text-fg-subtle">Resolving…</p>
+          <Skeleton className="h-48" />
         ) : preview.error ? (
           <ErrorBox>{(preview.error as Error).message}</ErrorBox>
         ) : (
           <>
-            <p className="mb-2 text-xs text-fg-subtle">
-              Sources merged: <span className="font-mono text-fg-muted">{preview.data?.source_scopes.join(" → ") || "(defaults only)"}</span>
+            <p className="mb-3 text-xs text-fg-subtle">
+              Sources merged:{" "}
+              <span className="font-mono text-fg-muted">
+                {preview.data?.source_scopes.join(" → ") || "(defaults only)"}
+              </span>
             </p>
-            <pre className="rounded-md border border-border bg-bg p-3 font-mono text-[11px] leading-relaxed text-fg overflow-auto">
-{JSON.stringify(preview.data?.config ?? {}, null, 2)}
-            </pre>
+
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              {/* Left — source layers */}
+              <section className="space-y-3">
+                <h4 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">
+                  <Layers className="h-3 w-3" /> Source layers
+                </h4>
+                {layers.length === 0 ? (
+                  <p className="rounded-md border border-dashed border-border p-3 text-xs text-fg-subtle">
+                    No matching layers — agent uses compiled defaults.
+                  </p>
+                ) : (
+                  layers.map((layer, i) => (
+                    <div
+                      key={i}
+                      className="rounded-md border border-border bg-panel-2 p-3"
+                    >
+                      <div className="mb-2 flex items-center gap-2 text-xs">
+                        <StatusPill status={originPillStatus(layer.scope)}>
+                          {originLabel(layer.scope)}
+                        </StatusPill>
+                        <span className="font-mono text-fg-muted">{layer.label}</span>
+                        {layer.entry?.description && (
+                          <span className="truncate text-fg-subtle">— {layer.entry.description}</span>
+                        )}
+                      </div>
+                      <pre className="overflow-auto rounded-md border border-border bg-bg p-2 font-mono text-[11px] leading-relaxed text-fg">
+{JSON.stringify(layer.cfg, null, 2)}
+                      </pre>
+                    </div>
+                  ))
+                )}
+              </section>
+
+              {/* Right — final merged */}
+              <section className="space-y-3">
+                <h4 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">
+                  <Eye className="h-3 w-3" /> Final config
+                  <span className="ml-auto inline-flex items-center gap-2 text-[10px] font-normal normal-case tracking-normal text-fg-subtle">
+                    origin tags:
+                    <StatusPill status="info">global</StatusPill>
+                    <StatusPill status="warn">group</StatusPill>
+                    <StatusPill status="ok">host</StatusPill>
+                  </span>
+                </h4>
+                <div className="rounded-md border border-border bg-bg p-3">
+                  {Object.keys(preview.data?.config ?? {}).length === 0 ? (
+                    <p className="text-xs text-fg-subtle">
+                      No keys set. Agent applies its compiled defaults verbatim.
+                    </p>
+                  ) : (
+                    <JsonTree value={preview.data?.config ?? {}} origins={origins} />
+                  )}
+                </div>
+                <p className="text-[11px] text-fg-subtle">
+                  Host-sourced fields are highlighted in <span className="text-accent">accent</span>;
+                  group / global tags appear next to each leaf.
+                </p>
+              </section>
+            </div>
           </>
         )}
       </PanelBody>

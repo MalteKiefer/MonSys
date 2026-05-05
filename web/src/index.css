@@ -35,6 +35,12 @@
        truth for the header's effective height — adjust here, all dependents
        follow. */
     --header-h: 49px;
+
+    /* Minimum tap-target size for interactive primitives. 36px hits both
+       Apple's HIG and Material's "comfortable" lower bound on phones while
+       staying compact enough that desktop tables don't blow out. Used by
+       `Button`, `TextInput`, etc. */
+    --touch-min: 36px;
   }
 
   /* Dark palette — exact preservation of the previous hard-dark values so
@@ -64,7 +70,20 @@
   }
   body {
     font-family: theme("fontFamily.sans");
-    font-feature-settings: "cv11", "ss01";
+    /* tabular numerics ("tnum") are enabled globally so any number — even
+       outside explicit `tabular-nums` utilities — stays column-aligned in
+       tables, audit logs, and metric panels. `cv11` keeps Inter's preferred
+       single-storey alternates. */
+    font-feature-settings: "tnum", "cv11", "ss01";
+  }
+
+  /* Single global focus-visible reset (vs. a Tailwind utility) — avoids
+     having to remember `focus-visible:outline-...` on every interactive
+     element across pages we don't own. The accent token tracks the active
+     palette, so dark/light both get a tinted ring. */
+  :focus-visible {
+    outline: 2px solid rgb(var(--color-accent) / 0.6);
+    outline-offset: 2px;
   }
   /* Scrollbar tuned for the active palette. Tailwind's `theme()` helper
      can't read CSS variables, so we drive these straight from the same
@@ -87,4 +106,32 @@
   .u-legend { color: rgb(var(--color-fg-muted)); }
   .u-legend th { color: rgb(var(--color-fg-subtle)); font-weight: 500; }
   .u-cursor-pt { box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.4); }
+}
+
+/* -------------------------------------------------------------------------
+   Density mode
+   -------------------------------------------------------------------------
+   Driven by `<html data-density="compact|comfortable">` set by
+   `DensityProvider` (see src/lib/density-store.ts). Default (no attribute,
+   or `comfortable`) leaves the existing layout untouched — these rules are
+   purely additive. Three high-impact tweaks were chosen:
+     1. Tighter `Panel` body padding (p-5 → p-3 equivalent).
+     2. Tighter `Table` cell padding (px-3 py-2 → px-2 py-1.5 equivalent).
+     3. Reduced row line-height inside tables so multi-row data lists pack
+        more rows into the same vertical area.
+   We target structural classes from `components/ui/index.tsx` so the
+   pages don't need any per-page work. */
+html[data-density="compact"] section.bg-panel > div.p-5 {
+  padding: 0.75rem 1rem; /* p-3 px-4 */
+}
+html[data-density="compact"] table.w-full.text-sm th,
+html[data-density="compact"] table.w-full.text-sm td {
+  padding-top: 0.375rem;    /* py-1.5 */
+  padding-bottom: 0.375rem;
+  padding-left: 0.5rem;     /* px-2 */
+  padding-right: 0.5rem;
+}
+html[data-density="compact"] table.w-full.text-sm {
+  font-size: 12.5px;
+  line-height: 1.35;
 }

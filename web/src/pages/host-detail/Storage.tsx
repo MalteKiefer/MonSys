@@ -1,0 +1,159 @@
+import { useQuery } from "@tanstack/react-query";
+import { HardDrive } from "lucide-react";
+import { useMemo, useState } from "react";
+
+import {
+  ChartLine,
+  ChartSeries,
+  colorFor,
+  formatBytes,
+  formatBytesPerSec,
+  rateOfChange,
+} from "../../components/Chart";
+import {
+  Empty,
+  Panel,
+  PanelBody,
+  PanelHeader,
+  PercentBar,
+  Skeleton,
+  TBody,
+  TD,
+  TH,
+  THead,
+  Table,
+  TimeRangeSelector,
+} from "../../components/ui";
+import { api } from "../../lib/api";
+import { DiskRow, DiskSample } from "../../lib/types";
+
+import { useHostDetail } from "./HostLayout";
+
+// Storage tab: per-mount disk I/O chart on top, snapshot of mount usage below.
+export function Storage() {
+  const { detail, hostId } = useHostDetail();
+  const [rangeSec, setRangeSec] = useState(60 * 60);
+
+  const fromTo = useMemo(() => {
+    const to = new Date();
+    const from = new Date(to.getTime() - rangeSec * 1000);
+    return `from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`;
+  }, [rangeSec]);
+
+  const disk = useQuery({
+    queryKey: ["host-disk", hostId, rangeSec],
+    queryFn: () => api<{ samples: DiskSample[] }>(`/v1/hosts/${hostId}/metrics/disk?${fromTo}`),
+    refetchInterval: 30_000,
+    enabled: !!hostId,
+  });
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <h2 className="text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">I/O over time</h2>
+        <TimeRangeSelector value={rangeSec} onChange={setRangeSec} />
+      </div>
+      <DiskIOPanel samples={disk.data?.samples ?? []} disks={detail.disks} loading={disk.isLoading} />
+      <Panel>
+        <PanelHeader><h3 className="text-sm font-semibold">Mounts ({detail.disks.length})</h3></PanelHeader>
+        <PanelBody className="p-0 overflow-x-auto"><DisksTable rows={detail.disks} /></PanelBody>
+      </Panel>
+    </div>
+  );
+}
+
+// ---- Disks table --------------------------------------------------------
+
+function DisksTable({ rows }: { rows: DiskRow[] }) {
+  if (rows.length === 0) return <Empty>No disks.</Empty>;
+  return (
+    <Table>
+      <THead>
+        <tr><TH>Mount</TH><TH>Device</TH><TH>FS</TH><TH>Size</TH><TH>Used</TH><TH>Free</TH><TH>Use</TH></tr>
+      </THead>
+      <TBody>
+        {rows.map((d) => {
+          const usedPct = d.size_bytes > 0 ? (d.used_bytes / d.size_bytes) * 100 : 0;
+          return (
+            <tr key={d.id} className="hover:bg-panel-2">
+              <TD className="font-mono text-xs">{d.mountpoint}</TD>
+              <TD className="font-mono text-xs text-fg-muted">{d.device}</TD>
+              <TD className="text-fg-muted">{d.fstype || "—"}</TD>
+              <TD className="tabular-nums text-fg-muted">{formatBytes(d.size_bytes)}</TD>
+              <TD className="tabular-nums">{formatBytes(d.used_bytes)}</TD>
+              <TD className="tabular-nums text-fg-muted">{formatBytes(d.free_bytes)}</TD>
+              <TD><PercentBar pct={usedPct} /></TD>
+            </tr>
+          );
+        })}
+      </TBody>
+    </Table>
+  );
+}
+
+// ---- I/O chart ----------------------------------------------------------
+
+function DiskIOPanel({ samples, disks, loading }: { samples: DiskSample[]; disks: DiskRow[]; loading: boolean }) {
+  const { matrix, series } = useMemo(() => {
+    if (samples.length === 0) return { matrix: [[]], series: [] as ChartSeries[] };
+    const byMount = new Map<string, { times: number[]; read: number[]; write: number[] }>();
+    for (const s of samples) {
+      const t = Math.floor(new Date(s.time).getTime() / 1000);
+      const cur = byMount.get(s.mountpoint) ?? { times: [], read: [], write: [] };
+      cur.times.push(t);
+      cur.read.push(s.read_bytes);
+      cur.write.push(s.write_bytes);
+      byMount.set(s.mountpoint, cur);
+    }
+    const timeSet = new Set<number>();
+    byMount.forEach((v) => v.times.forEach((t) => timeSet.add(t)));
+    const times = Array.from(timeSet).sort((a, b) => a - b);
+    const seriesArr: ChartSeries[] = [];
+    const cols: number[][] = [times];
+    let i = 0;
+    byMount.forEach((v, mount) => {
+      cols.push(alignToAxis(times, v.times, rateOfChange(v.times, v.read)));
+      cols.push(alignToAxis(times, v.times, rateOfChange(v.times, v.write)));
+      seriesArr.push({ label: `${mount} read`, color: colorFor(i * 2) });
+      seriesArr.push({ label: `${mount} write`, color: colorFor(i * 2 + 1) });
+      i++;
+    });
+    return { matrix: cols, series: seriesArr };
+  }, [samples]);
+
+  return (
+    <Panel>
+      <PanelHeader>
+        <div className="flex items-center gap-2">
+          <HardDrive className="h-4 w-4 text-fg-muted" />
+          <h3 className="text-sm font-semibold">Disk I/O</h3>
+          <span className="ml-2 text-xs text-fg-subtle">{disks.length} disks · per-second rate</span>
+        </div>
+      </PanelHeader>
+      <PanelBody>
+        {loading && samples.length === 0 ? (
+          <Skeleton className="h-48" />
+        ) : samples.length === 0 ? (
+          <Empty>No disk samples in this range.</Empty>
+        ) : (
+          <ChartLine data={{ matrix }} series={series} formatY={formatBytesPerSec} yMin={0} height={220} />
+        )}
+      </PanelBody>
+    </Panel>
+  );
+}
+
+// alignToAxis fills in zeros for any timestamp the source series didn't sample
+// at. Used to plot multiple per-device series on a unified time axis without
+// uPlot interpolating misleading values across gaps.
+function alignToAxis(target: number[], src: number[], values: number[]): number[] {
+  const out = new Array(target.length).fill(0);
+  let j = 0;
+  for (let i = 0; i < target.length; i++) {
+    while (j < src.length && src[j] < target[i]) j++;
+    if (j < src.length && src[j] === target[i]) {
+      out[i] = values[j];
+    }
+  }
+  return out;
+}

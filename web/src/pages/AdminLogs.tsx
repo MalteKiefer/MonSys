@@ -1,13 +1,16 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { Search } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Pause, Play, Search } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
+import { Page } from "../components/page";
 import {
+  Button,
   Empty,
   Panel,
   PanelBody,
   PanelHeader,
+  Skeleton,
   StatusPill,
   TBody,
   TD,
@@ -21,7 +24,24 @@ import { Host, ServerLogEntry } from "../lib/types";
 import { hostDisplay } from "../lib/utils";
 
 const PAGE_SIZE = 100;
+
+// Server-side level dropdown (single value). Kept alongside the new chip
+// filters so deep filtering by a specific log level still hits the API.
 const LEVELS = ["", "debug", "info", "warn", "error"] as const;
+
+// Client-side multi-select chips. Levels are matched against the entry's
+// `level` field (uppercase). Op chips look at `attrs.op`; we infer the
+// dominant verbs from the codebase rather than guessing — clicking the
+// star chip means "all ops", which is a quick way to clear the op
+// selection.
+const LEVEL_CHIPS: ReadonlyArray<{ key: ServerLogEntry["level"]; label: string }> = [
+  { key: "INFO", label: "INFO" },
+  { key: "WARN", label: "WARN" },
+  { key: "ERROR", label: "ERROR" },
+];
+
+const OP_CHIPS = ["auth", "register", "ingest", "rule", "channel", "agent", "*"] as const;
+type OpChip = (typeof OP_CHIPS)[number];
 
 type Resp = {
   total: number;
@@ -37,7 +57,13 @@ export function AdminLogs() {
   const [level, setLevel] = useState<(typeof LEVELS)[number]>("");
   const [hostID, setHostID] = useState<string>("");
   const [offset, setOffset] = useState(0);
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  // Default off so refetches don't hammer the server unsolicited; users
+  // opt in via the Live tail toggle.
+  const [liveTail, setLiveTail] = useState(false);
+
+  // Multi-select chip filters (client-side over the page we just fetched).
+  const [chipLevels, setChipLevels] = useState<Set<ServerLogEntry["level"]>>(new Set());
+  const [chipOps, setChipOps] = useState<Set<OpChip>>(new Set());
 
   useEffect(() => {
     const t = setTimeout(() => setDebounced(q.trim()), 250);
@@ -69,27 +95,78 @@ export function AdminLogs() {
     queryKey: ["admin-logs", params],
     queryFn: () => api<Resp>(`/v1/admin/logs?${params}`),
     placeholderData: keepPreviousData,
-    refetchInterval: autoRefresh ? 5_000 : false,
+    refetchInterval: liveTail ? 2_000 : false,
   });
 
+  const rawEntries = logs.data?.entries ?? [];
   const total = logs.data?.total ?? 0;
-  const entries = logs.data?.entries ?? [];
+
+  // Apply chip filters client-side. Empty set = no filter for that
+  // dimension (the user doesn't expect "no chips" to mean "no rows").
+  const entries = useMemo(() => {
+    const wantLevels = chipLevels;
+    const wantOps = chipOps;
+    const wildcard = wantOps.has("*");
+    return rawEntries.filter((e) => {
+      if (wantLevels.size > 0 && !wantLevels.has(e.level)) return false;
+      if (wantOps.size > 0 && !wildcard) {
+        const op = typeof e.attrs?.op === "string" ? (e.attrs.op as string) : "";
+        // Match by prefix so e.g. "auth" picks up "auth.login", "auth.logout".
+        let hit = false;
+        for (const want of wantOps) {
+          if (want === "*") continue;
+          if (op === want || op.startsWith(`${want}.`) || op.startsWith(`${want}_`)) {
+            hit = true;
+            break;
+          }
+        }
+        if (!hit) return false;
+      }
+      return true;
+    });
+  }, [rawEntries, chipLevels, chipOps]);
+
+  // Auto-scroll to top when new entries arrive in live mode. We watch
+  // the freshest seq number and the live-tail toggle so a manual refetch
+  // also scrolls if the user explicitly enabled tailing.
+  const tableTopRef = useRef<HTMLDivElement | null>(null);
+  const lastSeqRef = useRef<number>(logs.data?.seq ?? 0);
+  useEffect(() => {
+    const seq = logs.data?.seq ?? 0;
+    if (liveTail && seq > lastSeqRef.current) {
+      tableTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    lastSeqRef.current = seq;
+  }, [logs.data?.seq, liveTail]);
+
+  function toggleChipLevel(k: ServerLogEntry["level"]) {
+    setChipLevels((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
+  }
+  function toggleChipOp(k: OpChip) {
+    setChipOps((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
+  }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4 p-6">
-      <header className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-semibold tracking-tight">Server logs</h2>
-          <p className="text-sm text-fg-muted">
-            In-memory ring buffer. Older entries roll off — ship the JSON
-            stream off-host for retention.
-          </p>
-        </div>
-        <p className="text-xs text-fg-subtle tabular-nums">
+    <Page
+      title="Server logs"
+      subtitle="In-memory ring buffer. Older entries roll off — ship the JSON stream off-host for retention."
+      breadcrumb={[{ label: "Admin" }, { label: "Server logs" }]}
+      actions={
+        <span className="text-xs text-fg-subtle tabular-nums">
           {total} matching · seq {logs.data?.seq ?? 0}
-        </p>
-      </header>
-
+        </span>
+      }
+    >
       <Panel>
         <PanelHeader>
           <div className="flex w-full flex-wrap items-center gap-2">
@@ -125,19 +202,68 @@ export function AdminLogs() {
                 </option>
               ))}
             </select>
-            <label className="inline-flex items-center gap-2 text-xs text-fg-muted">
-              <input
-                type="checkbox"
-                checked={autoRefresh}
-                onChange={(e) => setAutoRefresh(e.target.checked)}
-              />
-              auto-refresh 5s
-            </label>
+            <Button
+              variant={liveTail ? "primary" : "secondary"}
+              size="sm"
+              onClick={() => setLiveTail((v) => !v)}
+              aria-pressed={liveTail}
+              title={liveTail ? "Pause live tail" : "Stream new entries every 2s"}
+            >
+              {liveTail ? (
+                <>
+                  <Pause className="h-3.5 w-3.5" /> Live tail
+                </>
+              ) : (
+                <>
+                  <Play className="h-3.5 w-3.5" /> Live tail
+                </>
+              )}
+            </Button>
           </div>
         </PanelHeader>
+
+        <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-5 py-2.5">
+          <span className="mr-1 text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">
+            Level
+          </span>
+          {LEVEL_CHIPS.map((c) => (
+            <Chip
+              key={c.key}
+              active={chipLevels.has(c.key)}
+              onClick={() => toggleChipLevel(c.key)}
+            >
+              {c.label}
+            </Chip>
+          ))}
+          <span className="mx-2 h-4 w-px bg-border" aria-hidden />
+          <span className="mr-1 text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">
+            Op
+          </span>
+          {OP_CHIPS.map((op) => (
+            <Chip key={op} active={chipOps.has(op)} onClick={() => toggleChipOp(op)}>
+              {op}
+            </Chip>
+          ))}
+          {(chipLevels.size > 0 || chipOps.size > 0) && (
+            <button
+              type="button"
+              onClick={() => {
+                setChipLevels(new Set());
+                setChipOps(new Set());
+              }}
+              className="ml-auto text-[11px] text-fg-subtle hover:text-fg"
+            >
+              clear chips
+            </button>
+          )}
+        </div>
+
         <PanelBody className="p-0 overflow-x-auto">
+          <div ref={tableTopRef} />
           {logs.isLoading ? (
-            <p className="px-5 py-4 text-sm text-fg-subtle">Loading…</p>
+            <div className="p-5">
+              <Skeleton className="h-64" />
+            </div>
           ) : entries.length === 0 ? (
             <Empty>No log entries match.</Empty>
           ) : (
@@ -196,7 +322,33 @@ export function AdminLogs() {
           </div>
         )}
       </Panel>
-    </div>
+    </Page>
+  );
+}
+
+// Compact toggle-able chip. Active styling is the spec-mandated combo.
+function Chip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  const base =
+    "inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-medium font-mono transition-colors duration-150";
+  const off = "border border-border bg-panel text-fg-muted hover:bg-panel-2 hover:text-fg";
+  const on = "bg-panel-2 text-fg ring-1 ring-accent/40";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`${base} ${active ? on : off}`}
+    >
+      {children}
+    </button>
   );
 }
 

@@ -1,8 +1,9 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { ClipboardList } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import { EmptyState, ErrorState, Page } from "../components/page";
 import {
-  Empty,
   Field,
   Panel,
   PanelBody,
@@ -61,18 +62,12 @@ export function AdminAudit() {
   const entries = audit.data?.entries ?? [];
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4 p-6">
-      <header className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-semibold tracking-tight">Audit log</h2>
-          <p className="text-sm text-fg-muted">
-            Server-side record of admin-only actions: who changed what, when.
-            Filter by exact actor email or action key.
-          </p>
-        </div>
-        <p className="text-xs text-fg-subtle tabular-nums">{total} entries</p>
-      </header>
-
+    <Page
+      title="Audit log"
+      subtitle="Server-side record of admin-only actions: who changed what, when. Filter by exact actor email or action key."
+      breadcrumb={[{ label: "Admin" }, { label: "Audit log" }]}
+      actions={<span className="text-xs text-fg-subtle tabular-nums">{total} entries</span>}
+    >
       <Panel>
         <PanelHeader>
           <div className="flex w-full flex-wrap items-end gap-3">
@@ -101,8 +96,19 @@ export function AdminAudit() {
         <PanelBody className="p-0 overflow-x-auto">
           {audit.isLoading ? (
             <p className="px-5 py-4 text-sm text-fg-subtle">Loading…</p>
+          ) : audit.error ? (
+            <div className="p-5">
+              <ErrorState
+                message={(audit.error as Error).message}
+                onRetry={() => audit.refetch()}
+              />
+            </div>
           ) : entries.length === 0 ? (
-            <Empty>No audit entries match.</Empty>
+            <EmptyState
+              icon={ClipboardList}
+              title="No audit entries match."
+              hint="Try clearing the actor or action filter, or check back after an admin action runs."
+            />
           ) : (
             <Table aria-label="Audit log entries">
               <THead>
@@ -166,7 +172,7 @@ export function AdminAudit() {
           </div>
         )}
       </Panel>
-    </div>
+    </Page>
   );
 }
 

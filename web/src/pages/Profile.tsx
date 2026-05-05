@@ -8,10 +8,12 @@ import {
   Panel,
   PanelBody,
   PanelHeader,
+  Skeleton,
   SuccessBox,
   TextInput,
 } from "../components/ui";
 import { api, ApiError } from "../lib/api";
+import { DensityProvider, useDensityStore, type Density } from "../lib/density-store";
 import { CurrentUser, TOTPSetup } from "../lib/types";
 
 type Msg = { kind: "ok" | "err"; text: string } | null;
@@ -23,12 +25,24 @@ export function Profile() {
     queryFn: () => api<CurrentUser>("/v1/auth/me"),
   });
 
-  if (me.isLoading) return <p className="p-6 text-sm text-fg-muted">Loading…</p>;
+  if (me.isLoading)
+    return (
+      <div className="mx-auto max-w-3xl space-y-4 p-6">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-32" />
+        <Skeleton className="h-32" />
+        <Skeleton className="h-48" />
+      </div>
+    );
   if (me.error) return <p className="p-6 text-sm text-fail">{(me.error as Error).message}</p>;
   const user = me.data!;
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 p-6">
+      {/* Mount the html[data-density] side effect from this page. The
+          provider is a no-op render — it just mirrors the persisted store
+          value onto <html>. Remove once App.tsx (Phase A) hosts it. */}
+      <DensityProvider />
       <header>
         <h2 className="text-lg font-semibold text-fg">Profile</h2>
         <p className="text-sm text-fg-muted">
@@ -39,7 +53,49 @@ export function Profile() {
       <ChangeEmailCard onSuccess={() => qc.invalidateQueries({ queryKey: ["me"] })} />
       <ChangePasswordCard />
       <TwoFactorCard active={user.totp_active} onSuccess={() => qc.invalidateQueries({ queryKey: ["me"] })} />
+      <DisplayCard />
     </div>
+  );
+}
+
+function DisplayCard() {
+  const density = useDensityStore((s) => s.density);
+  const setDensity = useDensityStore((s) => s.setDensity);
+  const options: { value: Density; label: string; hint: string }[] = [
+    { value: "compact", label: "Compact", hint: "Denser tables and tighter panels." },
+    { value: "comfortable", label: "Comfortable", hint: "Default spacing." },
+  ];
+  return (
+    <ProfilePanel title="Display">
+      <div className="space-y-3">
+        <p className="text-sm text-fg-muted">
+          Density adjusts table row, panel, and font sizing across the app. The setting is saved
+          to this browser.
+        </p>
+        <div role="radiogroup" aria-label="UI density" className="inline-flex rounded-md border border-border bg-panel p-0.5">
+          {options.map((opt) => {
+            const active = opt.value === density;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                onClick={() => setDensity(opt.value)}
+                className={`min-h-9 rounded px-3 py-1.5 text-sm font-medium transition-colors duration-150 ${
+                  active ? "bg-panel-2 text-fg shadow-panel" : "text-fg-muted hover:text-fg"
+                }`}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-xs text-fg-subtle">
+          {options.find((o) => o.value === density)?.hint}
+        </p>
+      </div>
+    </ProfilePanel>
   );
 }
 

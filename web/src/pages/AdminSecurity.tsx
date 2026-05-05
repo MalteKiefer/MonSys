@@ -7,6 +7,7 @@ import {
   Panel,
   PanelBody,
   PanelHeader,
+  Skeleton,
   SuccessBox,
   TextInput,
 } from "../components/ui";
@@ -44,7 +45,13 @@ export function AdminSecurity() {
     onError: (err) => setMsg({ kind: "err", text: err instanceof ApiError ? err.detail : "failed" }),
   });
 
-  if (policy.isLoading || !draft) return <p className="p-6 text-sm text-fg-muted">Loading…</p>;
+  if (policy.isLoading || !draft)
+    return (
+      <div className="mx-auto max-w-3xl space-y-4 p-6">
+        <Skeleton className="h-7 w-56" />
+        <Skeleton className="h-64" />
+      </div>
+    );
 
   const set =
     <K extends keyof PasswordPolicy>(key: K) =>

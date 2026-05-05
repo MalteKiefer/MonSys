@@ -95,15 +95,30 @@ export function StatCard({ label, value, hint }: { label: string; value: ReactNo
 // ---- Buttons --------------------------------------------------------------
 
 type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
+type ButtonSize = "sm" | "md" | "lg";
+
+// `size` controls the tap target.
+//   sm  — h-7 (28px). Compact, used inside dense tables and inline toolbars.
+//   md  — h-9 (36px) DEFAULT. Matches `--touch-min`; safe for touch.
+//   lg  — h-11 (44px). Mobile-primary actions and full-width forms.
+// Existing call sites pass no size, so keep "md" as the default. The visual
+// height stays close to the prior fixed `py-1.5` (≈32px) — bumping the
+// minimum to 36px is the small UX win; the rest of the geometry is the same.
+const BUTTON_SIZES: Record<ButtonSize, string> = {
+  sm: "min-h-7 px-2 py-1 text-xs",
+  md: "min-h-9 px-3 py-1.5 text-sm",
+  lg: "min-h-11 px-4 py-2 text-sm",
+};
 
 export function Button({
   variant = "secondary",
+  size = "md",
   className = "",
   children,
   ...rest
-}: ComponentPropsWithoutRef<"button"> & { variant?: ButtonVariant }) {
+}: ComponentPropsWithoutRef<"button"> & { variant?: ButtonVariant; size?: ButtonSize }) {
   const base =
-    "inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors duration-150 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed";
+    "inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition-colors duration-150 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed";
   const variants: Record<ButtonVariant, string> = {
     primary: "bg-accent text-bg hover:bg-accent-hover focus-visible:ring-2 focus-visible:ring-accent/60",
     secondary:
@@ -113,7 +128,7 @@ export function Button({
       "border border-fail/30 bg-fail/10 text-fail hover:bg-fail/15 hover:border-fail/50 focus-visible:ring-2 focus-visible:ring-fail/40",
   };
   return (
-    <button className={`${base} ${variants[variant]} ${className}`} {...rest}>
+    <button className={`${base} ${BUTTON_SIZES[size]} ${variants[variant]} ${className}`} {...rest}>
       {children}
     </button>
   );
@@ -122,9 +137,11 @@ export function Button({
 // ---- Inputs ---------------------------------------------------------------
 
 export function TextInput({ className = "", ...rest }: ComponentPropsWithoutRef<"input">) {
+  // `min-h-9` (36px) matches `--touch-min` so taps land reliably on mobile;
+  // the existing `py-2 text-sm` keeps the desktop look identical.
   return (
     <input
-      className={`w-full rounded-md border border-border bg-panel px-3 py-2 text-sm text-fg placeholder:text-fg-subtle transition-colors duration-150 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30 ${className}`}
+      className={`w-full min-h-9 rounded-md border border-border bg-panel px-3 py-2 text-sm text-fg placeholder:text-fg-subtle transition-colors duration-150 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30 ${className}`}
       {...rest}
     />
   );

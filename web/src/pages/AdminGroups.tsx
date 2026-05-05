@@ -10,6 +10,7 @@ import {
   Panel,
   PanelBody,
   PanelHeader,
+  Skeleton,
   TBody,
   TD,
   TH,
@@ -80,7 +81,9 @@ export function AdminGroups() {
         </PanelHeader>
         <PanelBody className="p-0 overflow-x-auto">
           {groups.isLoading ? (
-            <p className="px-5 py-4 text-sm text-fg-subtle">Loading…</p>
+            <div className="p-5">
+              <Skeleton className="h-32" />
+            </div>
           ) : (groups.data?.groups ?? []).length === 0 ? (
             <Empty>No groups yet.</Empty>
           ) : (

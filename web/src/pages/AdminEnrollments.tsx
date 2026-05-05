@@ -1,11 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Tag, Trash2 } from "lucide-react";
+import { Tag, Ticket, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
 
+import { EmptyState, ErrorState, Page } from "../components/page";
 import {
   Button,
-  Empty,
-  ErrorBox,
   Panel,
   PanelBody,
   PanelHeader,
@@ -72,15 +71,16 @@ export default function AdminEnrollments() {
   const enrollments = list.data?.enrollments ?? [];
 
   return (
-    <div className="mx-auto max-w-6xl space-y-5 p-6">
-      <header>
-        <h2 className="text-lg font-semibold tracking-tight">Agent enrollments</h2>
-        <p className="text-sm text-fg-muted">
-          One-shot tokens for <code className="font-mono">/v1/agents/install.sh</code> — pending
-          tokens can be revoked, consumed and expired ones are read-only.
-        </p>
-      </header>
-
+    <Page
+      title="Agent enrollments"
+      subtitle={
+        <>
+          One-shot tokens for{" "}
+          <code className="font-mono">/v1/agents/install.sh</code> — pending
+          tokens can be revoked.
+        </>
+      }
+    >
       <Panel>
         <PanelHeader>
           <h3 className="text-sm font-semibold">Recent enrollments</h3>
@@ -90,11 +90,18 @@ export default function AdminEnrollments() {
           {list.isLoading ? (
             <p className="px-5 py-4 text-sm text-fg-subtle">Loading…</p>
           ) : list.error ? (
-            <div className="px-5 py-4">
-              <ErrorBox>{(list.error as Error).message}</ErrorBox>
+            <div className="p-5">
+              <ErrorState
+                message={(list.error as Error).message}
+                onRetry={() => list.refetch()}
+              />
             </div>
           ) : enrollments.length === 0 ? (
-            <Empty>No enrollments in the last 24 hours.</Empty>
+            <EmptyState
+              icon={Ticket}
+              title="No enrollments in the last 24 hours."
+              hint="Issued tokens auto-expire after 24h. Mint a new one from the Hosts page or via mon-server --new-token."
+            />
           ) : (
             <Table aria-label="Recent agent enrollments">
               <THead>
@@ -127,7 +134,7 @@ export default function AdminEnrollments() {
           )}
         </PanelBody>
       </Panel>
-    </div>
+    </Page>
   );
 }
 
