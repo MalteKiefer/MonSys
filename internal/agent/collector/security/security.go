@@ -62,7 +62,38 @@ func (c *Collector) firewallSnapshot(ctx context.Context) []apitypes.FirewallSta
 	if fs, ok := iptablesStatus(ctx); ok {
 		out = append(out, fs)
 	}
+	if fs, ok := pveFirewallStatus(ctx); ok {
+		out = append(out, fs)
+	}
 	return out
+}
+
+// pveFirewallStatus reports the Proxmox VE firewall daemon. It runs as its
+// own pve-firewall stack on top of iptables/nftables and exposes status via
+// `pve-firewall status` (text). The binary lives under /usr/sbin and is
+// usually only readable by root, but we still try — agents on Proxmox nodes
+// often run with CAP_NET_ADMIN and can read the status without sudo.
+func pveFirewallStatus(ctx context.Context) (apitypes.FirewallStatus, bool) {
+	if !safeexec.Available("pve-firewall") {
+		return apitypes.FirewallStatus{}, false
+	}
+	out, err := safeexec.RunWithTimeout(ctx, 5*time.Second, "pve-firewall", "status")
+	if err != nil || len(out) == 0 {
+		return apitypes.FirewallStatus{}, false
+	}
+	fs := apitypes.FirewallStatus{
+		Engine:          "pve-firewall",
+		SnapshotExcerpt: capExcerpt(out),
+	}
+	// Output shape: "Status: enabled/running" (the most useful line). On a
+	// disabled cluster: "Status: disabled/running".
+	for _, line := range strings.Split(string(out), "\n") {
+		l := strings.TrimSpace(line)
+		if strings.HasPrefix(l, "Status:") {
+			fs.Active = strings.Contains(l, "enabled")
+		}
+	}
+	return fs, true
 }
 
 func ufwStatus(ctx context.Context) (apitypes.FirewallStatus, bool) {
