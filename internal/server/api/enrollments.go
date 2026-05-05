@@ -292,20 +292,32 @@ func (s *Server) handleInstallScript(w http.ResponseWriter, r *http.Request) {
 	// Pull binary metadata so the script can pin sha256s. If the resolver is
 	// unset or unreachable we still emit a script — but the agent path falls
 	// back to "no auto-update": we hard-fail because the operator expects a
-	// functioning binary at the end.
+	// functioning binary at the end. Try once with the cache, then once with
+	// a forced refresh so a transient upstream hiccup at server start does
+	// not turn into a permanent 503 for the installer.
 	var amd64URL, amd64Sum, arm64URL, arm64Sum string
 	if s.AgentUpdate != nil {
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
-		if m, err := s.AgentUpdate.Latest(ctx, false); err == nil && m != nil {
+		fillFrom := func(force bool) {
+			m, err := s.AgentUpdate.Latest(ctx, force)
+			if err != nil {
+				slog.Warn("install.sh: agent update resolver failed", "force", force, "err", err)
+				return
+			}
+			if m == nil {
+				return
+			}
 			if b, ok := m.Binaries["linux/amd64"]; ok {
 				amd64URL, amd64Sum = b.URL, b.SHA256
 			}
 			if b, ok := m.Binaries["linux/arm64"]; ok {
 				arm64URL, arm64Sum = b.URL, b.SHA256
 			}
-		} else if err != nil {
-			slog.Warn("install.sh: agent update resolver failed", "err", err)
+		}
+		fillFrom(false)
+		if amd64URL == "" || arm64URL == "" {
+			fillFrom(true)
 		}
 	}
 	if amd64URL == "" || amd64Sum == "" || arm64URL == "" || arm64Sum == "" {
