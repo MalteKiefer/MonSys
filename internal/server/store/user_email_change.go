@@ -80,20 +80,28 @@ func (s *Store) ConsumeEmailChange(ctx context.Context, plaintext string) (User,
 // SetEmailUnconditional updates an email without a verification round-trip.
 // CLI-only; intended for admin shell recovery. Returns ErrUserNotFound when
 // oldEmail does not match any row.
+//
+// audit 2026-05-12 F-8: revoke all sessions after the rewrite. The HTTP
+// equivalent (ConsumeEmailChange) already does this; the CLI must mirror it
+// so an attacker who phished the old identity loses every active session.
 func (s *Store) SetEmailUnconditional(ctx context.Context, oldEmail, newEmail string) error {
 	if newEmail == "" {
 		return errors.New("new_email required")
 	}
-	tag, err := s.Pool.Exec(ctx,
-		`UPDATE users SET email = $2 WHERE lower(email) = lower($1)`, oldEmail, newEmail)
+	var uid uuid.UUID
+	err := s.Pool.QueryRow(ctx,
+		`UPDATE users SET email = $2 WHERE lower(email) = lower($1) RETURNING id`,
+		oldEmail, newEmail,
+	).Scan(&uid)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrUserNotFound
+	}
 	if err != nil {
 		if pgIsUniqueViolation(err) {
 			return ErrUserExists
 		}
 		return err
 	}
-	if tag.RowsAffected() == 0 {
-		return ErrUserNotFound
-	}
+	_ = s.RevokeUserSessions(ctx, uid)
 	return nil
 }

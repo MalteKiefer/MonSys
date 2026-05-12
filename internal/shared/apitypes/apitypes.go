@@ -512,8 +512,8 @@ type MetricThresholdParams struct {
 	Metric     string            `json:"metric"     enum:"cpu_usage_pct,cpu_per_core_pct,load_1,load_5,load_15,ram_used_pct,swap_used_pct,swap_used_bytes,disk_used_pct,disk_inode_used_pct,disk_iops_total,disk_io_util_pct,nic_rx_bytes_per_sec,nic_tx_bytes_per_sec,nic_err_per_sec,nic_drop_per_sec,workload_cpu_usage_pct,workload_mem_used_pct,fail2ban_currently_banned,crowdsec_active_decisions,repo_metadata_age_sec,monitor_last_latency_ms"`
 	Comparator string            `json:"comparator" enum:">,>=,<,<="`
 	Value      float64           `json:"value"`
-	WindowSec  int               `json:"window_sec"`
-	ForSec     int               `json:"for_sec,omitempty"`
+	WindowSec  int               `json:"window_sec" minimum:"1" maximum:"86400" doc:"observation window in seconds; clamped to [1, 86400]"`
+	ForSec     int               `json:"for_sec,omitempty" minimum:"1" maximum:"86400" doc:"breach must be sustained this long; clamped to [1, window_sec]"`
 	Scope      map[string]string `json:"scope,omitempty" doc:"optional narrowing keys: mountpoint, nic, workload_id, monitor_id"`
 }
 
@@ -578,15 +578,22 @@ type ContainerStateChangeParams struct {
 }
 
 // AuditActionParams documents condition_params for condition_type=audit_action.
+//
+// ActorPattern and TargetPattern are compiled with regexp.Compile (Go RE2) at
+// rule-write time and rejected with HTTP 400 if they fail to compile. They are
+// also length-capped at 256 chars to bound the Postgres POSIX regex engine's
+// worst-case backtracking on the wire side; the alerts evaluator additionally
+// wraps the audit query in a 2s statement_timeout so a slipped pathological
+// pattern can't pin a backend.
 type AuditActionParams struct {
 	Actions       []string `json:"actions"                  minItems:"1" doc:"e.g. [\"admin.security.policy.update\"]"`
-	ActorPattern  string   `json:"actor_pattern,omitempty"  doc:"optional regex applied to audit_log.actor"`
-	TargetPattern string   `json:"target_pattern,omitempty" doc:"optional regex applied to audit_log.target"`
+	ActorPattern  string   `json:"actor_pattern,omitempty"  maxLength:"256" doc:"optional regex applied to audit_log.actor; must compile with Go regexp (RE2)"`
+	TargetPattern string   `json:"target_pattern,omitempty" maxLength:"256" doc:"optional regex applied to audit_log.target; must compile with Go regexp (RE2)"`
 }
 
 // HostFlapParams documents condition_params for condition_type=host_flap.
 type HostFlapParams struct {
-	WindowSec int `json:"window_sec" minimum:"60" doc:"observation window; default 1800"`
+	WindowSec int `json:"window_sec" minimum:"60" maximum:"86400" doc:"observation window; default 1800; clamped to [60, 86400]"`
 	Threshold int `json:"threshold"  minimum:"2"  doc:"online/offline transitions in window to fire; default 6"`
 }
 

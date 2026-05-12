@@ -45,6 +45,23 @@ import (
 // than an opaque 500.
 var ErrPasskeyNotConfigured = errors.New("passkey support not configured")
 
+// errPasskeyNameControlChars rejects names that carry ASCII control bytes —
+// they are never legitimate user input here and only show up via copy/paste
+// from terminal escape sequences. audit 2026-05-12 F-18.
+var errPasskeyNameControlChars = errors.New("name contains control characters")
+
+// passkeyNameHasControlChars returns true if name contains any rune in the
+// C0 control range (< 0x20) or DEL (0x7F). Used by both the rename path and
+// the registration normalization step.
+func passkeyNameHasControlChars(name string) bool {
+	for _, r := range name {
+		if r < 0x20 || r == 0x7F {
+			return true
+		}
+	}
+	return false
+}
+
 // errChallengeOwnerMismatch fires when a register-finish call presents a
 // challenge_token that was issued to a different user. The most common
 // cause is a tab swap mid-ceremony; we refuse rather than silently
@@ -364,6 +381,10 @@ func (s *Store) FinishPasskeyRegistration(ctx context.Context, userID uuid.UUID,
 	if name == "" {
 		name = "Passkey"
 	}
+	// audit 2026-05-12 F-18: reject control characters in supplied names.
+	if passkeyNameHasControlChars(name) {
+		return apitypes.Passkey{}, errPasskeyNameControlChars
+	}
 	if runes := []rune(name); len(runes) > 64 {
 		name = string(runes[:64])
 	}
@@ -530,19 +551,40 @@ func (s *Store) FinishPasskeyLogin(ctx context.Context, challengeToken string, c
 		return User{}, ErrUserNotFound
 	}
 
-	// Update sign count + last_used_at. We match on credential_id, not
-	// the user — the library already cross-checked ownership.
-	if _, uerr := s.Pool.Exec(ctx, `
-		UPDATE user_credentials
-		SET sign_count = $2, last_used_at = now()
-		WHERE credential_id = $1`,
-		cred.ID, int64(cred.Authenticator.SignCount),
-	); uerr != nil {
-		slog.Warn("user_credentials sign_count update", "err", uerr)
-	}
-
+	// audit 2026-05-12 F-12: persist backup_state. The authenticator may
+	// have toggled its sync/backup state since registration — if we never
+	// store the new value, force-mode checks that care about
+	// backup_eligible+backup_state will run against stale data.
+	// audit 2026-05-12 F-13: refuse to accept a sign_count that did not
+	// strictly increase. A stationary or regressing counter is the
+	// classic FIDO clone/replay signal; the W3C spec says the RP MAY
+	// refuse the assertion in that case (we do).
+	credHex := fmt.Sprintf("%x", cred.ID)
 	if cred.Authenticator.CloneWarning {
-		slog.Warn("webauthn: clone warning on credential", "user_id", resolvedUser.ID, "credential_id", fmt.Sprintf("%x", cred.ID))
+		_ = s.AuditLog(ctx, "user:"+resolvedUser.Email, "user.passkey.clone_warning",
+			resolvedUser.ID.String(),
+			"go-webauthn flagged CloneWarning on credential "+credHex)
+		slog.Warn("webauthn: clone warning on credential",
+			"user_id", resolvedUser.ID, "credential_id", credHex)
+		return User{}, errors.New("passkey clone warning: sign counter did not advance")
+	}
+	tag, uerr := s.Pool.Exec(ctx, `
+		UPDATE user_credentials
+		   SET sign_count   = $2,
+		       last_used_at = now(),
+		       backup_state = $3
+		 WHERE credential_id = $1 AND sign_count < $2`,
+		cred.ID, int64(cred.Authenticator.SignCount), cred.Flags.BackupState,
+	)
+	if uerr != nil {
+		slog.Warn("user_credentials sign_count update", "err", uerr)
+	} else if tag.RowsAffected() == 0 {
+		_ = s.AuditLog(ctx, "user:"+resolvedUser.Email, "user.passkey.clone_warning",
+			resolvedUser.ID.String(),
+			"sign_count did not advance for credential "+credHex)
+		slog.Warn("webauthn: sign_count did not advance; refusing session",
+			"user_id", resolvedUser.ID, "credential_id", credHex)
+		return User{}, errors.New("passkey clone warning: sign counter did not advance")
 	}
 
 	if aerr := s.AuditLog(ctx, "user:"+resolvedUser.Email, "user.passkey.login.success", resolvedUser.ID.String(), ""); aerr != nil {
@@ -608,6 +650,10 @@ func (s *Store) RenamePasskey(ctx context.Context, userID, credID uuid.UUID, nam
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return errors.New("name required")
+	}
+	// audit 2026-05-12 F-18: reject ASCII control characters in passkey names.
+	if passkeyNameHasControlChars(name) {
+		return errPasskeyNameControlChars
 	}
 	if runes := []rune(name); len(runes) > 64 {
 		return errors.New("name too long (max 64 characters)")

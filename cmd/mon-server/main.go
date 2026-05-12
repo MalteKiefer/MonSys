@@ -84,6 +84,14 @@ func main() {
 
 	// --- OpenAPI dump shortcut: skip DB; build a stub server with nil store. ---
 	if *printSpec {
+		// AUDIT 4.3.1.11: pin info.version to "dev" for spec dumps so the
+		// committed api/openapi.yaml is byte-stable regardless of build
+		// context. Without this, `make generate-spec` on a tagged checkout
+		// (Makefile applies ldflags) and CI `go run --print-spec` (no
+		// ldflags, so version stays "dev") produce different files and the
+		// spec-drift gate flakes. Pinning here means the committer's local
+		// version label never leaks into the source-of-truth spec.
+		version.Version = "dev"
 		s := api.New(nil)
 		spec, err := s.API.OpenAPI().YAML()
 		if err != nil {
@@ -97,6 +105,9 @@ func main() {
 		return
 	}
 	if *dumpOpenAPI != "" {
+		// AUDIT 4.3.1.11: same rationale as --print-spec above; keep dumped
+		// spec byte-stable across build contexts.
+		version.Version = "dev"
 		s := api.New(nil)
 		if err := writeOpenAPI(s, *dumpOpenAPI); err != nil {
 			slog.Error("dump openapi", "err", err)
@@ -201,6 +212,10 @@ func main() {
 			slog.Error("disable totp", "err", err)
 			os.Exit(1)
 		}
+		// audit 2026-05-12 F-8: revoke sessions after CLI 2FA reset; any
+		// existing session that authenticated with the now-removed factor
+		// must be invalidated.
+		_ = st.RevokeUserSessions(openCtx, u.ID)
 		slog.Info("totp disabled", "email", u.Email, "id", u.ID.String())
 		return
 	}

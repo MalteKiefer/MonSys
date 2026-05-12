@@ -403,6 +403,11 @@ func (s *Store) GetUserByEmail(ctx context.Context, email string) (User, error) 
 // SetPassword unconditionally rewrites the user's bcrypt hash. Used by the
 // admin reset-password CLI flag — there is no current-password check, so the
 // caller must already have shell-level trust on the box.
+//
+// audit 2026-05-12 F-1: match users case-insensitively so CLI recovery works
+// regardless of how the operator capitalized the address.
+// audit 2026-05-12 F-2: revoke all sessions after a CLI password reset so any
+// previously logged-in attacker session is forcibly invalidated.
 func (s *Store) SetPassword(ctx context.Context, email, newPassword string) error {
 	if email == "" || newPassword == "" {
 		return errors.New("email and password required")
@@ -411,14 +416,18 @@ func (s *Store) SetPassword(ctx context.Context, email, newPassword string) erro
 	if err != nil {
 		return err
 	}
-	tag, err := s.Pool.Exec(ctx,
-		`UPDATE users SET password_hash = $2 WHERE email = $1`, email, string(hash))
+	var uid uuid.UUID
+	err = s.Pool.QueryRow(ctx,
+		`UPDATE users SET password_hash = $2 WHERE lower(email) = lower($1) RETURNING id`,
+		email, string(hash),
+	).Scan(&uid)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrUserNotFound
+	}
 	if err != nil {
 		return err
 	}
-	if tag.RowsAffected() == 0 {
-		return ErrUserNotFound
-	}
+	_ = s.RevokeUserSessions(ctx, uid)
 	return nil
 }
 
@@ -426,7 +435,12 @@ func (s *Store) SetPassword(ctx context.Context, email, newPassword string) erro
 // Returns ErrPasswordMismatch if the current password is wrong. The new
 // password is policy-checked by the caller (api layer) to keep this layer
 // dumb about UX rules.
-func (s *Store) ChangePassword(ctx context.Context, userID uuid.UUID, currentPassword, newPassword string) error {
+//
+// audit 2026-05-12 F-3: revoke every other session for this user so devices
+// where the (possibly compromised) credentials were used are forced to re-
+// auth. The caller passes their current plaintext session token via
+// exceptToken so their own session survives; pass "" to revoke everything.
+func (s *Store) ChangePassword(ctx context.Context, userID uuid.UUID, currentPassword, newPassword, exceptToken string) error {
 	var hash string
 	err := s.Pool.QueryRow(ctx,
 		`SELECT password_hash FROM users WHERE id = $1`, userID,
@@ -444,9 +458,13 @@ func (s *Store) ChangePassword(ctx context.Context, userID uuid.UUID, currentPas
 	if err != nil {
 		return err
 	}
-	_, err = s.Pool.Exec(ctx,
-		`UPDATE users SET password_hash = $2 WHERE id = $1`, userID, string(newHash))
-	return err
+	if _, err := s.Pool.Exec(ctx,
+		`UPDATE users SET password_hash = $2 WHERE id = $1`, userID, string(newHash),
+	); err != nil {
+		return err
+	}
+	_ = s.RevokeUserSessionsExcept(ctx, userID, exceptToken)
+	return nil
 }
 
 // ChangeEmail verifies the user's password and updates email. Returns
@@ -481,6 +499,9 @@ func (s *Store) ChangeEmail(ctx context.Context, userID uuid.UUID, password, new
 
 // SetPasswordByAdmin hashes and stores a new password without requiring the
 // current one. Used by admin reset and by ConsumeResetToken.
+//
+// audit 2026-05-12 F-7: revoke all sessions after admin password reset so any
+// previously logged-in attacker session is forcibly invalidated.
 func (s *Store) SetPasswordByAdmin(ctx context.Context, userID uuid.UUID, newPassword string) error {
 	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcryptCost)
 	if err != nil {
@@ -494,6 +515,7 @@ func (s *Store) SetPasswordByAdmin(ctx context.Context, userID uuid.UUID, newPas
 	if tag.RowsAffected() == 0 {
 		return ErrUserNotFound
 	}
+	_ = s.RevokeUserSessions(ctx, userID)
 	return nil
 }
 

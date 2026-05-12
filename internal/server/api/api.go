@@ -2396,7 +2396,10 @@ func (s *Server) handleChangePassword(ctx context.Context, in *changePasswordInp
 	if err := s.Store.CheckPassword(ctx, in.Body.NewPassword); err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
-	if err := s.Store.ChangePassword(ctx, u.ID, in.Body.CurrentPassword, in.Body.NewPassword); err != nil {
+	// audit 2026-05-12 F-3: pass the caller's session token so the store can
+	// revoke every other session while keeping this device logged in.
+	currentSessionToken, _ := tokenFromContext(ctx)
+	if err := s.Store.ChangePassword(ctx, u.ID, in.Body.CurrentPassword, in.Body.NewPassword, currentSessionToken); err != nil {
 		if errors.Is(err, store.ErrPasswordMismatch) {
 			return nil, huma.Error401Unauthorized("current password is wrong")
 		}
@@ -2687,15 +2690,21 @@ func (s *Server) handleConsumeReset(ctx context.Context, in *consumeResetInput) 
 	if err := s.Store.CheckPassword(ctx, in.Body.NewPassword); err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
-	// Try the password_reset and invite kinds; both produce a settable
-	// password.
-	userID, _, err := s.Store.ConsumeActionToken(ctx, in.Body.Token, "")
+	// audit 2026-05-12 F-19: only accept password_reset or invite kinds.
+	// An empty expectedKind here would let an email_change / login_2fa /
+	// webauthn_register token pivot into a password change.
+	userID, _, err := s.Store.ConsumeActionToken(ctx, in.Body.Token, "password_reset")
+	if errors.Is(err, store.ErrActionTokenInvalid) {
+		userID, _, err = s.Store.ConsumeActionToken(ctx, in.Body.Token, "invite")
+	}
 	if err != nil {
 		return nil, huma.Error401Unauthorized("token invalid or expired")
 	}
 	if err := s.Store.SetPasswordByAdmin(ctx, userID, in.Body.NewPassword); err != nil {
 		return nil, internalErr(ctx, "set password failed", err)
 	}
+	// audit 2026-05-12 F-8: revoke all sessions on password reset confirm.
+	_ = s.Store.RevokeUserSessions(ctx, userID)
 	out := &emptyOutput{}
 	out.Body.OK = true
 	return out, nil
@@ -2997,6 +3006,9 @@ func (s *Server) handleAdminReset2FA(ctx context.Context, in *hostIDInput) (*emp
 	if err := s.Store.DisableTOTP(ctx, id); err != nil {
 		return nil, internalErr(ctx, "reset 2fa failed", err)
 	}
+	// audit 2026-05-12 F-8: revoke all sessions on admin 2FA reset so any
+	// session that authenticated with the now-stripped factor is invalidated.
+	_ = s.Store.RevokeUserSessions(ctx, id)
 	s.audit(ctx, "user.reset_2fa", in.ID, "")
 	out := &emptyOutput{}
 	out.Body.OK = true

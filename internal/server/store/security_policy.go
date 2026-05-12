@@ -197,6 +197,32 @@ func (s *Store) RevokeUserSessions(ctx context.Context, userID uuid.UUID) error 
 	return err
 }
 
+// RevokeUserSessionsExcept revokes every active session for userID except the
+// one whose plaintext token is exceptToken. Used by self-service credential
+// rotations (e.g. ChangePassword) so the caller's current session survives
+// while every other device is forced to re-auth. When exceptToken is empty,
+// every session is revoked — matching RevokeUserSessions.
+//
+// audit 2026-05-12 F-3: introduced to support keeping the current session
+// alive on a password change while booting every other device.
+func (s *Store) RevokeUserSessionsExcept(ctx context.Context, userID uuid.UUID, exceptToken string) error {
+	var exceptHash []byte
+	if exceptToken != "" {
+		exceptHash = hashSecret(exceptToken)
+	} else {
+		exceptHash = []byte{}
+	}
+	_, err := s.Pool.Exec(ctx, `
+		UPDATE user_sessions
+		   SET revoked_at = now()
+		 WHERE user_id = $1
+		   AND revoked_at IS NULL
+		   AND ($2::bytea = ''::bytea OR token_hash <> $2)`,
+		userID, exceptHash,
+	)
+	return err
+}
+
 // UserCompliesWithPolicy reports whether userID has the auth methods required
 // by the active force-mode. When ForceMode == off, every user trivially
 // complies and graceUntil is nil.
