@@ -58,9 +58,12 @@ export function AlertsPage() {
   const relTime = useRelTime();
   const [since, setSince] = useState("24h");
   const [hostFilter, setHostFilter] = useState<string>("");
+  // Date.now() in the memo is intentional — the cutoff snapshot is recomputed
+  // when the `since` selector changes, not on every clock tick.
   const sinceISO = useMemo(() => {
     const map: Record<string, number> = { "1h": 3600, "24h": 86400, "7d": 604800, "30d": 2592000 };
     const sec = map[since] ?? 86400;
+    // eslint-disable-next-line react-hooks/purity
     return new Date(Date.now() - sec * 1000).toISOString();
   }, [since]);
 
@@ -79,7 +82,7 @@ export function AlertsPage() {
     queryFn: () => api<{ hosts: Host[] }>("/v1/hosts"),
   });
 
-  const allAlerts = list.data?.alerts ?? [];
+  const allAlerts = useMemo(() => list.data?.alerts ?? [], [list.data]);
   const filteredAlerts = useMemo(() => {
     if (!hostFilter) return allAlerts;
     const suffix = `:${hostFilter}`;

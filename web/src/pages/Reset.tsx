@@ -1,5 +1,5 @@
 import { KeyRound } from "lucide-react";
-import type { FormEvent} from "react";
+import type { SyntheticEvent} from "react";
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
@@ -28,7 +28,7 @@ export function Reset() {
     );
   }
 
-  async function submit(e: FormEvent) {
+  async function submit(e: SyntheticEvent) {
     e.preventDefault();
     setError(null);
     if (pw !== pw2) {

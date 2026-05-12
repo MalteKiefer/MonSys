@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Eye, Layers, PencilLine, Plus, Server, Settings, Trash2, Users } from "lucide-react";
-import type { FormEvent} from "react";
+import type { SyntheticEvent} from "react";
 import { useMemo, useState } from "react";
 
 import { Page } from "../components/page";
@@ -78,7 +78,7 @@ export function AdminAgentConfig() {
   const [selectedHostID, setSelectedHostID] = useState<string>("");
   const [previewHost, setPreviewHost] = useState<Host | null>(null);
 
-  const configs = list.data?.configs ?? [];
+  const configs = useMemo(() => list.data?.configs ?? [], [list.data]);
   const globalCfg = useMemo(() => configs.find((c) => c.scope === "global") ?? null, [configs]);
   const groupCfgs = useMemo(() => configs.filter((c) => c.scope === "group"), [configs]);
   const hostCfgs = useMemo(() => configs.filter((c) => c.scope === "host"), [configs]);
@@ -800,7 +800,7 @@ function ConfigForm({
     onError: (err) => { setError(err instanceof ApiError ? err.detail : (err).message); },
   });
 
-  function submit(e: FormEvent) {
+  function submit(e: SyntheticEvent) {
     e.preventDefault();
     setError(null);
     save.mutate();

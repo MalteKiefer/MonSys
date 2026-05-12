@@ -84,10 +84,13 @@ export function AdminIngestsContent({ onMeta }: { onMeta?: (node: ReactNode) => 
     enabled: selectedIdx !== null,
   });
 
-  // Cull the list client-side by the chosen time window.
+  // Cull the list client-side by the chosen time window. Date.now() inside
+  // a memo is intentional — the cutoff is a relative "now" snapshot recomputed
+  // when the user changes the range, not a reactive clock.
   const visibleEntries = useMemo(() => {
     const all = list.data?.entries ?? [];
     if (!rangeSec) return all;
+    // eslint-disable-next-line react-hooks/purity
     const cutoff = Date.now() - rangeSec * 1000;
     return all.filter((e) => {
       const t = new Date(e.time).getTime();

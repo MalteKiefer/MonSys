@@ -372,7 +372,8 @@ function ConditionEditor({
               </div>
               <div className="space-y-1.5">
                 {CATEGORY_MAP[selectedCategory].map((ct) => {
-                  const meta = CONDITION_TYPES.find((c) => c.value === ct)!;
+                  const meta = CONDITION_TYPES.find((c) => c.value === ct);
+                  if (!meta) return null;
                   const active = buffer.conditionType === ct;
                   return (
                     <button

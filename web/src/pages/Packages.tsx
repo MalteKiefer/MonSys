@@ -94,7 +94,7 @@ export function Packages() {
 
   const data = search.data;
   const total = data?.total ?? 0;
-  const allRows = data?.packages ?? [];
+  const allRows = useMemo(() => data?.packages ?? [], [data]);
   const rows = useMemo(
     () => (securityOnly ? allRows.filter(isSecurityRow) : allRows),
     [allRows, securityOnly],

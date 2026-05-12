@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Bell, Hash, Mail, MessageCircle, MessageSquare } from "lucide-react";
-import type { FormEvent} from "react";
+import type { SyntheticEvent} from "react";
 import { useState } from "react";
 
 import {
@@ -148,7 +148,7 @@ export function ChannelForm({
     onError: (err) => { setError(err instanceof ApiError ? err.detail : t("notifications:channels.form.error_generic")); },
   });
 
-  function submit(e: FormEvent) {
+  function submit(e: SyntheticEvent) {
     e.preventDefault();
     setError(null);
     save.mutate();

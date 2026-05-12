@@ -11,7 +11,7 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
-import type { FormEvent} from "react";
+import type { SyntheticEvent} from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
@@ -204,7 +204,7 @@ function CreateUserCard({ onCreated }: { onCreated: () => void }) {
   const [resetURL, setResetURL] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
-  async function submit(e: FormEvent) {
+  async function submit(e: SyntheticEvent) {
     e.preventDefault();
     setBusy(true);
     setMsg(null);

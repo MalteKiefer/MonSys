@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Activity, Clock, Moon, PlayCircle } from "lucide-react";
-import type { FormEvent} from "react";
+import type { SyntheticEvent} from "react";
 import { useEffect, useMemo, useState } from "react";
 
 import { Page } from "../components/page";
@@ -84,12 +84,12 @@ export function AdminQuietHours() {
         <Skeleton className="h-64" />
       ) : settings.error ? (
         <ErrorBox>{(settings.error).message}</ErrorBox>
-      ) : (
+      ) : settings.data ? (
         <SettingsForm
-          initial={settings.data!}
+          initial={settings.data}
           onSaved={() => { void qc.invalidateQueries({ queryKey: ["admin-quiet-hours"] }); }}
         />
-      )}
+      ) : null}
     </Page>
   );
 }
@@ -154,7 +154,7 @@ function SettingsForm({
       }); },
   });
 
-  function submit(e: FormEvent) {
+  function submit(e: SyntheticEvent) {
     e.preventDefault();
     setMsg(null);
     save.mutate();
@@ -448,6 +448,9 @@ function TimelinePanel({
     const id = setInterval(() => { setTick((n) => n + 1); }, 60_000);
     return () => { clearInterval(id); };
   }, []);
+  // `tick` is intentional: it forces a fresh Date() every minute. The hook
+   // linter doesn't see the value being read inside, so silence it here.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const liveNow = useMemo(() => new Date(), [tick]);
   const live = nowInZone(tz, liveNow);
 
@@ -590,7 +593,7 @@ function TimelinePanel({
             <PlayCircle className="h-3.5 w-3.5" />
             {t("admin:quietHours.timeline.testNow")}
           </Button>
-          {previewQuiet === null ? (
+          {previewQuiet === null || previewAt === null ? (
             <span className="text-xs text-fg-subtle">
               {t("admin:quietHours.timeline.previewHint")}
               <span className="font-medium text-fg">
@@ -603,7 +606,7 @@ function TimelinePanel({
               <StatusPill status="info">{t("admin:quietHours.timeline.muted")}</StatusPill>
               <span className="text-fg-muted">
                 {t("admin:quietHours.timeline.mutedMsg", {
-                  when: previewAt!.toLocaleString(),
+                  when: previewAt.toLocaleString(),
                   tz,
                 })}
               </span>
@@ -613,7 +616,7 @@ function TimelinePanel({
               <StatusPill status="ok">{t("admin:quietHours.timeline.delivering")}</StatusPill>
               <span className="text-fg-muted">
                 {t("admin:quietHours.timeline.deliveringMsg", {
-                  when: previewAt!.toLocaleString(),
+                  when: previewAt.toLocaleString(),
                   tz,
                 })}
               </span>

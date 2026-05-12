@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Activity, Lock, Shield, ShieldAlert } from "lucide-react";
-import type { FormEvent} from "react";
+import type { SyntheticEvent} from "react";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
@@ -138,9 +138,10 @@ export function AdminSecurity() {
     (value: PasswordPolicy[K]) =>
       { setDraft({ ...draft, [key]: value }); };
 
-  function submit(e: FormEvent) {
+  function submit(e: SyntheticEvent) {
     e.preventDefault();
-    save.mutate(draft!);
+    if (!draft) return;
+    save.mutate(draft);
   }
 
   const VALID_FORCE_MODES: ForceMode[] = ["off", "2fa_any", "passkey_required"];
@@ -151,10 +152,11 @@ export function AdminSecurity() {
     (value: SecurityPolicy[K]) =>
       { setSecDraft({ ...secDraft, [key]: value }); };
 
-  function submitSec(e: FormEvent) {
+  function submitSec(e: SyntheticEvent) {
     e.preventDefault();
     setSecMsg(null);
-    const d = secDraft!;
+    if (!secDraft) return;
+    const d = secDraft;
     if (!VALID_FORCE_MODES.includes(d.force_mode)) {
       setSecMsg({ kind: "err", text: t("security.auth.invalid_force_mode") });
       return;

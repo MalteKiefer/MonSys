@@ -46,7 +46,7 @@ export function Charts() {
     enabled: !!hostId,
   });
 
-  const samples = sys.data?.samples ?? [];
+  const samples = useMemo(() => sys.data?.samples ?? [], [sys.data]);
   const ramTotal = detail.host.ram_total_bytes;
 
   // Pre-compute the time axis once and reuse it across all three charts so

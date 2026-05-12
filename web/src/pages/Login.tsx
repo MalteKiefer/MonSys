@@ -1,5 +1,5 @@
 import { Activity, Fingerprint, KeyRound } from "lucide-react";
-import type { FormEvent} from "react";
+import type { SyntheticEvent} from "react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -47,7 +47,7 @@ export function Login() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function handlePassword(e: FormEvent) {
+  async function handlePassword(e: SyntheticEvent) {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
@@ -75,7 +75,7 @@ export function Login() {
     }
   }
 
-  async function handleTOTP(e: FormEvent) {
+  async function handleTOTP(e: SyntheticEvent) {
     e.preventDefault();
     if (stage.kind !== "totp") return;
     setError(null);

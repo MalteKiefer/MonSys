@@ -9,7 +9,7 @@ import {
   Ticket,
   Trash2,
 } from "lucide-react";
-import type { FormEvent} from "react";
+import type { SyntheticEvent} from "react";
 import { useCallback, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
@@ -529,7 +529,7 @@ function CreateTokenPanel({
     onError: (err) => { setError(err instanceof ApiError ? err.detail : (err).message); },
   });
 
-  function submit(e: FormEvent) {
+  function submit(e: SyntheticEvent) {
     e.preventDefault();
     setError(null);
     create.mutate();

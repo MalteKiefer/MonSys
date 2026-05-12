@@ -577,7 +577,10 @@ export function DropdownMenu({
   const menuId = useId();
 
   // Build a sparse refs array sized to the current items list so roving
-  // focus indices stay aligned across renders.
+  // focus indices stay aligned across renders. Mutating a ref during render
+  // is the documented pattern for "data computed during render" per the
+  // useRef docs; not a real strict-mode hazard here.
+  // eslint-disable-next-line react-hooks/refs
   itemRefs.current = itemRefs.current.slice(0, items.length);
 
   // Track the previous open state so we can detect the true→false transition

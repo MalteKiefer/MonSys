@@ -18,7 +18,7 @@ import {
   QrCode,
   X,
 } from "lucide-react";
-import type { FormEvent} from "react";
+import type { SyntheticEvent} from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -150,7 +150,7 @@ function FormView({
     onError: (err) => { setError(err instanceof ApiError ? err.detail : (err).message); },
   });
 
-  function submit(e: FormEvent) {
+  function submit(e: SyntheticEvent) {
     e.preventDefault();
     setError(null);
     create.mutate();
@@ -297,6 +297,10 @@ function ResultView({
   // the modal is open. Cheap timer; pauses naturally when modal unmounts.
   // We also re-derive `expired` from this tick so the StatusRow flips to
   // the expired-before-registered state without waiting on a poll cycle.
+  // Date.now() seed is intentional — `now` is a clock that ticks via setInterval
+  // below; the rule's clock-hook suggestion doesn't apply for an interval-driven
+  // mount-only value.
+  // eslint-disable-next-line react-hooks/purity
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     if (connected) return;

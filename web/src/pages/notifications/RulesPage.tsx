@@ -148,9 +148,12 @@ export function RulesPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["rules"] }),
   });
 
-  const allRules = rules.data?.rules ?? [];
+  const allRules = useMemo(() => rules.data?.rules ?? [], [rules.data]);
   const groups = useMemo(() => groupRules(allRules), [allRules]);
-  const allChannels = channels.data?.channels ?? [];
+  const allChannels = useMemo(
+    () => channels.data?.channels ?? [],
+    [channels.data],
+  );
 
   return (
     <Page

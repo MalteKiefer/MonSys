@@ -45,6 +45,9 @@ export function Dashboard() {
     queryFn: () => api<{ hosts: Host[] }>("/v1/hosts"),
     refetchInterval: 15_000,
   });
+  // Date.now() inside a mount-only memo — the 24h window is a snapshot taken
+  // on first render; we deliberately don't tick it.
+  // eslint-disable-next-line react-hooks/purity
   const since = useMemo(() => new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(), []);
   const alerts = useQuery({
     queryKey: ["alerts-24h"],
@@ -55,7 +58,7 @@ export function Dashboard() {
     refetchInterval: 30_000,
   });
 
-  const list = hosts.data?.hosts ?? [];
+  const list = useMemo(() => hosts.data?.hosts ?? [], [hosts.data]);
   const counts = useMemo(
     () => ({
       total: list.length,

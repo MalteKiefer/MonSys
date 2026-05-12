@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { KeyRound, Pencil, Smartphone, Trash2, Upload, User } from "lucide-react";
-import type { ChangeEvent, FormEvent, ReactNode} from "react";
+import type { ChangeEvent, SyntheticEvent, ReactNode} from "react";
 import { useRef, useState } from "react";
 import { Trans } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
@@ -62,7 +62,8 @@ export function Profile() {
       </div>
     );
   if (me.error) return <p className="p-6 text-sm text-fail">{(me.error).message}</p>;
-  const user = me.data!;
+  if (!me.data) return null;
+  const user = me.data;
 
   const items: readonly TabItem<ProfileTab>[] = [
     { key: "account", label: t("profile:tabs.account"), icon: User },
@@ -374,7 +375,7 @@ function ChangeEmailCard() {
   const [busy, setBusy] = useState(false);
   const [pendingEmail, setPendingEmail] = useState<string | null>(null);
 
-  async function submit(e: FormEvent) {
+  async function submit(e: SyntheticEvent) {
     e.preventDefault();
     setMsg(null);
     setBusy(true);
@@ -455,7 +456,7 @@ function ChangePasswordCard() {
   const [msg, setMsg] = useState<Msg>(null);
   const [busy, setBusy] = useState(false);
 
-  async function submit(e: FormEvent) {
+  async function submit(e: SyntheticEvent) {
     e.preventDefault();
     setMsg(null);
     setBusy(true);
@@ -521,7 +522,7 @@ function TwoFactorCard({ active, onSuccess }: { active: boolean; onSuccess: () =
     }
   }
 
-  async function verify(e: FormEvent) {
+  async function verify(e: SyntheticEvent) {
     e.preventDefault();
     setMsg(null);
     setBusy(true);
@@ -543,7 +544,7 @@ function TwoFactorCard({ active, onSuccess }: { active: boolean; onSuccess: () =
     }
   }
 
-  async function disable(e: FormEvent) {
+  async function disable(e: SyntheticEvent) {
     e.preventDefault();
     setMsg(null);
     setBusy(true);
@@ -701,7 +702,7 @@ function PasskeysCard() {
     },
   });
 
-  async function submitAdd(e: FormEvent) {
+  async function submitAdd(e: SyntheticEvent) {
     e.preventDefault();
     setMsg(null);
     const trimmed = name.trim();
@@ -794,7 +795,7 @@ function PasskeyRow({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(passkey.name);
 
-  function saveName(e: FormEvent) {
+  function saveName(e: SyntheticEvent) {
     e.preventDefault();
     const trimmed = draft.trim();
     if (!trimmed || trimmed === passkey.name) {

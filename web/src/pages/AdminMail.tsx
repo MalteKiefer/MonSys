@@ -10,7 +10,7 @@ import {
   UserRound,
   Wifi,
 } from "lucide-react";
-import type { ChangeEvent, FormEvent} from "react";
+import type { ChangeEvent, SyntheticEvent} from "react";
 import { useEffect, useMemo, useState } from "react";
 
 import { Page } from "../components/page";
@@ -96,12 +96,12 @@ export function AdminMail() {
         <div id="panel-server" role="tabpanel" className="pt-4">
           <ErrorBox>{(settings.error).message}</ErrorBox>
         </div>
-      ) : (
+      ) : settings.data ? (
         <div className="pt-4">
           {tab === "server" && (
             <div id="panel-server" role="tabpanel" aria-labelledby="tab-server">
               <SettingsWizard
-                initial={settings.data!}
+                initial={settings.data}
                 onSaved={() => {
                   void qc.invalidateQueries({ queryKey: ["admin-smtp"] });
                   void qc.invalidateQueries({ queryKey: ["auth-config"] });
@@ -132,11 +132,11 @@ export function AdminMail() {
 
           {tab === "status" && (
             <div id="panel-status" role="tabpanel" aria-labelledby="tab-status">
-              <StatusCard settings={settings.data!} lastOutcome={lastOutcome} />
+              <StatusCard settings={settings.data} lastOutcome={lastOutcome} />
             </div>
           )}
         </div>
-      )}
+      ) : null}
     </Page>
   );
 }
@@ -219,13 +219,20 @@ function SettingsWizard({
   const starttls = encryption === "starttls";
   const tls = encryption === "tls";
 
+  // Re-seed the form fields when `initial` changes (e.g. settings query
+  // refetches after a save). State is intentionally derived from a prop here
+  // because each form field is locally editable; we can't pass the value
+  // straight through. The set-state-in-effect rule's preferred alternatives
+  // (key-resetting / useSyncExternalStore) don't fit a multi-field draft.
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
     setHost(initial.host);
     setPort(initial.port || 587);
     setUsername(initial.username);
     setFromAddress(initial.from_address);
     setEncryption(deriveEncryption(initial.starttls, initial.tls));
     setInsecureSkipVerify(initial.insecure_skip_verify);
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [initial]);
 
   const save = useMutation({
@@ -321,7 +328,7 @@ function SettingsWizard({
     setStep("transport");
   }
 
-  function submit(e: FormEvent) {
+  function submit(e: SyntheticEvent) {
     e.preventDefault();
     const tErrs = validateTransport();
     const iErrs = validateIdentity();

@@ -39,6 +39,9 @@ export function EnforcementGuard({ children }: { children: ReactNode }) {
 }
 
 function GraceBanner({ graceUntil }: { graceUntil: Date }) {
+  // Display-only countdown — Date.now() during render is fine, the banner
+  // is re-rendered as part of normal navigation. No clock hook needed.
+  // eslint-disable-next-line react-hooks/purity
   const days = Math.max(0, Math.ceil((graceUntil.getTime() - Date.now()) / 86400000));
   return (
     <div className="mx-4 mt-3 rounded-md border border-amber-400/40 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-950/40 dark:text-amber-100">

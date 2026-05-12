@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Activity, Clock, PencilLine, Plus, Trash2, X } from "lucide-react";
-import type { FormEvent} from "react";
+import type { SyntheticEvent} from "react";
 import { useEffect, useMemo, useState } from "react";
 
 import type { ChartSeries} from "../components/Chart";
@@ -601,7 +601,7 @@ function MonitorForm({
     onError: (err) => { setError(err instanceof ApiError ? err.detail : t("admin:monitors.form.failed")); },
   });
 
-  function submit(e: FormEvent) {
+  function submit(e: SyntheticEvent) {
     e.preventDefault();
     setError(null);
     save.mutate();
@@ -729,7 +729,9 @@ function MonitorForm({
 function ResultsBlock({ monitor }: { monitor: Monitor }) {
   const { t } = useT(["admin", "common"]);
   const [rangeSec, setRangeSec] = useState(60 * 60);
+  // Date.now() inside the memo is intentional — recomputed on rangeSec change.
   const sinceISO = useMemo(
+    // eslint-disable-next-line react-hooks/purity
     () => new Date(Date.now() - rangeSec * 1000).toISOString(),
     [rangeSec],
   );

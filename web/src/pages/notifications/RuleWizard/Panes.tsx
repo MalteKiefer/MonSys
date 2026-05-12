@@ -759,11 +759,13 @@ export function ExpertJsonPane({
   const [err, setErr] = useState<string | null>(null);
 
   // Re-sync when params change externally (e.g. user toggled mode and the
-  // typed pane mutated condition_params).
+  // typed pane mutated condition_params). We diff on the serialized form so
+  // shallow-equal object replacements don't re-format the textarea.
+  const paramsJSON = JSON.stringify(params ?? {}, null, 2);
   useEffect(() => {
-    setText(JSON.stringify(params ?? {}, null, 2));
+    setText(paramsJSON);
     setErr(null);
-  }, [JSON.stringify(params)]);
+  }, [paramsJSON]);
 
   function handleChange(next: string) {
     setText(next);

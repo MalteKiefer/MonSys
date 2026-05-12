@@ -150,7 +150,11 @@ export default tseslint.config(
       "react-hooks/purity": "warn",
       "react-hooks/refs": "warn",
       // a11y findings — keep visible but non-blocking per task ("warn — not blocking yet").
-      "jsx-a11y/no-autofocus": "warn",
+      // no-autofocus: intentionally OFF. Our autoFocus uses are all "first
+      // input of a freshly-opened modal/wizard step", which is the documented
+      // exception in the WCAG guidance (focus management for newly mounted
+      // overlays). Screen readers handle this correctly.
+      "jsx-a11y/no-autofocus": "off",
       "jsx-a11y/no-noninteractive-element-interactions": "warn",
       "jsx-a11y/no-static-element-interactions": "warn",
       "jsx-a11y/interactive-supports-focus": "warn",

@@ -53,7 +53,7 @@ export function Hosts() {
   // Sort modes for the Updates column. Cycles: off → pending desc → security desc → off.
   const [updatesSort, setUpdatesSort] = useState<"off" | "pending" | "security">("off");
 
-  const hosts = data?.hosts ?? [];
+  const hosts = useMemo(() => data?.hosts ?? [], [data]);
 
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();

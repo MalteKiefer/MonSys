@@ -25,7 +25,7 @@ import {
   Sliders,
   X,
 } from "lucide-react";
-import type { FormEvent} from "react";
+import type { SyntheticEvent} from "react";
 import { useEffect, useState } from "react";
 
 import {
@@ -267,7 +267,7 @@ export function RuleForm({
       { setError(err instanceof ApiError ? err.detail : (err).message); },
   });
 
-  function onSubmit(e: FormEvent) {
+  function onSubmit(e: SyntheticEvent) {
     e.preventDefault();
     setError(null);
     save.mutate();

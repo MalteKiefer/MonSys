@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Layers, PencilLine, Plus, Trash2, Users as UsersIcon, X } from "lucide-react";
-import type { FormEvent} from "react";
+import type { SyntheticEvent} from "react";
 import { useMemo, useState } from "react";
 
 import type {
@@ -187,7 +187,7 @@ function GroupForm({
       { setError(err instanceof ApiError ? err.detail : t("admin:groups.form.failed")); },
   });
 
-  function submit(e: FormEvent) {
+  function submit(e: SyntheticEvent) {
     e.preventDefault();
     setError(null);
     save.mutate();
@@ -424,7 +424,7 @@ function CreateGroupPanel({
       { setError(err instanceof ApiError ? err.detail : t("admin:groups.create.failed")); },
   });
 
-  function submit(e: FormEvent) {
+  function submit(e: SyntheticEvent) {
     e.preventDefault();
     setError(null);
     save.mutate();

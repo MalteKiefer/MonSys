@@ -3,11 +3,15 @@ import type { LoginResponse, Passkey } from "./types";
 
 // --- base64url helpers ------------------------------------------------------
 
-function b64urlToBytes(s: string): Uint8Array {
+// b64urlToBytes returns a Uint8Array backed by a fresh ArrayBuffer (not the
+// default ArrayBufferLike union TS 5 widens to), so the result satisfies
+// WebAuthn's BufferSource — which excludes SharedArrayBuffer.
+function b64urlToBytes(s: string): Uint8Array<ArrayBuffer> {
   const pad = "=".repeat((4 - (s.length % 4)) % 4);
   const b64 = (s + pad).replace(/-/g, "+").replace(/_/g, "/");
   const raw = atob(b64);
-  const out = new Uint8Array(raw.length);
+  const buf = new ArrayBuffer(raw.length);
+  const out = new Uint8Array(buf);
   for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
   return out;
 }
@@ -19,38 +23,131 @@ function bytesToB64url(buf: ArrayBuffer): string {
   return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+// --- wire-format types ------------------------------------------------------
+//
+// The server sends WebAuthn options with all BufferSource fields as base64url
+// strings. We model those as `EncodedXxx` types so the unsafe-* lint rules see
+// a typed boundary instead of `any`.
+
+interface EncodedCredentialDescriptor {
+  id: string;
+  type: PublicKeyCredentialType;
+  transports?: AuthenticatorTransport[];
+}
+
+interface EncodedCreationOptions
+  extends Omit<
+    PublicKeyCredentialCreationOptions,
+    "challenge" | "user" | "excludeCredentials"
+  > {
+  challenge: string;
+  user: Omit<PublicKeyCredentialUserEntity, "id"> & { id: string };
+  excludeCredentials?: EncodedCredentialDescriptor[];
+}
+
+interface EncodedRequestOptions
+  extends Omit<PublicKeyCredentialRequestOptions, "challenge" | "allowCredentials"> {
+  challenge: string;
+  allowCredentials?: EncodedCredentialDescriptor[];
+}
+
+// Envelope shapes: huma sometimes wraps options in {publicKey: ...} per the
+// WebAuthn spec, other handlers return the bare dict.
+interface BeginRegisterResponse {
+  challenge_token: string;
+  options: EncodedCreationOptions | { publicKey: EncodedCreationOptions };
+}
+
+interface BeginLoginResponse {
+  challenge_token: string;
+  options: EncodedRequestOptions | { publicKey: EncodedRequestOptions };
+}
+
+function unwrapCreationOpts(
+  o: EncodedCreationOptions | { publicKey: EncodedCreationOptions },
+): EncodedCreationOptions {
+  return "publicKey" in o ? o.publicKey : o;
+}
+
+function unwrapRequestOpts(
+  o: EncodedRequestOptions | { publicKey: EncodedRequestOptions },
+): EncodedRequestOptions {
+  return "publicKey" in o ? o.publicKey : o;
+}
+
 // PublicKeyCredentialCreationOptions/RequestOptions arrive with `challenge`,
 // `user.id`, and `excludeCredentials[*].id` / `allowCredentials[*].id` as
-// base64url strings. The browser API expects BufferSources. Walk the dict and
-// convert in-place.
-function decodeCreationOptions(opts: any): PublicKeyCredentialCreationOptions {
-  const o = { ...opts };
-  o.challenge = b64urlToBytes(o.challenge);
-  if (o.user?.id) o.user = { ...o.user, id: b64urlToBytes(o.user.id) };
-  if (Array.isArray(o.excludeCredentials)) {
-    o.excludeCredentials = o.excludeCredentials.map((c: any) => ({
+// base64url strings. The browser API expects BufferSources.
+function decodeCreationOptions(
+  opts: EncodedCreationOptions,
+): PublicKeyCredentialCreationOptions {
+  return {
+    ...opts,
+    challenge: b64urlToBytes(opts.challenge),
+    user: { ...opts.user, id: b64urlToBytes(opts.user.id) },
+    excludeCredentials: opts.excludeCredentials?.map((c) => ({
       ...c,
       id: b64urlToBytes(c.id),
-    }));
-  }
-  return o as PublicKeyCredentialCreationOptions;
+    })),
+  };
 }
 
-function decodeRequestOptions(opts: any): PublicKeyCredentialRequestOptions {
-  const o = { ...opts };
-  o.challenge = b64urlToBytes(o.challenge);
-  if (Array.isArray(o.allowCredentials)) {
-    o.allowCredentials = o.allowCredentials.map((c: any) => ({
+function decodeRequestOptions(
+  opts: EncodedRequestOptions,
+): PublicKeyCredentialRequestOptions {
+  return {
+    ...opts,
+    challenge: b64urlToBytes(opts.challenge),
+    allowCredentials: opts.allowCredentials?.map((c) => ({
       ...c,
       id: b64urlToBytes(c.id),
-    }));
-  }
-  return o as PublicKeyCredentialRequestOptions;
+    })),
+  };
 }
 
-// Encode the AuthenticatorResponse fields the server expects (base64url).
-function encodeCreate(cred: PublicKeyCredential): any {
-  const resp = cred.response as AuthenticatorAttestationResponse;
+// Encoded credential payloads sent back to the server.
+interface EncodedCreateCredential {
+  id: string;
+  rawId: string;
+  type: string;
+  response: {
+    attestationObject: string;
+    clientDataJSON: string;
+    transports: string[];
+  };
+  clientExtensionResults: AuthenticationExtensionsClientOutputs;
+  authenticatorAttachment: string | null;
+}
+
+interface EncodedGetCredential {
+  id: string;
+  rawId: string;
+  type: string;
+  response: {
+    authenticatorData: string;
+    clientDataJSON: string;
+    signature: string;
+    userHandle: string | null;
+  };
+  clientExtensionResults: AuthenticationExtensionsClientOutputs;
+  authenticatorAttachment: string | null;
+}
+
+// The DOM lib types getTransports on AuthenticatorAttestationResponse, but it's
+// behind a feature check in some browsers. Define an optional-method shape so
+// we can call it without `any`.
+type AttestationWithTransports = AuthenticatorAttestationResponse & {
+  getTransports?: () => string[];
+};
+
+// PublicKeyCredential.authenticatorAttachment is a newer field; same pattern.
+type CredentialWithAttachment = PublicKeyCredential & {
+  authenticatorAttachment?: string | null;
+};
+
+function encodeCreate(cred: PublicKeyCredential): EncodedCreateCredential {
+  const resp = cred.response as AttestationWithTransports;
+  const credWithAttachment = cred as CredentialWithAttachment;
   return {
     id: cred.id,
     rawId: bytesToB64url(cred.rawId),
@@ -58,15 +155,16 @@ function encodeCreate(cred: PublicKeyCredential): any {
     response: {
       attestationObject: bytesToB64url(resp.attestationObject),
       clientDataJSON: bytesToB64url(resp.clientDataJSON),
-      transports: (resp as any).getTransports?.() ?? [],
+      transports: resp.getTransports?.() ?? [],
     },
-    clientExtensionResults: cred.getClientExtensionResults?.() ?? {},
-    authenticatorAttachment: (cred as any).authenticatorAttachment ?? null,
+    clientExtensionResults: cred.getClientExtensionResults(),
+    authenticatorAttachment: credWithAttachment.authenticatorAttachment ?? null,
   };
 }
 
-function encodeGet(cred: PublicKeyCredential): any {
+function encodeGet(cred: PublicKeyCredential): EncodedGetCredential {
   const resp = cred.response as AuthenticatorAssertionResponse;
+  const credWithAttachment = cred as CredentialWithAttachment;
   return {
     id: cred.id,
     rawId: bytesToB64url(cred.rawId),
@@ -77,8 +175,8 @@ function encodeGet(cred: PublicKeyCredential): any {
       signature: bytesToB64url(resp.signature),
       userHandle: resp.userHandle ? bytesToB64url(resp.userHandle) : null,
     },
-    clientExtensionResults: cred.getClientExtensionResults?.() ?? {},
-    authenticatorAttachment: (cred as any).authenticatorAttachment ?? null,
+    clientExtensionResults: cred.getClientExtensionResults(),
+    authenticatorAttachment: credWithAttachment.authenticatorAttachment ?? null,
   };
 }
 
@@ -91,17 +189,15 @@ export function supported(): boolean {
 export async function registerPasskey(name: string): Promise<Passkey> {
   if (!supported()) throw new Error("This browser does not support passkeys.");
 
-  const begin = await api<{ challenge_token: string; options: any }>(
+  const begin = await api<BeginRegisterResponse>(
     "/v1/auth/webauthn/register/begin",
     { method: "POST", body: JSON.stringify({ name }) },
   );
 
-  // Some huma payloads wrap PublicKeyCredentialCreationOptions in a
-  // {"publicKey": {...}} envelope per the WebAuthn spec, others return the
-  // options dict directly. Unwrap either shape.
-  const optsRaw = begin.options?.publicKey ?? begin.options;
-  const opts = decodeCreationOptions(optsRaw);
-  const cred = (await navigator.credentials.create({ publicKey: opts })) as PublicKeyCredential | null;
+  const opts = decodeCreationOptions(unwrapCreationOpts(begin.options));
+  const cred = (await navigator.credentials.create({
+    publicKey: opts,
+  })) as PublicKeyCredential | null;
   if (!cred) throw new Error("Authenticator returned no credential.");
 
   return api<Passkey>("/v1/auth/webauthn/register/finish", {
@@ -118,20 +214,22 @@ export async function registerPasskey(name: string): Promise<Passkey> {
 // Pass mediation: "conditional" to enable autofill on the email input — call
 // the helper at page mount with conditional=true; the browser only completes
 // if the user explicitly picks a passkey from the autofill UI.
-export async function loginWithPasskey(opts: { conditional?: boolean } = {}): Promise<LoginResponse> {
+export async function loginWithPasskey(
+  opts: { conditional?: boolean } = {},
+): Promise<LoginResponse> {
   if (!supported()) throw new Error("This browser does not support passkeys.");
 
-  const begin = await api<{ challenge_token: string; options: any }>(
-    "/v1/auth/webauthn/login/begin",
-    { method: "POST", skipAuth: true, body: "{}" },
-  );
+  const begin = await api<BeginLoginResponse>("/v1/auth/webauthn/login/begin", {
+    method: "POST",
+    skipAuth: true,
+    body: "{}",
+  });
 
-  const optsRaw = begin.options?.publicKey ?? begin.options;
-  const reqOpts = decodeRequestOptions(optsRaw);
+  const reqOpts = decodeRequestOptions(unwrapRequestOpts(begin.options));
   const cred = (await navigator.credentials.get({
     publicKey: reqOpts,
     mediation: opts.conditional ? "conditional" : undefined,
-  } as any)) as PublicKeyCredential | null;
+  })) as PublicKeyCredential | null;
   if (!cred) throw new Error("Authenticator returned no credential.");
 
   return api<LoginResponse>("/v1/auth/webauthn/login/finish", {
@@ -147,23 +245,32 @@ export async function loginWithPasskey(opts: { conditional?: boolean } = {}): Pr
 // Conditional-UI hot path: kick off a discoverable get with mediation:conditional
 // at page mount. Returns a promise that resolves only when the user picks a
 // passkey from autofill. Cancels itself via AbortSignal if you pass one.
-export async function conditionalAutofill(signal?: AbortSignal): Promise<LoginResponse | null> {
+export async function conditionalAutofill(
+  signal?: AbortSignal,
+): Promise<LoginResponse | null> {
   if (!supported()) return null;
   if (!("isConditionalMediationAvailable" in PublicKeyCredential)) return null;
-  const avail = await (PublicKeyCredential as any).isConditionalMediationAvailable?.();
+  // isConditionalMediationAvailable is a static method on PublicKeyCredential
+  // that some browsers don't expose yet. Feature-detect, then call via the
+  // typed shape rather than `any`.
+  const isAvail = (
+    PublicKeyCredential as unknown as {
+      isConditionalMediationAvailable?: () => Promise<boolean>;
+    }
+  ).isConditionalMediationAvailable;
+  const avail = isAvail ? await isAvail.call(PublicKeyCredential) : false;
   if (!avail) return null;
   try {
-    const begin = await api<{ challenge_token: string; options: any }>(
+    const begin = await api<BeginLoginResponse>(
       "/v1/auth/webauthn/login/begin",
       { method: "POST", skipAuth: true, body: "{}" },
     );
-    const optsRaw = begin.options?.publicKey ?? begin.options;
-    const reqOpts = decodeRequestOptions(optsRaw);
+    const reqOpts = decodeRequestOptions(unwrapRequestOpts(begin.options));
     const cred = (await navigator.credentials.get({
       publicKey: reqOpts,
       mediation: "conditional",
       signal,
-    } as any)) as PublicKeyCredential | null;
+    })) as PublicKeyCredential | null;
     if (!cred) return null;
     return await api<LoginResponse>("/v1/auth/webauthn/login/finish", {
       method: "POST",
@@ -174,7 +281,7 @@ export async function conditionalAutofill(signal?: AbortSignal): Promise<LoginRe
       }),
     });
   } catch (err) {
-    if ((err as any)?.name === "AbortError") return null;
+    if (err instanceof Error && err.name === "AbortError") return null;
     return null;
   }
 }

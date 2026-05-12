@@ -104,7 +104,7 @@ export function AdminLogsContent({ onMeta }: { onMeta?: (node: ReactNode) => voi
     refetchInterval: liveTail ? 2_000 : false,
   });
 
-  const rawEntries = logs.data?.entries ?? [];
+  const rawEntries = useMemo(() => logs.data?.entries ?? [], [logs.data]);
   const total = logs.data?.total ?? 0;
 
   // Apply chip filters client-side. Empty set = no filter for that
