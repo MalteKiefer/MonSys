@@ -15,7 +15,10 @@ plane without running a hosted SaaS.
 - **Database** — TimescaleDB hypertables with retention policies for every
   metrics table; `audit_log` and `alert_history` are bounded too.
 - **Web UI** — React 19 + Vite + Tailwind 3, dark/light themes, lazy-loaded
-  admin pages.
+  admin pages. **Installable PWA** — Chrome's address-bar install button on
+  desktop and "Add to Home Screen" on mobile; the shell loads from cache on
+  repeat visits so a slow network only delays the first API call. API
+  responses are never cached.
 
 The Go module is `github.com/MalteKiefer/MonSys`; the shipped binaries are
 `mon-server` and `mon-agent`.

@@ -6,6 +6,7 @@ import { BrowserRouter } from "react-router-dom";
 import "./i18n";
 import { App } from "./App";
 import "./index.css";
+import "./lib/registerSW";
 import { applyTheme, resolveInitialTheme } from "./lib/theme";
 
 // Apply the persisted (or system-preferred) theme before React mounts so
