@@ -257,6 +257,10 @@ func (c *Collector) updatesAPT(ctx context.Context) ([]apitypes.PendingUpdate, e
 			continue
 		}
 		// Format: "name/repo version arch [upgradable from: oldver]"
+		// repo is comma-separated when the package is available from multiple
+		// suites, e.g. "noble-updates,noble-security". The "-security" suffix
+		// on any segment classifies the update as a security update — matches
+		// what unattended-upgrades and apt's own UI rely on.
 		f := strings.Fields(line)
 		if len(f) < 6 {
 			continue
@@ -274,18 +278,67 @@ func (c *Collector) updatesAPT(ctx context.Context) ([]apitypes.PendingUpdate, e
 			CurrentVersion:   oldVer,
 			AvailableVersion: f[1],
 			SourceRepo:       repo,
+			IsSecurity:       aptRepoIsSecurity(repo),
 		})
 	}
 	return ups, sc.Err()
+}
+
+// aptRepoIsSecurity returns true if any comma-separated suite segment of the
+// apt source carries the "-security" suffix. Covers Debian (bookworm-security,
+// bullseye-security), Ubuntu (noble-security, jammy-security), and the
+// derivatives that mirror that naming. Case-folded for safety against
+// non-standard mirrors.
+func aptRepoIsSecurity(repo string) bool {
+	if repo == "" {
+		return false
+	}
+	for _, seg := range strings.Split(repo, ",") {
+		seg = strings.ToLower(strings.TrimSpace(seg))
+		// Match "<suite>-security" anywhere: e.g. "noble-security/main" after
+		// splitting on '/' the leading half is "noble-security"; in apt-list
+		// output the trailing path is dropped so we just check the suite.
+		if strings.HasSuffix(seg, "-security") ||
+			strings.Contains(seg, "-security/") {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Collector) updatesDNF(ctx context.Context) ([]apitypes.PendingUpdate, error) {
 	if !safeexec.Available("dnf") {
 		return nil, nil
 	}
-	// dnf check-update returns 100 when updates exist, 0 when none, others = error.
-	// safeexec reports non-zero as error; we ignore that path as a status signal.
+	// dnf check-update returns 100 when updates exist, 0 when none, others =
+	// error. safeexec reports non-zero as error; we ignore that path as a
+	// status signal.
 	out, _ := c.run(ctx, 60*time.Second, "dnf", "check-update", "--quiet")
+
+	// Second pass for security flagging — RHEL/Fedora repos don't carry a
+	// "-security" suffix the way apt does. `dnf updateinfo list --security
+	// --quiet` prints "<advisory> <severity> <pkg-name-arch>"; we just want
+	// the package names so we can mark the matching rows. Empty result = no
+	// security updates pending, which is the desired no-op.
+	secNames := map[string]bool{}
+	secOut, _ := c.run(ctx, 60*time.Second, "dnf", "updateinfo", "list", "--security", "--quiet")
+	scSec := bufio.NewScanner(bytes.NewReader(secOut))
+	for scSec.Scan() {
+		f := strings.Fields(scSec.Text())
+		if len(f) < 3 {
+			continue
+		}
+		// Strip the trailing ".<arch>" and the leading "<advisory>" tokens.
+		pkg := f[len(f)-1]
+		if dot := strings.LastIndex(pkg, "."); dot > 0 {
+			pkg = pkg[:dot]
+		}
+		// dnf formats names as "name-version-release", but updateinfo prints
+		// just "name" in --list mode on most distros. Tolerate both: split on
+		// the last '-' that precedes a digit if present.
+		secNames[pkg] = true
+	}
+
 	var ups []apitypes.PendingUpdate
 	sc := bufio.NewScanner(bytes.NewReader(out))
 	for sc.Scan() {
@@ -304,6 +357,7 @@ func (c *Collector) updatesDNF(ctx context.Context) ([]apitypes.PendingUpdate, e
 			Arch:             arch,
 			AvailableVersion: f[1],
 			SourceRepo:       f[2],
+			IsSecurity:       secNames[nameArch[0]],
 		})
 	}
 	return ups, sc.Err()
