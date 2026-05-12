@@ -58,7 +58,13 @@ func (c *Collector) fail2banJails(ctx context.Context) []apitypes.Fail2banJailIn
 // because fail2ban prefixes them with a hyphen/bullet that differs slightly
 // between versions.
 func fail2banJailDetail(ctx context.Context, jail string) (apitypes.Fail2banJailInfo, error) {
-	out, err := safeexec.RunWithTimeout(ctx, fail2banCmdTimeout, "fail2ban-client", "status", jail)
+	// audit 2026-05-12 §4.3.2: argv-not-shell already closes CWE-78, but a
+	// jail name beginning with `-` would be reinterpreted as a flag by
+	// fail2ban-client's argparse. Insert `--` between the verb and the
+	// jail argument so any leading-dash jail is treated as a positional.
+	// fail2ban-client uses Python argparse, which honours `--` per POSIX
+	// utility-syntax guideline 10.
+	out, err := safeexec.RunWithTimeout(ctx, fail2banCmdTimeout, "fail2ban-client", "status", "--", jail)
 	if err != nil {
 		return apitypes.Fail2banJailInfo{}, err
 	}

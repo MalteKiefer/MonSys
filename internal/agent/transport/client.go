@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"net"
 	"net/http"
 	"os"
 	"regexp"
@@ -380,8 +381,10 @@ func retryableStatus(code int) bool {
 }
 
 // shouldRetryErr distinguishes "this might succeed if we try again"
-// (network blip) from "no point" (context cancelled). The stdlib does
-// not surface a clean predicate so we sniff context cancellation.
+// (network blip) from "no point" (context cancelled, or a permanent
+// failure like cert verification or NXDOMAIN). The stdlib does not
+// surface a clean predicate so we sniff context cancellation and then
+// defer to isPermanentNetError for the deterministic-failure classes.
 func shouldRetryErr(ctx context.Context, err error) bool {
 	if err == nil {
 		return false
@@ -389,7 +392,58 @@ func shouldRetryErr(ctx context.Context, err error) bool {
 	if ctx.Err() != nil {
 		return false
 	}
+	// audit 2026-05-12 §4.3.11: RFC 9110 §9.2.2 — automatically-retryable
+	// failures only. TLS verification failures, unknown CA, invalid cert,
+	// and DNS NXDOMAIN won't get better on retry, so spending the retry
+	// budget on them just slows down the eventual surfaced error.
+	if isPermanentNetError(err) {
+		return false
+	}
 	return true
+}
+
+// isPermanentNetError reports whether err is a deterministic, non-retryable
+// network failure: a TLS chain verification failure, an unknown-CA or
+// invalid-certificate error from crypto/x509, or a DNS not-found result.
+// These will produce the same outcome on every retry, so the retry budget
+// should be spent elsewhere.
+//
+// audit 2026-05-12 §4.3.11: introduced.
+func isPermanentNetError(err error) bool {
+	if err == nil {
+		return false
+	}
+	// TLS chain verification failure. The Go stdlib wraps the underlying
+	// x509 cause inside *tls.CertificateVerificationError, so errors.As
+	// matches even when the error is several wraps deep.
+	var tlsVerifyErr *tls.CertificateVerificationError
+	if errors.As(err, &tlsVerifyErr) {
+		return true
+	}
+	// Unknown / untrusted CA. Note: x509.UnknownAuthorityError is a struct
+	// type (not a sentinel), so errors.As is the right tool.
+	var unknownAuthErr x509.UnknownAuthorityError
+	if errors.As(err, &unknownAuthErr) {
+		return true
+	}
+	// Cert was malformed / expired / not-yet-valid / wrong key usage etc.
+	var certInvalidErr x509.CertificateInvalidError
+	if errors.As(err, &certInvalidErr) {
+		return true
+	}
+	// Hostname-vs-SAN mismatch. Permanent until the cert or hostname
+	// changes; retrying inside the same Run loop won't fix it.
+	var hostnameErr x509.HostnameError
+	if errors.As(err, &hostnameErr) {
+		return true
+	}
+	// DNS NXDOMAIN. Other *net.DNSError instances (e.g. transient resolver
+	// timeouts with IsTemporary true, or IsTimeout) are still retryable.
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) && dnsErr.IsNotFound {
+		return true
+	}
+	return false
 }
 
 // backoffFor returns the wait before the next attempt. Server-supplied

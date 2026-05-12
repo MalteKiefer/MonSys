@@ -99,8 +99,14 @@ func (s *Spool) Append(payload any) error {
 	tmp := filepath.Join(s.dir, name+spoolTmpExt)
 	final := filepath.Join(s.dir, name)
 
+	// audit 2026-05-12 §4.3.15: add O_EXCL. Under the single-mutex regime a
+	// collision is impossible by construction (nanosecond clock + PID +
+	// serialised Append), so this is defence-in-depth: if the invariant
+	// ever breaks (clock skew on a virt-host save/restore, multi-process
+	// abuse) we fail loud at open() rather than silently clobbering a
+	// peer's in-flight payload.
 	//nolint:gosec // path is agent-config-controlled, not user-tainted
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, spoolFilePerm)
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC|os.O_EXCL, spoolFilePerm)
 	if err != nil {
 		return fmt.Errorf("buffer: open tmp: %w", err)
 	}
@@ -122,6 +128,17 @@ func (s *Spool) Append(payload any) error {
 	if err := os.Rename(tmp, final); err != nil {
 		_ = os.Remove(tmp)
 		return fmt.Errorf("buffer: rename: %w", err)
+	}
+	// audit 2026-05-12 §4.3.13: fsync the spool directory after the
+	// rename. On ext4 with the default data=ordered the rename is durable
+	// in practice, but the POSIX-portable "atomic durable write" pattern
+	// requires fsync of the containing directory so the rename's metadata
+	// hits stable storage. Best-effort: directory fsync isn't supported on
+	// every filesystem (notably some FUSE backends), so we log-and-continue
+	// rather than fail the whole append.
+	if d, dErr := os.Open(s.dir); dErr == nil { //nolint:gosec // agent-config-controlled
+		_ = d.Sync()
+		_ = d.Close()
 	}
 	return s.enforceQuota()
 }

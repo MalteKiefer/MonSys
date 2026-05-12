@@ -371,10 +371,18 @@ func Run(ctx context.Context, o Options) (Result, error) {
 				return res, fmt.Errorf("restart %v: %w (output: %s); no snapshot available, rollback skipped",
 					o.RestartCmd, err, strings.TrimSpace(string(out)))
 			}
+			// audit 2026-05-12 §4.3.7: mirror the forward-path EXDEV
+			// fallback. If prevPath and finalPath are on different
+			// filesystems (rename(2) returns *LinkError with EXDEV), fall
+			// back to copyReplace so rollback completes the same way the
+			// initial swap did.
 			rbErr := os.Rename(prevPath, finalPath)
 			if rbErr != nil {
-				return res, fmt.Errorf("restart %v: %w (output: %s); rollback failed: %v",
-					o.RestartCmd, err, strings.TrimSpace(string(out)), rbErr)
+				if cpErr := copyReplace(prevPath, finalPath); cpErr != nil {
+					return res, fmt.Errorf("restart %v: %w (output: %s); rollback failed: rename=%v copy=%v",
+						o.RestartCmd, err, strings.TrimSpace(string(out)), rbErr, cpErr)
+				}
+				_ = os.Remove(prevPath)
 			}
 			res.Replaced = false
 			res.To = res.From
@@ -383,9 +391,20 @@ func Run(ctx context.Context, o Options) (Result, error) {
 				return res, fmt.Errorf("restart %v failed: %w (output: %s); rolled back to previous binary but post-rollback restart also failed: %v (output: %s)",
 					o.RestartCmd, err, strings.TrimSpace(string(out)), rErr, strings.TrimSpace(string(rOut)))
 			}
+			// Rollback succeeded; the snapshot file has been consumed by
+			// the rename/copy step above. Nothing to clean up here.
 			return res, fmt.Errorf("restart %v failed: %w (output: %s); rolled back to previous binary at %s and restarted successfully",
 				o.RestartCmd, err, strings.TrimSpace(string(out)), prevPath)
 		}
+	}
+	// audit 2026-05-12 §4.3.6: on the happy path the .prev snapshot is no
+	// longer needed — the new binary is live and systemd has acknowledged
+	// the restart (or no RestartCmd was configured at all, in which case
+	// nothing will ever roll back from the previous tick's snapshot
+	// either). Remove it so /usr/local/bin doesn't accumulate orphans.
+	// Best-effort: a leftover .prev is not a failure.
+	if snapshotted {
+		_ = os.Remove(prevPath)
 	}
 	return res, nil
 }
