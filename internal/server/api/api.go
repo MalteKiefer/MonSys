@@ -181,10 +181,12 @@ func rateLimitByPath() func(http.Handler) http.Handler {
 	ingestLimiter := httprate.LimitByIP(600, time.Minute)
 
 	authPaths := map[string]struct{}{
-		"/v1/auth/login":         {},
-		"/v1/auth/2fa/challenge": {},
-		"/v1/auth/consume-reset": {},
-		"/v1/agents/register":    {},
+		"/v1/auth/login":                   {},
+		"/v1/auth/2fa/challenge":           {},
+		"/v1/auth/consume-reset":           {},
+		"/v1/agents/register":              {},
+		"/v1/auth/webauthn/login/begin":    {},
+		"/v1/auth/webauthn/login/finish":   {},
 	}
 
 	return func(next http.Handler) http.Handler {
@@ -246,6 +248,39 @@ func (s *Server) requireSessionForDocs(next http.Handler) http.Handler {
 func internalErr(ctx context.Context, op string, err error) error {
 	slog.ErrorContext(ctx, "internal error", "op", op, "err", err)
 	return huma.Error500InternalServerError("internal error")
+}
+
+// sessionExpiresAt computes the wall-clock expiry the API surface advertises
+// in LoginResponse.ExpiresAt. The actual TTL applied to the session row is
+// enforced inside Store.IssueSession via effectiveSessionTTL; we recompute
+// it here so the timestamp the client sees matches what the store wrote.
+// On policy load failure we fall back to 12h — better a slightly stale
+// hint than a refused login.
+func (s *Server) sessionExpiresAt(ctx context.Context) time.Time {
+	p, err := s.Store.GetSecurityPolicy(ctx)
+	if err != nil || p.MaxSessionHours <= 0 {
+		return time.Now().Add(12 * time.Hour).UTC()
+	}
+	return time.Now().Add(time.Duration(p.MaxSessionHours) * time.Hour).UTC()
+}
+
+// currentUserWithSecurity builds the CurrentUser response with the
+// security-policy-derived fields (PasskeyCount, MustEnroll, GraceUntil)
+// populated. Used by every endpoint that returns CurrentUser so the UI
+// can render "you must enroll a passkey" banners consistently.
+func (s *Server) currentUserWithSecurity(ctx context.Context, u store.User) apitypes.CurrentUser {
+	out := apitypes.CurrentUser{
+		ID:         u.ID.String(),
+		Email:      u.Email,
+		Role:       u.Role,
+		TOTPActive: u.TOTPActive,
+	}
+	pks, _ := s.Store.ListPasskeys(ctx, u.ID)
+	out.PasskeyCount = len(pks)
+	complies, grace, _ := s.Store.UserCompliesWithPolicy(ctx, u.ID)
+	out.MustEnroll = !complies
+	out.GraceUntil = grace
+	return out
 }
 
 func (s *Server) Handler() http.Handler { return s.Router }
@@ -316,13 +351,20 @@ func (s *Server) registerRoutes() {
 		Tags:        []string{"auth"},
 	}, s.handleLogin)
 
+	// openProtected: session-required, but NO compliance gate. Endpoints that
+	// a non-compliant user must still be able to reach in order to BECOME
+	// compliant (enroll a passkey/TOTP, change password, view /me, log out)
+	// use this so the force-mode middleware doesn't lock them out of the
+	// remediation surface.
+	openProtected := huma.Middlewares{s.requireUser}
+
 	huma.Register(s.API, huma.Operation{
 		OperationID: "auth-logout",
 		Method:      http.MethodPost,
 		Path:        "/v1/auth/logout",
 		Summary:     "Revoke the current session",
 		Tags:        []string{"auth"},
-		Middlewares: huma.Middlewares{s.requireUser},
+		Middlewares: openProtected,
 	}, s.handleLogout)
 
 	huma.Register(s.API, huma.Operation{
@@ -331,7 +373,7 @@ func (s *Server) registerRoutes() {
 		Path:        "/v1/auth/me",
 		Summary:     "Return the authenticated user",
 		Tags:        []string{"auth"},
-		Middlewares: huma.Middlewares{s.requireUser},
+		Middlewares: openProtected,
 	}, s.handleMe)
 
 	// Lightweight server-wide auth/notification readiness flags. Any logged-in
@@ -343,14 +385,15 @@ func (s *Server) registerRoutes() {
 		Path:        "/v1/auth/config",
 		Summary:     "Server-wide readiness flags (sso, smtp) visible to any user",
 		Tags:        []string{"auth"},
-		Middlewares: huma.Middlewares{s.requireUser},
+		Middlewares: openProtected,
 	}, s.handleAuthConfig)
 
-	// Read APIs require a user session.
-	protected := huma.Middlewares{s.requireUser}
+	// Read APIs require a user session AND compliance with the active
+	// force-mode (passkey/2FA enrollment, when configured).
+	protected := huma.Middlewares{s.requireUser, s.requireMethodCompliance}
 	// Operator surfaces (user management, agent config, notification rules, …)
-	// require an admin in addition to a valid session.
-	adminOnly := huma.Middlewares{s.requireUser, s.requireAdmin}
+	// require an admin in addition to a valid session and method compliance.
+	adminOnly := huma.Middlewares{s.requireUser, s.requireMethodCompliance, s.requireAdmin}
 
 	huma.Register(s.API, huma.Operation{
 		OperationID: "list-hosts",
@@ -658,14 +701,15 @@ func (s *Server) registerRoutes() {
 		Tags:        []string{"auth"},
 	}, s.handleTOTPChallenge)
 
-	// Self-service profile (require user)
+	// Self-service profile (session required, but no compliance gate — these
+	// are the endpoints a non-compliant user uses to become compliant).
 	huma.Register(s.API, huma.Operation{
 		OperationID: "auth-change-password",
 		Method:      http.MethodPost,
 		Path:        "/v1/auth/change-password",
 		Summary:     "Change own password",
 		Tags:        []string{"auth"},
-		Middlewares: protected,
+		Middlewares: openProtected,
 	}, s.handleChangePassword)
 	huma.Register(s.API, huma.Operation{
 		OperationID: "auth-change-email",
@@ -673,7 +717,7 @@ func (s *Server) registerRoutes() {
 		Path:        "/v1/auth/change-email",
 		Summary:     "Change own email",
 		Tags:        []string{"auth"},
-		Middlewares: protected,
+		Middlewares: openProtected,
 	}, s.handleChangeEmail)
 	huma.Register(s.API, huma.Operation{
 		OperationID: "auth-2fa-setup",
@@ -681,7 +725,7 @@ func (s *Server) registerRoutes() {
 		Path:        "/v1/auth/2fa/setup",
 		Summary:     "Begin TOTP setup; returns secret + QR + backup codes",
 		Tags:        []string{"auth"},
-		Middlewares: protected,
+		Middlewares: openProtected,
 	}, s.handleTOTPSetup)
 	huma.Register(s.API, huma.Operation{
 		OperationID: "auth-2fa-verify",
@@ -689,7 +733,7 @@ func (s *Server) registerRoutes() {
 		Path:        "/v1/auth/2fa/verify",
 		Summary:     "Verify a TOTP code; activates pending TOTP if first-time",
 		Tags:        []string{"auth"},
-		Middlewares: protected,
+		Middlewares: openProtected,
 	}, s.handleTOTPVerify)
 	huma.Register(s.API, huma.Operation{
 		OperationID: "auth-2fa-disable",
@@ -697,8 +741,69 @@ func (s *Server) registerRoutes() {
 		Path:        "/v1/auth/2fa/disable",
 		Summary:     "Disable own TOTP (requires password)",
 		Tags:        []string{"auth"},
-		Middlewares: protected,
+		Middlewares: openProtected,
 	}, s.handleTOTPDisable)
+
+	// WebAuthn / passkey ceremonies. Login halves are unauthenticated (no
+	// session yet). Register halves and self-management endpoints are
+	// session-required but exempt from the force-mode compliance gate so a
+	// user can enroll a passkey under a strict policy.
+	huma.Register(s.API, huma.Operation{
+		OperationID: "auth-webauthn-register-begin",
+		Method:      http.MethodPost,
+		Path:        "/v1/auth/webauthn/register/begin",
+		Summary:     "Begin a passkey registration ceremony",
+		Tags:        []string{"auth"},
+		Middlewares: openProtected,
+	}, s.handleWebAuthnRegisterBegin)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "auth-webauthn-register-finish",
+		Method:      http.MethodPost,
+		Path:        "/v1/auth/webauthn/register/finish",
+		Summary:     "Finish a passkey registration ceremony",
+		Tags:        []string{"auth"},
+		Middlewares: openProtected,
+	}, s.handleWebAuthnRegisterFinish)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "auth-webauthn-login-begin",
+		Method:      http.MethodPost,
+		Path:        "/v1/auth/webauthn/login/begin",
+		Summary:     "Begin a discoverable-credential passkey login",
+		Tags:        []string{"auth"},
+	}, s.handleWebAuthnLoginBegin)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "auth-webauthn-login-finish",
+		Method:      http.MethodPost,
+		Path:        "/v1/auth/webauthn/login/finish",
+		Summary:     "Finish a discoverable-credential passkey login; returns session",
+		Tags:        []string{"auth"},
+	}, s.handleWebAuthnLoginFinish)
+
+	// Passkey self-management (list/rename/delete).
+	huma.Register(s.API, huma.Operation{
+		OperationID: "auth-list-passkeys",
+		Method:      http.MethodGet,
+		Path:        "/v1/auth/me/passkeys",
+		Summary:     "List the caller's registered passkeys",
+		Tags:        []string{"auth"},
+		Middlewares: openProtected,
+	}, s.handleListPasskeys)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "auth-rename-passkey",
+		Method:      http.MethodPut,
+		Path:        "/v1/auth/me/passkeys/{id}",
+		Summary:     "Rename one of the caller's passkeys",
+		Tags:        []string{"auth"},
+		Middlewares: openProtected,
+	}, s.handleRenamePasskey)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "auth-delete-passkey",
+		Method:      http.MethodDelete,
+		Path:        "/v1/auth/me/passkeys/{id}",
+		Summary:     "Delete one of the caller's passkeys",
+		Tags:        []string{"auth"},
+		Middlewares: openProtected,
+	}, s.handleDeletePasskey)
 
 	// Public reset endpoint — consumed via the link emailed by an admin
 	// invite. The token in the body is the only credential required.
@@ -902,6 +1007,32 @@ func (s *Server) registerRoutes() {
 		Tags:        []string{"admin"},
 		Middlewares: adminOnly,
 	}, s.handleSetPasswordPolicy)
+
+	// Admin: security policy (force-mode + session/idle caps)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "admin-get-security-policy",
+		Method:      http.MethodGet,
+		Path:        "/v1/admin/security/policy",
+		Summary:     "Get the active security policy (force-mode, session caps)",
+		Tags:        []string{"admin"},
+		Middlewares: adminOnly,
+	}, s.handleGetSecurityPolicy)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "admin-set-security-policy",
+		Method:      http.MethodPut,
+		Path:        "/v1/admin/security/policy",
+		Summary:     "Replace the security policy",
+		Tags:        []string{"admin"},
+		Middlewares: adminOnly,
+	}, s.handleSetSecurityPolicy)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "admin-revoke-all-sessions",
+		Method:      http.MethodPost,
+		Path:        "/v1/admin/security/revoke-all-sessions",
+		Summary:     "Revoke every active session except the caller's",
+		Tags:        []string{"admin"},
+		Middlewares: adminOnly,
+	}, s.handleRevokeAllSessions)
 
 	// Admin: agent self-enrollments. The plaintext token is surfaced on
 	// POST only; subsequent GETs return metadata. The companion installer
@@ -2073,9 +2204,7 @@ func (s *Server) handleLogin(ctx context.Context, in *loginInput) (*loginOutput,
 		out.Body.NeedsTOTP = true
 		out.Body.ChallengeToken = challenge
 		out.Body.ExpiresAt = time.Now().Add(5 * time.Minute).UTC()
-		out.Body.User = apitypes.CurrentUser{
-			ID: u.ID.String(), Email: u.Email, Role: u.Role, TOTPActive: true,
-		}
+		out.Body.User = s.currentUserWithSecurity(ctx, u)
 		return out, nil
 	}
 
@@ -2085,10 +2214,8 @@ func (s *Server) handleLogin(ctx context.Context, in *loginInput) (*loginOutput,
 	}
 	out := &loginOutput{}
 	out.Body.Token = token
-	out.Body.ExpiresAt = time.Now().Add(12 * time.Hour).UTC()
-	out.Body.User = apitypes.CurrentUser{
-		ID: u.ID.String(), Email: u.Email, Role: u.Role, TOTPActive: u.TOTPActive,
-	}
+	out.Body.ExpiresAt = s.sessionExpiresAt(ctx)
+	out.Body.User = s.currentUserWithSecurity(ctx, u)
 	return out, nil
 }
 
@@ -2125,10 +2252,8 @@ func (s *Server) handleTOTPChallenge(ctx context.Context, in *totpChallengeInput
 	}
 	out := &totpChallengeOutput{}
 	out.Body.Token = token
-	out.Body.ExpiresAt = time.Now().Add(12 * time.Hour).UTC()
-	out.Body.User = apitypes.CurrentUser{
-		ID: u.ID.String(), Email: u.Email, Role: u.Role, TOTPActive: true,
-	}
+	out.Body.ExpiresAt = s.sessionExpiresAt(ctx)
+	out.Body.User = s.currentUserWithSecurity(ctx, u)
 	return out, nil
 }
 
@@ -2272,12 +2397,7 @@ func (s *Server) handleMe(ctx context.Context, _ *emptyInput) (*meOutput, error)
 	if err != nil {
 		return nil, internalErr(ctx, "user fetch failed", err)
 	}
-	return &meOutput{Body: apitypes.CurrentUser{
-		ID:         full.ID.String(),
-		Email:      full.Email,
-		Role:       full.Role,
-		TOTPActive: full.TOTPActive,
-	}}, nil
+	return &meOutput{Body: s.currentUserWithSecurity(ctx, full)}, nil
 }
 
 type authConfigOutput struct {
@@ -2358,6 +2478,43 @@ func (s *Server) requireUser(c huma.Context, next func(huma.Context)) {
 	ctx := context.WithValue(c.Context(), ctxKeyUser, u)
 	ctx = context.WithValue(ctx, ctxKeyToken, tok)
 	next(huma.WithContext(c, ctx))
+}
+
+// requireMethodCompliance is a huma middleware that runs after requireUser
+// and enforces the active force-mode policy. Compliant users and users
+// still within their grace window pass through; users past grace get a 403
+// with a stable error code the UI can intercept to render the "you must
+// enroll" interstitial. On a policy lookup failure we fail open — a broken
+// settings table is an admin problem, not a reason to lock every user out.
+func (s *Server) requireMethodCompliance(c huma.Context, next func(huma.Context)) {
+	if s.Store == nil {
+		next(c)
+		return
+	}
+	u, ok := c.Context().Value(ctxKeyUser).(store.User)
+	if !ok {
+		// Defensive: requireUser should have already 401'd, but if the
+		// chain was assembled wrong we shouldn't crash here.
+		next(c)
+		return
+	}
+	complies, grace, err := s.Store.UserCompliesWithPolicy(c.Context(), u.ID)
+	if err != nil {
+		slog.Warn("policy compliance lookup failed; failing open",
+			"user_id", u.ID, "err", err)
+		next(c)
+		return
+	}
+	if complies {
+		next(c)
+		return
+	}
+	if grace != nil && time.Now().Before(*grace) {
+		next(c)
+		return
+	}
+	_ = huma.WriteErr(s.API, c, http.StatusForbidden,
+		"must_enroll_2fa: your administrator requires a second authentication factor; enroll a passkey or TOTP")
 }
 
 func userFromContext(ctx context.Context) (store.User, bool) {
@@ -3107,5 +3264,265 @@ func (s *Server) handleAdminListAudit(ctx context.Context, in *adminListAuditInp
 	out := &adminListAuditOutput{}
 	out.Body.Entries = entries
 	out.Body.Total = total
+	return out, nil
+}
+
+// --- WebAuthn: register/login ceremonies -----------------------------------
+
+type webAuthnRegBeginInput struct {
+	Body apitypes.WebAuthnRegisterBeginRequest
+}
+type webAuthnRegBeginOutput struct {
+	Body apitypes.WebAuthnRegisterBeginResponse
+}
+
+func (s *Server) handleWebAuthnRegisterBegin(ctx context.Context, _ *webAuthnRegBeginInput) (*webAuthnRegBeginOutput, error) {
+	u, ok := userFromContext(ctx)
+	if !ok {
+		return nil, huma.Error401Unauthorized("no session")
+	}
+	resp, err := s.Store.BeginPasskeyRegistration(ctx, u)
+	if err != nil {
+		if errors.Is(err, store.ErrPasskeyNotConfigured) {
+			return nil, huma.Error503ServiceUnavailable("passkey support not configured")
+		}
+		return nil, internalErr(ctx, "passkey register begin", err)
+	}
+	return &webAuthnRegBeginOutput{Body: resp}, nil
+}
+
+type webAuthnRegFinishInput struct {
+	Body apitypes.WebAuthnRegisterFinishRequest
+}
+type webAuthnRegFinishOutput struct {
+	Body apitypes.Passkey
+}
+
+func (s *Server) handleWebAuthnRegisterFinish(ctx context.Context, in *webAuthnRegFinishInput) (*webAuthnRegFinishOutput, error) {
+	u, ok := userFromContext(ctx)
+	if !ok {
+		return nil, huma.Error401Unauthorized("no session")
+	}
+	if in.Body.ChallengeToken == "" || in.Body.Credential == nil {
+		return nil, huma.Error400BadRequest("challenge_token and credential required")
+	}
+	// The store layer parses raw bytes; round-trip the map back to JSON.
+	credJSON, err := json.Marshal(in.Body.Credential)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid credential payload")
+	}
+	pk, err := s.Store.FinishPasskeyRegistration(ctx, u.ID, in.Body.ChallengeToken, credJSON, in.Body.Name)
+	if err != nil {
+		if errors.Is(err, store.ErrPasskeyNotConfigured) {
+			return nil, huma.Error503ServiceUnavailable("passkey support not configured")
+		}
+		if errors.Is(err, store.ErrActionTokenInvalid) {
+			return nil, huma.Error401Unauthorized("challenge invalid or expired")
+		}
+		return nil, internalErr(ctx, "passkey register finish", err)
+	}
+	return &webAuthnRegFinishOutput{Body: pk}, nil
+}
+
+type webAuthnLoginBeginOutput struct {
+	Body apitypes.WebAuthnLoginBeginResponse
+}
+
+func (s *Server) handleWebAuthnLoginBegin(ctx context.Context, _ *struct{}) (*webAuthnLoginBeginOutput, error) {
+	if s.Store == nil {
+		return nil, huma.Error503ServiceUnavailable("server has no store configured")
+	}
+	resp, err := s.Store.BeginPasskeyLogin(ctx)
+	if err != nil {
+		if errors.Is(err, store.ErrPasskeyNotConfigured) {
+			return nil, huma.Error503ServiceUnavailable("passkey support not configured")
+		}
+		return nil, internalErr(ctx, "passkey login begin", err)
+	}
+	return &webAuthnLoginBeginOutput{Body: resp}, nil
+}
+
+type webAuthnLoginFinishInput struct {
+	Body apitypes.WebAuthnLoginFinishRequest
+}
+type webAuthnLoginFinishOutput struct {
+	Body apitypes.LoginResponse
+}
+
+func (s *Server) handleWebAuthnLoginFinish(ctx context.Context, in *webAuthnLoginFinishInput) (*webAuthnLoginFinishOutput, error) {
+	if s.Store == nil {
+		return nil, huma.Error503ServiceUnavailable("server has no store configured")
+	}
+	if in.Body.ChallengeToken == "" || in.Body.Credential == nil {
+		return nil, huma.Error400BadRequest("challenge_token and credential required")
+	}
+	credJSON, err := json.Marshal(in.Body.Credential)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid credential payload")
+	}
+	u, err := s.Store.FinishPasskeyLogin(ctx, in.Body.ChallengeToken, credJSON)
+	if err != nil {
+		if errors.Is(err, store.ErrPasskeyNotConfigured) {
+			return nil, huma.Error503ServiceUnavailable("passkey support not configured")
+		}
+		if errors.Is(err, store.ErrUserDisabled) {
+			return nil, huma.Error403Forbidden("user is disabled")
+		}
+		if errors.Is(err, store.ErrUserNotFound) || errors.Is(err, store.ErrActionTokenInvalid) {
+			return nil, huma.Error401Unauthorized("passkey not recognised")
+		}
+		return nil, internalErr(ctx, "passkey login finish", err)
+	}
+	token, err := s.Store.IssueSession(ctx, u, "", "", 0)
+	if err != nil {
+		return nil, internalErr(ctx, "session create failed", err)
+	}
+	out := &webAuthnLoginFinishOutput{}
+	out.Body.Token = token
+	out.Body.ExpiresAt = s.sessionExpiresAt(ctx)
+	out.Body.User = s.currentUserWithSecurity(ctx, u)
+	return out, nil
+}
+
+// --- Passkey self-management ----------------------------------------------
+
+type listPasskeysOutput struct {
+	Body apitypes.ListPasskeysResponse
+}
+
+func (s *Server) handleListPasskeys(ctx context.Context, _ *struct{}) (*listPasskeysOutput, error) {
+	u, ok := userFromContext(ctx)
+	if !ok {
+		return nil, huma.Error401Unauthorized("no session")
+	}
+	pks, err := s.Store.ListPasskeys(ctx, u.ID)
+	if err != nil {
+		return nil, internalErr(ctx, "list passkeys", err)
+	}
+	out := &listPasskeysOutput{}
+	out.Body.Passkeys = pks
+	return out, nil
+}
+
+type renamePasskeyInput struct {
+	ID   string `path:"id" format:"uuid"`
+	Body apitypes.RenamePasskeyRequest
+}
+
+func (s *Server) handleRenamePasskey(ctx context.Context, in *renamePasskeyInput) (*emptyOutput, error) {
+	u, ok := userFromContext(ctx)
+	if !ok {
+		return nil, huma.Error401Unauthorized("no session")
+	}
+	credID, err := uuid.Parse(in.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid id")
+	}
+	if err := s.Store.RenamePasskey(ctx, u.ID, credID, in.Body.Name); err != nil {
+		if errors.Is(err, store.ErrUserNotFound) {
+			return nil, huma.Error404NotFound("passkey not found")
+		}
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	out := &emptyOutput{}
+	out.Body.OK = true
+	return out, nil
+}
+
+type deletePasskeyInput struct {
+	ID string `path:"id" format:"uuid"`
+}
+
+func (s *Server) handleDeletePasskey(ctx context.Context, in *deletePasskeyInput) (*emptyOutput, error) {
+	u, ok := userFromContext(ctx)
+	if !ok {
+		return nil, huma.Error401Unauthorized("no session")
+	}
+	credID, err := uuid.Parse(in.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid id")
+	}
+
+	// Policy gate: refuse to drop the user's last passkey when the active
+	// force-mode is passkey_required AND they have no TOTP fallback AND
+	// they aren't currently inside a grace window. The store call would
+	// otherwise succeed and we'd lock them out on next refresh.
+	pol, err := s.Store.GetSecurityPolicy(ctx)
+	if err == nil && pol.ForceMode == store.ForceModePasskeyRequired {
+		full, gerr := s.Store.GetUser(ctx, u.ID)
+		if gerr == nil && !full.TOTPActive {
+			pks, lerr := s.Store.ListPasskeys(ctx, u.ID)
+			if lerr == nil && len(pks) <= 1 {
+				// Determine grace from the per-user column. If grace has
+				// expired or never existed, refuse.
+				var grace *time.Time
+				_ = s.Store.Pool.QueryRow(ctx,
+					`SELECT force_grace_until FROM users WHERE id = $1`, u.ID,
+				).Scan(&grace)
+				if grace == nil || !time.Now().Before(*grace) {
+					return nil, huma.Error409Conflict(
+						"cannot delete last passkey under current policy; enroll another method first")
+				}
+			}
+		}
+	}
+
+	if err := s.Store.DeletePasskey(ctx, u.ID, credID); err != nil {
+		if errors.Is(err, store.ErrUserNotFound) {
+			return nil, huma.Error404NotFound("passkey not found")
+		}
+		return nil, internalErr(ctx, "delete passkey", err)
+	}
+	out := &emptyOutput{}
+	out.Body.OK = true
+	return out, nil
+}
+
+// --- Admin: security policy -----------------------------------------------
+
+type securityPolicyOutput struct {
+	Body apitypes.SecurityPolicy
+}
+
+func (s *Server) handleGetSecurityPolicy(ctx context.Context, _ *struct{}) (*securityPolicyOutput, error) {
+	p, err := s.Store.GetSecurityPolicy(ctx)
+	if err != nil {
+		return nil, internalErr(ctx, "get security policy", err)
+	}
+	return &securityPolicyOutput{Body: p}, nil
+}
+
+type setSecurityPolicyInput struct {
+	Body apitypes.SecurityPolicy
+}
+
+func (s *Server) handleSetSecurityPolicy(ctx context.Context, in *setSecurityPolicyInput) (*emptyOutput, error) {
+	actor, _ := userFromContext(ctx)
+	if err := s.Store.SetSecurityPolicy(ctx, in.Body, actor.Email); err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	detail := fmt.Sprintf("force_mode=%s grace_days=%d max_session_hours=%d idle_timeout_minutes=%d",
+		in.Body.ForceMode, in.Body.GraceDays, in.Body.MaxSessionHours, in.Body.IdleTimeoutMinutes)
+	s.audit(ctx, "admin.security.policy.update", "security_policy", detail)
+	out := &emptyOutput{}
+	out.Body.OK = true
+	return out, nil
+}
+
+type revokeAllSessionsOutput struct {
+	Body apitypes.RevokeAllSessionsResponse
+}
+
+func (s *Server) handleRevokeAllSessions(ctx context.Context, _ *struct{}) (*revokeAllSessionsOutput, error) {
+	// Spare the caller's own session so they don't kick themselves out
+	// before they see the response.
+	tok, _ := tokenFromContext(ctx)
+	n, err := s.Store.RevokeAllSessions(ctx, tok)
+	if err != nil {
+		return nil, internalErr(ctx, "revoke all sessions", err)
+	}
+	s.audit(ctx, "admin.session.revoke_all", "", fmt.Sprintf("revoked=%d", n))
+	out := &revokeAllSessionsOutput{}
+	out.Body.Revoked = n
 	return out, nil
 }

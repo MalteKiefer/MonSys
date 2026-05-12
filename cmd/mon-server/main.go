@@ -23,6 +23,7 @@ import (
 	"github.com/MalteKiefer/MonSys/internal/server/probe"
 	"github.com/MalteKiefer/MonSys/internal/server/serverlog"
 	"github.com/MalteKiefer/MonSys/internal/server/store"
+	"github.com/MalteKiefer/MonSys/internal/server/webauthn"
 	"github.com/MalteKiefer/MonSys/internal/shared/version"
 )
 
@@ -186,6 +187,28 @@ func main() {
 	// in-memory failed-login tracker.
 	reaper := housekeeping.New(st.Pool, st.FailedLoginsTracker())
 	go reaper.Run(ctx)
+
+	// WebAuthn relying-party service. Configured from env so operators can
+	// run multiple deployments without rebuilding. RPID must be the bare
+	// hostname; RPOrigin the full origin including scheme (and port for dev).
+	rpID := os.Getenv("MON_RP_ID")
+	if rpID == "" {
+		rpID = "localhost"
+	}
+	rpOrigin := os.Getenv("MON_RP_ORIGIN")
+	if rpOrigin == "" {
+		rpOrigin = "http://localhost:5173"
+	}
+	wa, werr := webauthn.New(webauthn.Config{
+		RPID:    rpID,
+		RPName:  "MonSys",
+		Origins: []string{rpOrigin},
+	})
+	if werr != nil {
+		slog.Error("webauthn config invalid", "rp_id", rpID, "origin", rpOrigin, "err", werr)
+		os.Exit(1)
+	}
+	st.Webauthn = wa
 
 	s := api.New(st)
 	s.LogBuffer = logBuf
