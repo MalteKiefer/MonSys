@@ -1,6 +1,20 @@
 ## Stage 1: build the SPA. Kept ahead of the Go stage so a code-only change
 ## to internal/ doesn't bust the npm install layer.
-FROM node:22-alpine AS web
+#
+# AUDIT 4.3.1.20: base images pinned by multi-arch index digest so a moved
+# floating tag (node:22-alpine, golang:1.26-alpine, distroless ...:nonroot)
+# cannot silently land in a release build. Refresh procedure:
+#   curl -fsSL -D - -o /dev/null \
+#     -H "Accept: application/vnd.oci.image.index.v1+json" \
+#     -H "Authorization: Bearer $(curl -fsSL \
+#         'https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/node:pull' \
+#         | jq -r .token)" \
+#     https://registry-1.docker.io/v2/library/node/manifests/22-alpine \
+#     | grep -i docker-content-digest
+# (analogous for golang; for distroless drop the auth header and hit gcr.io
+# directly.) Captured 2026-05-12. Annual review: refresh hashes and document
+# capture date.
+FROM node:22-alpine@sha256:8ea2348b068a9544dae7317b4f3aafcdc032df1647bb7d768a05a5cad1a7683f AS web
 WORKDIR /web
 COPY web/package.json web/package-lock.json* ./
 RUN npm ci --no-audit --no-fund
@@ -8,7 +22,7 @@ COPY web/ ./
 RUN npm run build
 
 ## Stage 2: build mon-server with the SPA assets staged into the embed path.
-FROM golang:1.26-alpine AS build
+FROM golang:1.26-alpine@sha256:91eda9776261207ea25fd06b5b7fed8d397dd2c0a283e77f2ab6e91bfa71079d AS build
 WORKDIR /src
 COPY go.mod go.sum* ./
 RUN go mod download
@@ -24,7 +38,7 @@ RUN CGO_ENABLED=0 go build -trimpath \
       -X github.com/MalteKiefer/MonSys/internal/shared/version.Date=${DATE}" \
     -o /out/mon-server ./cmd/mon-server
 
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:a9329520abc449e3b14d5bc3a6ffae065bdde0f02667fa10880c49b35c109fd1
 COPY --from=build /out/mon-server /mon-server
 EXPOSE 8080
 USER nonroot:nonroot

@@ -45,8 +45,11 @@ web:
 
 # Local dev: assumes mon-server is already running on :8080. Vite proxies
 # /v1, /healthz, /readyz, /docs to it. Open http://localhost:5173.
+# AUDIT 4.3.1.20: `npm ci` (not `npm install`) so a stale lockfile fails
+# loudly rather than silently mutating package-lock.json under the dev's
+# feet — matches the convention used by the `web` target above.
 web-dev:
-	cd web && npm install --no-audit --no-fund && npm run dev
+	cd web && npm ci --no-audit --no-fund && npm run dev
 
 build: build-server build-agent
 
