@@ -24,6 +24,7 @@ import { Dashboard } from "./pages/Dashboard";
 import { Hosts } from "./pages/Hosts";
 import { Login } from "./pages/Login";
 import { Packages } from "./pages/Packages";
+import { ConfirmEmail } from "./pages/ConfirmEmail";
 import { Profile } from "./pages/Profile";
 import { Reset } from "./pages/Reset";
 import { DensityProvider } from "./lib/density-store";
@@ -101,6 +102,10 @@ export function App() {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/reset" element={<Reset />} />
+        {/* Email confirmation must work logged-out too — the request flow
+            revokes every session for the user so they normally land here
+            with no token. */}
+        <Route path="/confirm-email" element={<ConfirmEmail />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     );
@@ -148,6 +153,10 @@ export function App() {
         <Route path="/admin/security" element={<RequireAdmin><AdminSecurity /></RequireAdmin>} />
         <Route path="/login" element={<Navigate to="/" replace />} />
         <Route path="/reset" element={<Reset />} />
+        {/* Also routed when logged in: a user who confirms an email change
+            in the same tab where they're still authenticated will hit this
+            and the page itself calls useAuth().clear() to flush local state. */}
+        <Route path="/confirm-email" element={<ConfirmEmail />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       </EnforcementGuard>

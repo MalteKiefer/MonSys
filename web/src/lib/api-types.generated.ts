@@ -579,6 +579,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/auth/email/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm an email change by presenting the token sent to the new address */
+        post: operations["auth-email-confirm"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/auth/login": {
         parameters: {
             query?: never;
@@ -624,6 +641,41 @@ export interface paths {
         get: operations["auth-me"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/me/avatar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload/replace the caller's avatar (base64-encoded image) */
+        post: operations["auth-me-avatar-upload"];
+        /** Delete the caller's avatar */
+        delete: operations["auth-me-avatar-delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/me/email/request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Request an email change; sends a confirmation link to the new address */
+        post: operations["auth-me-email-request"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1570,6 +1622,21 @@ export interface components {
             /** @description True when an external SSO provider (e.g. Pocket-ID) is wired up */
             sso_enabled: boolean;
         };
+        AvatarUploadRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://mon.kiefer-networks.de/schemas/AvatarUploadRequest.json
+             */
+            readonly $schema?: string;
+            /**
+             * @description MIME type of the encoded bytes
+             * @enum {string}
+             */
+            content_type: "image/png" | "image/jpeg" | "image/webp";
+            /** @description base64-encoded image, <= 512 KiB decoded */
+            data_b64: string;
+        };
         Binary: {
             sha256: string;
             url: string;
@@ -1594,6 +1661,15 @@ export interface components {
             readonly $schema?: string;
             current_password: string;
             new_password: string;
+        };
+        ConfirmEmailChangeRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://mon.kiefer-networks.de/schemas/ConfirmEmailChangeRequest.json
+             */
+            readonly $schema?: string;
+            token: string;
         };
         ConsumeResetTokenRequest: {
             /**
@@ -1624,10 +1700,13 @@ export interface components {
              * @example https://mon.kiefer-networks.de/schemas/CurrentUser.json
              */
             readonly $schema?: string;
+            /** Format: date-time */
+            readonly avatar_updated_at?: string;
             /** Format: email */
             email: string;
             /** Format: date-time */
             grace_until?: string;
+            has_avatar: boolean;
             /** Format: uuid */
             readonly id: string;
             must_enroll?: boolean;
@@ -2707,6 +2786,17 @@ export interface components {
             /** Format: date-time */
             metadata_mtime: string;
             refreshed_externally: boolean;
+        };
+        RequestEmailChangeRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://mon.kiefer-networks.de/schemas/RequestEmailChangeRequest.json
+             */
+            readonly $schema?: string;
+            current_password: string;
+            /** Format: email */
+            new_email: string;
         };
         RevokeAllSessionsResponse: {
             /**
@@ -4389,6 +4479,39 @@ export interface operations {
             };
         };
     };
+    "auth-email-confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmEmailChangeRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmptyOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "auth-login": {
         parameters: {
             query?: never;
@@ -4467,6 +4590,101 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CurrentUser"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "auth-me-avatar-upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AvatarUploadRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmptyOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "auth-me-avatar-delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmptyOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "auth-me-email-request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequestEmailChangeRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmptyOutputBody"];
                 };
             };
             /** @description Error */

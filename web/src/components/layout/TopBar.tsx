@@ -1,11 +1,10 @@
-import { Activity, LogOut, Menu, Search } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { Activity, Menu, Search } from "lucide-react";
 import { useSyncExternalStore } from "react";
 import { Link } from "react-router-dom";
 
+import { Avatar } from "../ui";
 import { ThemeToggle } from "../ThemeToggle";
 import { useCommandPalette } from "../../lib/palette-store";
-import { api } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 import { getConnectionStatus, subscribe as subscribeConnection } from "../../lib/connection";
 
@@ -57,23 +56,13 @@ function SearchTrigger() {
   );
 }
 
-// User identity + sign-out cluster. On <md the email collapses to an avatar
-// circle so the bar stays single-row even at 320px.
+// User identity cluster. The full account menu (Profile / Sign out) lives
+// in the sidebar's UserCard now — the topbar keeps a compact avatar + 2FA
+// pill + theme toggle so the bar still says "you are signed in" at a
+// glance without duplicating the menu trigger.
 function UserBlock() {
-  const { user, clear } = useAuth();
-  const qc = useQueryClient();
-
-  function logout() {
-    api<unknown>("/v1/auth/logout", { method: "POST" }).catch(() => {});
-    qc.clear();
-    clear();
-  }
-
+  const user = useAuth((s) => s.user);
   if (!user) return null;
-
-  // Initials are derived from the email's local part, falling back to "?"
-  // for the (extremely unlikely) edge of an empty string after the @.
-  const initials = (user.email.split("@")[0] || "?").slice(0, 2).toUpperCase();
 
   return (
     <div className="flex items-center gap-2 text-sm">
@@ -83,23 +72,14 @@ function UserBlock() {
         </span>
       )}
       <span className="hidden text-fg-muted lg:inline">{user.email}</span>
-      <span
-        className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-panel-2 text-[11px] font-semibold text-fg-muted ring-1 ring-inset ring-border lg:hidden"
-        aria-label={user.email}
-        title={user.email}
-      >
-        {initials}
-      </span>
+      <Avatar
+        userId={user.id}
+        hasAvatar={user.has_avatar}
+        updatedAt={user.avatar_updated_at}
+        email={user.email}
+        size="sm"
+      />
       <ThemeToggle />
-      <button
-        type="button"
-        onClick={logout}
-        aria-label="Sign out"
-        className="inline-flex items-center gap-1 rounded-md border border-border bg-panel px-2 py-1 text-xs text-fg-muted transition-colors hover:bg-panel-2 hover:text-fg"
-      >
-        <LogOut className="h-3.5 w-3.5" />
-        <span className="hidden sm:inline">Sign out</span>
-      </button>
     </div>
   );
 }

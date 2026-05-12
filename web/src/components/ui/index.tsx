@@ -2,6 +2,8 @@
 // the single source of truth for colors/spacing/typography. No third-party
 // component library is used — these compose directly on top of Tailwind.
 
+export { Avatar } from "./Avatar";
+
 import { Check } from "lucide-react";
 import {
   ComponentPropsWithoutRef,

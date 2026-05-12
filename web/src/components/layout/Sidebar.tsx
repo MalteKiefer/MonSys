@@ -6,6 +6,7 @@ import {
   Cog,
   FileSearch,
   LayoutDashboard,
+  LogOut,
   MessageSquare,
   Network,
   Package,
@@ -15,12 +16,15 @@ import {
   Server,
   ShieldCheck,
   Stethoscope,
-  UserCog,
+  User as UserIcon,
   Users,
 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { NavLink, useLocation } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 
+import { Avatar, DropdownMenu } from "../ui";
+import { api } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 import { useLayoutStore } from "../../lib/layout-store";
 
@@ -55,19 +59,27 @@ export const NOTIFICATION_GROUP: NavGroup = {
   ],
 };
 
+// Renamed from "Workloads" to "Overview" — the group holds the dashboard,
+// hosts, packages, and monitors which aren't all workloads. The constant
+// name stays WORKLOADS_GROUP for backwards compatibility with any future
+// importers that pick it up from the module surface.
 export const WORKLOADS_GROUP: NavGroup = {
-  label: "Workloads",
+  label: "Overview",
   items: [
-    { to: "/", label: "Overview", icon: LayoutDashboard, end: true },
+    { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
     { to: "/hosts", label: "Hosts", icon: Server },
     { to: "/packages", label: "Packages", icon: Package },
     { to: "/monitors", label: "Monitors", icon: Radio },
   ],
 };
 
+// Account group is intentionally empty — Profile and Sign out are reachable
+// from the avatar dropdown at the top of the sidebar instead. Kept as a
+// named export so consumers that imported it don't break, but the sidebar
+// no longer renders it.
 export const ACCOUNT_GROUP: NavGroup = {
   label: "Account",
-  items: [{ to: "/profile", label: "Profile", icon: UserCog }],
+  items: [],
 };
 
 export const ADMIN_SUBGROUPS: AdminSubGroup[] = [
@@ -222,6 +234,112 @@ function AdminAccordion({ group, collapsed, pathname, onNavigate }: AdminAccordi
   );
 }
 
+// UserCard sits at the top of the sidebar and shows the signed-in user
+// with an avatar + email + role, plus a chevron that opens a dropdown
+// with Profile / Sign out. This replaces the old ACCOUNT_GROUP nav entry
+// for Profile and the standalone logout button on the topbar — both
+// affordances live here now so the user has a single recognizable target.
+function UserCard({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
+  const user = useAuth((s) => s.user);
+  const clear = useAuth((s) => s.clear);
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+
+  if (!user) return null;
+
+  // Mirrors TopBar's prior logout flow: fire-and-forget the server-side
+  // logout, then nuke local query cache and auth state and bounce to the
+  // login screen. The catch swallows the network error on purpose — the
+  // user is leaving the app either way; the server-side session will
+  // expire on its own if the call fails.
+  function logout() {
+    api<unknown>("/v1/auth/logout", { method: "POST" }).catch(() => {});
+    qc.clear();
+    clear();
+    onNavigate?.();
+    navigate("/login", { replace: true });
+  }
+
+  const items = [
+    {
+      key: "profile",
+      label: "Profile",
+      icon: UserIcon,
+      onClick: () => {
+        onNavigate?.();
+        navigate("/profile");
+      },
+    },
+    {
+      key: "logout",
+      label: "Sign out",
+      icon: LogOut,
+      destructive: true,
+      onClick: logout,
+    },
+  ];
+
+  if (collapsed) {
+    // Just an avatar button that opens the menu. In collapsed mode there's
+    // no room for email/role text.
+    return (
+      <div className="flex justify-center px-2 py-2">
+        <DropdownMenu
+          align="left"
+          trigger={
+            <button
+              type="button"
+              aria-label={`Account menu for ${user.email}`}
+              title={user.email}
+              className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+            >
+              <Avatar
+                userId={user.id}
+                hasAvatar={user.has_avatar}
+                updatedAt={user.avatar_updated_at}
+                email={user.email}
+                size="sm"
+              />
+            </button>
+          }
+          items={items}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-2 py-2">
+      <DropdownMenu
+        align="left"
+        trigger={
+          <button
+            type="button"
+            aria-label={`Account menu for ${user.email}`}
+            className="flex w-full min-w-0 items-center gap-2 rounded-md border border-border bg-panel/60 px-2 py-1.5 text-left transition-colors hover:bg-panel-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+          >
+            <Avatar
+              userId={user.id}
+              hasAvatar={user.has_avatar}
+              updatedAt={user.avatar_updated_at}
+              email={user.email}
+              size="sm"
+            />
+            <span className="flex min-w-0 flex-1 flex-col leading-tight">
+              <span className="truncate text-xs font-medium text-fg">{user.email}</span>
+              <span className="truncate text-[10px] uppercase tracking-wider text-fg-subtle">
+                {user.role}
+              </span>
+            </span>
+            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-fg-subtle" aria-hidden />
+          </button>
+        }
+        items={items}
+      />
+    </div>
+  );
+}
+
 // SidebarNav renders the nav body without the toggle header — used by both
 // the desktop sidebar and the mobile drawer. The mobile drawer always wants
 // the expanded layout, so it passes collapsed=false unconditionally.
@@ -237,7 +355,9 @@ export function SidebarNav({
   const loc = useLocation();
 
   return (
-    <nav aria-label="Primary" className="flex-1 overflow-y-auto pb-3">
+    <nav aria-label="Primary" className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-3">
+      <UserCard collapsed={collapsed} onNavigate={onNavigate} />
+
       <GroupLabel collapsed={collapsed}>{WORKLOADS_GROUP.label}</GroupLabel>
       <div className="space-y-0.5 px-1.5">
         {WORKLOADS_GROUP.items.map((item) => (
@@ -248,13 +368,6 @@ export function SidebarNav({
       <GroupLabel collapsed={collapsed}>{NOTIFICATION_GROUP.label}</GroupLabel>
       <div className="space-y-0.5 px-1.5">
         {NOTIFICATION_GROUP.items.map((item) => (
-          <NavItemLink key={item.to} item={item} collapsed={collapsed} onNavigate={onNavigate} />
-        ))}
-      </div>
-
-      <GroupLabel collapsed={collapsed}>{ACCOUNT_GROUP.label}</GroupLabel>
-      <div className="space-y-0.5 px-1.5">
-        {ACCOUNT_GROUP.items.map((item) => (
           <NavItemLink key={item.to} item={item} collapsed={collapsed} onNavigate={onNavigate} />
         ))}
       </div>

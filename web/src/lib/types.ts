@@ -41,6 +41,11 @@ export type CurrentUser = {
   passkey_count?: number;
   must_enroll?: boolean;
   grace_until?: string | null;
+  // True when the user has uploaded an avatar. The image bytes are served
+  // by GET /v1/users/{id}/avatar; avatar_updated_at lets the client cache-
+  // bust the URL after re-upload without hammering the server otherwise.
+  has_avatar?: boolean;
+  avatar_updated_at?: string | null;
 };
 
 // Passkey (WebAuthn credential) summary returned by /v1/auth/passkeys.

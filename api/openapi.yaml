@@ -796,6 +796,31 @@ components:
         - sso_enabled
         - smtp_configured
       type: object
+    AvatarUploadRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://mon.kiefer-networks.de/schemas/AvatarUploadRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        content_type:
+          description: MIME type of the encoded bytes
+          enum:
+            - image/png
+            - image/jpeg
+            - image/webp
+          type: string
+        data_b64:
+          description: base64-encoded image, <= 512 KiB decoded
+          maxLength: 1048576
+          type: string
+      required:
+        - content_type
+        - data_b64
+      type: object
     Binary:
       additionalProperties: false
       properties:
@@ -850,6 +875,22 @@ components:
       required:
         - current_password
         - new_password
+      type: object
+    ConfirmEmailChangeRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://mon.kiefer-networks.de/schemas/ConfirmEmailChangeRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        token:
+          maxLength: 128
+          type: string
+      required:
+        - token
       type: object
     ConsumeResetTokenRequest:
       additionalProperties: false
@@ -912,6 +953,10 @@ components:
           format: uri
           readOnly: true
           type: string
+        avatar_updated_at:
+          format: date-time
+          readOnly: true
+          type: string
         email:
           format: email
           maxLength: 254
@@ -919,6 +964,8 @@ components:
         grace_until:
           format: date-time
           type: string
+        has_avatar:
+          type: boolean
         id:
           format: uuid
           maxLength: 36
@@ -943,6 +990,7 @@ components:
         - role
         - totp_active
         - passkey_count
+        - has_avatar
       type: object
     DiskInfo:
       additionalProperties: false
@@ -3476,6 +3524,28 @@ components:
         - metadata_age_seconds
         - refreshed_externally
       type: object
+    RequestEmailChangeRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://mon.kiefer-networks.de/schemas/RequestEmailChangeRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        current_password:
+          maxLength: 128
+          type: string
+          writeOnly: true
+        new_email:
+          format: email
+          maxLength: 254
+          type: string
+      required:
+        - new_email
+        - current_password
+      type: object
     RevokeAllSessionsResponse:
       additionalProperties: false
       properties:
@@ -5364,6 +5434,31 @@ paths:
       summary: Set a new password via an admin-issued reset/invite token
       tags:
         - auth
+  /v1/auth/email/confirm:
+    post:
+      operationId: auth-email-confirm
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfirmEmailChangeRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Confirm an email change by presenting the token sent to the new address
+      tags:
+        - auth
   /v1/auth/login:
     post:
       operationId: auth-login
@@ -5425,6 +5520,74 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Return the authenticated user
+      tags:
+        - auth
+  /v1/auth/me/avatar:
+    delete:
+      operationId: auth-me-avatar-delete
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Delete the caller's avatar
+      tags:
+        - auth
+    post:
+      operationId: auth-me-avatar-upload
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AvatarUploadRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Upload/replace the caller's avatar (base64-encoded image)
+      tags:
+        - auth
+  /v1/auth/me/email/request:
+    post:
+      operationId: auth-me-email-request
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequestEmailChangeRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Request an email change; sends a confirmation link to the new address
       tags:
         - auth
   /v1/auth/me/passkeys:

@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { KeyRound, Pencil, Smartphone, Trash2, User } from "lucide-react";
-import { ChangeEvent, FormEvent, ReactNode, useState } from "react";
+import { KeyRound, Pencil, Smartphone, Trash2, Upload, User } from "lucide-react";
+import { ChangeEvent, FormEvent, ReactNode, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import {
+  Avatar,
   Button,
   ErrorBox,
   Field,
@@ -86,7 +87,8 @@ export function Profile() {
       >
         {tab === "account" && (
           <>
-            <ChangeEmailCard onSuccess={() => qc.invalidateQueries({ queryKey: ["me"] })} />
+            <AvatarCard user={user} />
+            <ChangeEmailCard />
             <ChangePasswordCard />
             <DisplayCard />
           </>
@@ -155,25 +157,196 @@ function ProfilePanel({ title, children }: { title: string; children: ReactNode 
   );
 }
 
-function ChangeEmailCard({ onSuccess }: { onSuccess: () => void }) {
+// AvatarCard — upload / remove the user's avatar. We resize+encode on the
+// client to keep the wire payload small (≤ 512 KiB decoded is the server
+// limit) and to avoid a server-side image lib. Anything bigger than 5 MiB
+// pre-resize is rejected up front with a friendly message.
+const AVATAR_MAX_INPUT_BYTES = 5 * 1024 * 1024; // 5 MiB
+const AVATAR_TARGET_SIZE = 400; // px — square output, downscaled with cover-crop
+
+async function fileToCroppedWebp(file: File): Promise<{ blob: Blob; b64: string }> {
+  // Decode the image off the main thread when supported, fall back to an
+  // <img> element otherwise. We don't bother with createImageBitmap on
+  // unsupported browsers — the fallback path still runs in tens of ms for
+  // typical avatar inputs.
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error("Could not decode image"));
+      el.src = url;
+    });
+
+    const side = Math.min(img.naturalWidth, img.naturalHeight);
+    const sx = Math.max(0, Math.floor((img.naturalWidth - side) / 2));
+    const sy = Math.max(0, Math.floor((img.naturalHeight - side) / 2));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = AVATAR_TARGET_SIZE;
+    canvas.height = AVATAR_TARGET_SIZE;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvas 2D context unavailable");
+    ctx.drawImage(img, sx, sy, side, side, 0, 0, AVATAR_TARGET_SIZE, AVATAR_TARGET_SIZE);
+
+    const blob: Blob = await new Promise((resolve, reject) => {
+      canvas.toBlob(
+        (b) => (b ? resolve(b) : reject(new Error("Encoding failed"))),
+        "image/webp",
+        0.9,
+      );
+    });
+    const b64 = await blobToBase64(blob);
+    return { blob, b64 };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => {
+      const result = fr.result;
+      if (typeof result !== "string") {
+        reject(new Error("Unexpected FileReader result"));
+        return;
+      }
+      // result is "data:image/webp;base64,XXXX" — strip the prefix.
+      const idx = result.indexOf(",");
+      resolve(idx >= 0 ? result.slice(idx + 1) : result);
+    };
+    fr.onerror = () => reject(fr.error ?? new Error("FileReader error"));
+    fr.readAsDataURL(blob);
+  });
+}
+
+function AvatarCard({ user }: { user: CurrentUser }) {
+  const qc = useQueryClient();
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<Msg>(null);
+
+  async function onPick(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    // Clear the input value so the same file can be re-selected later
+    // (browsers suppress the change event for identical pick-throughs).
+    e.target.value = "";
+    if (!file) return;
+    setMsg(null);
+    if (file.size > AVATAR_MAX_INPUT_BYTES) {
+      setMsg({ kind: "err", text: "File too large. Pick something under 5 MiB." });
+      return;
+    }
+    setBusy(true);
+    try {
+      const { b64 } = await fileToCroppedWebp(file);
+      // Server limit is 512 KiB decoded; 400×400 webp@0.9 lands well under
+      // that for realistic photos but we still bail loudly if it ever runs
+      // away (e.g. extreme noise input).
+      const decodedBytes = Math.floor((b64.length * 3) / 4);
+      if (decodedBytes > 512 * 1024) {
+        setMsg({ kind: "err", text: "Resized image is still too large. Try a simpler picture." });
+        return;
+      }
+      await api<{ ok: boolean }>("/v1/auth/me/avatar", {
+        method: "POST",
+        body: JSON.stringify({ content_type: "image/webp", data_b64: b64 }),
+      });
+      setMsg({ kind: "ok", text: "Avatar updated." });
+      qc.invalidateQueries({ queryKey: ["me"] });
+    } catch (err) {
+      setMsg({ kind: "err", text: err instanceof ApiError ? err.detail : (err as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onRemove() {
+    setMsg(null);
+    setBusy(true);
+    try {
+      await api<{ ok: boolean }>("/v1/auth/me/avatar", { method: "DELETE" });
+      setMsg({ kind: "ok", text: "Avatar removed." });
+      qc.invalidateQueries({ queryKey: ["me"] });
+    } catch (err) {
+      setMsg({ kind: "err", text: err instanceof ApiError ? err.detail : (err as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <ProfilePanel title="Avatar">
+      <div className="flex flex-wrap items-start gap-5">
+        <Avatar
+          userId={user.id}
+          hasAvatar={user.has_avatar}
+          updatedAt={user.avatar_updated_at}
+          email={user.email}
+          size="lg"
+        />
+        <div className="flex-1 min-w-[12rem] space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              ref={inputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              className="hidden"
+              onChange={onPick}
+            />
+            <Button
+              type="button"
+              variant="primary"
+              disabled={busy}
+              onClick={() => inputRef.current?.click()}
+            >
+              <Upload className="h-3.5 w-3.5" />
+              {busy ? "Working…" : user.has_avatar ? "Replace" : "Upload new"}
+            </Button>
+            {user.has_avatar && (
+              <Button type="button" variant="danger" disabled={busy} onClick={onRemove}>
+                <Trash2 className="h-3.5 w-3.5" />
+                Remove
+              </Button>
+            )}
+          </div>
+          <p className="text-xs text-fg-subtle">
+            PNG, JPG, or WebP, max 5 MiB. Auto-cropped to a circle and resized to 400×400.
+            Updates immediately.
+          </p>
+          {msg && <Message msg={msg} />}
+        </div>
+      </div>
+    </ProfilePanel>
+  );
+}
+
+// ChangeEmailCard — two-step verified email change. Step 1 (this card)
+// posts {new_email, current_password} to /v1/auth/me/email/request which
+// mails a confirmation link to the NEW address. Step 2 happens on
+// /confirm-email when the user clicks that link — that endpoint updates
+// the email and revokes every session for the user. We never mutate the
+// email in place from here.
+function ChangeEmailCard() {
   const [pw, setPw] = useState("");
   const [email, setEmail] = useState("");
   const [msg, setMsg] = useState<Msg>(null);
   const [busy, setBusy] = useState(false);
+  const [pendingEmail, setPendingEmail] = useState<string | null>(null);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     setMsg(null);
     setBusy(true);
     try {
-      await api<{ ok: boolean }>("/v1/auth/change-email", {
+      await api<{ ok: boolean }>("/v1/auth/me/email/request", {
         method: "POST",
         body: JSON.stringify({ current_password: pw, new_email: email }),
       });
-      setMsg({ kind: "ok", text: "Email updated." });
+      setPendingEmail(email);
       setPw("");
       setEmail("");
-      onSuccess();
     } catch (err) {
       setMsg({ kind: "err", text: err instanceof ApiError ? err.detail : "failed" });
     } finally {
@@ -181,9 +354,33 @@ function ChangeEmailCard({ onSuccess }: { onSuccess: () => void }) {
     }
   }
 
+  if (pendingEmail) {
+    return (
+      <ProfilePanel title="Change email">
+        <div className="space-y-3">
+          <SuccessBox>
+            Confirmation link sent to <span className="font-medium">{pendingEmail}</span>. Click
+            it within 1 hour. Your sessions will be ended after you confirm.
+          </SuccessBox>
+          <p className="text-xs text-fg-subtle">
+            Didn't get the email? Check spam, then start over below.
+          </p>
+          <Button type="button" variant="ghost" onClick={() => setPendingEmail(null)}>
+            Send another link
+          </Button>
+        </div>
+      </ProfilePanel>
+    );
+  }
+
   return (
     <ProfilePanel title="Change email">
       <form onSubmit={submit} className="space-y-3">
+        <p className="text-sm text-fg-muted">
+          We'll send a confirmation link to your new address. Once you click it, the change
+          takes effect and every session is ended for security — you'll be asked to log in
+          again with the new email.
+        </p>
         <Field label="Current password">
           <TextInput
             type="password"
@@ -200,7 +397,7 @@ function ChangeEmailCard({ onSuccess }: { onSuccess: () => void }) {
             onChange={(e) => setEmail(e.target.value)}
           />
         </Field>
-        <FormFooter busy={busy} idle="Update email" busyLabel="Updating…" msg={msg} />
+        <FormFooter busy={busy} idle="Send verification" busyLabel="Sending…" msg={msg} />
       </form>
     </ProfilePanel>
   );
