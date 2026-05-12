@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	httppprof "net/http/pprof"
 	"strings"
 	"sync"
 	"time"
@@ -416,6 +417,23 @@ func (s *Server) registerHealthRoutes() {
 	// Scrape from inside the network with a session bearer token belonging
 	// to an admin user. AUDIT-066-style: never publicly exposed.
 	s.Router.Get("/metrics", s.requireAdminBearer(telemetry.PromHandler()))
+
+	// /debug/pprof/* — runtime profiling endpoints. Admin-gated identically
+	// to /metrics: the surface is operationally sensitive (heap dumps leak
+	// internal layout, CPU profiles can extend over arbitrary windows) so
+	// we never expose it publicly. Capture a 30s CPU profile with
+	//   curl -H "Authorization: Bearer $TOKEN" \
+	//        https://host/debug/pprof/profile?seconds=30 > cpu.pprof
+	// See docs/OPERATIONS.md "Performance investigation".
+	s.Router.Get("/debug/pprof/", s.requireAdminBearer(http.HandlerFunc(httppprof.Index)))
+	s.Router.Get("/debug/pprof/cmdline", s.requireAdminBearer(http.HandlerFunc(httppprof.Cmdline)))
+	s.Router.Get("/debug/pprof/profile", s.requireAdminBearer(http.HandlerFunc(httppprof.Profile)))
+	s.Router.Get("/debug/pprof/symbol", s.requireAdminBearer(http.HandlerFunc(httppprof.Symbol)))
+	s.Router.Post("/debug/pprof/symbol", s.requireAdminBearer(http.HandlerFunc(httppprof.Symbol)))
+	s.Router.Get("/debug/pprof/trace", s.requireAdminBearer(http.HandlerFunc(httppprof.Trace)))
+	for _, p := range []string{"heap", "goroutine", "threadcreate", "block", "mutex", "allocs"} {
+		s.Router.Get("/debug/pprof/"+p, s.requireAdminBearer(httppprof.Handler(p)))
+	}
 }
 
 // requireAdminBearer is a chi-style auth gate for the /metrics endpoint.

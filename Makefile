@@ -14,7 +14,7 @@ GOFLAGS_BASE := -trimpath -ldflags='$(LDFLAGS)'
 
 BIN_DIR := bin
 
-.PHONY: all build build-server build-agent build-all tidy test test-migrations vet fmt lint clean \
+.PHONY: all build build-server build-agent build-all tidy test test-migrations bench vet fmt lint clean \
         web web-dev compose-up compose-down compose-logs install-hooks \
         generate-spec
 
@@ -71,6 +71,13 @@ tidy:
 
 test:
 	go test ./...
+
+# Run all benchmarks across the tree. -run='^$$' skips regular tests so
+# only Benchmark* functions execute; -benchmem reports allocs/op + B/op.
+# Used to track hot-path performance over time (ingest, alerts dispatch,
+# bcrypt, audit-chain hashing, bearer parse, JSON marshalling).
+bench:
+	go test -bench=. -benchmem -run='^$$' ./...
 
 # Migration round-trip tests against a real TimescaleDB container (slow:
 # pulls an image, boots Postgres). Opt-in via MON_TEST_DOCKER=1. The default
