@@ -399,6 +399,10 @@ export type NotificationRule = {
   target_host_ids: string[];
   target_tags: string[];
   target_group_ids: string[];
+  // Set when this rule is one leg of a multi-condition group. Rows with the
+  // same group_id share name/scope/channels/throttle/severity; only their
+  // condition_type+condition_params differ.
+  group_id?: string | null;
   created_at: string;
   created_by?: string;
 };
@@ -416,6 +420,37 @@ export type NotificationRuleInput = {
   target_host_ids?: string[];
   target_tags?: string[];
   target_group_ids?: string[];
+};
+
+// One leg of a multi-condition group. The shared (name/scope/channels/…)
+// fields live on NotificationRuleGroupInput; only condition_type and
+// condition_params differ per leg.
+export type NotificationRuleCondition = {
+  condition_type: NotificationConditionType;
+  condition_params?: Record<string, unknown>;
+};
+
+// Body shape for POST /v1/notifications/rules/batch. Mirrors the Go
+// NotificationRuleGroupInput. The backend expands `conditions` into N rule
+// rows that all share the same group_id and (when len > 1) get a per-row
+// " — <condition_type>" suffix appended to `name`.
+export type NotificationRuleGroupInput = {
+  name: string;
+  enabled: boolean;
+  severity: NotificationRule["severity"];
+  throttle_sec: number;
+  repeat_interval_sec: number;
+  notify_on_resolve: boolean;
+  channel_ids: string[];
+  conditions: NotificationRuleCondition[];
+  target_host_ids?: string[];
+  target_tags?: string[];
+  target_group_ids?: string[];
+};
+
+export type NotificationRuleGroupResponse = {
+  group_id: string;
+  rules: NotificationRule[];
 };
 
 export type AlertHistoryEntry = {

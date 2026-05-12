@@ -1,22 +1,45 @@
 // RuleDraft holds the full wizard state. Components receive a `draft` plus
 // a `patch(partial)` setter and write back through it — there is no per-step
 // hidden state that would have to be merged on submit.
+//
+// As of multi-condition support the wizard manages an array of conditions:
+//   draft.conditions = [{ conditionType, conditionParams, expertMode }, ...]
+//
+// `editingConditionIdx` drives the Step-1 sub-mode:
+//   null     → collapsed list view (the bottom Next button is active)
+//   "new"    → adding a fresh condition via the category picker
+//   0/1/...  → editing the leg at that index in place
+//
+// expertMode lives per-condition so the user can flip a single leg into raw
+// JSON without affecting siblings. The wizard-header Expert toggle then maps
+// onto the currently-edited leg.
 
 import type {
   NotificationConditionType,
   NotificationRule,
 } from "../../../lib/types";
-import { asStringArray, type Params } from "./coerce";
+import { isConditionValid } from "./catalogue";
+import { asRecord, type Params } from "./coerce";
 
 export type Step = 1 | 2 | 3;
 
-export type RuleDraft = {
-  step: Step;
-  expertMode: boolean;
-  name: string;
-  enabled: boolean;
+export type DraftCondition = {
   conditionType: NotificationConditionType | "";
   conditionParams: Params;
+  expertMode: boolean;
+};
+
+export type RuleDraft = {
+  step: Step;
+  name: string;
+  enabled: boolean;
+  conditions: DraftCondition[];
+  // Sub-mode for Step 1. null = collapsed list, "new" = category picker for
+  // a fresh leg, number = editing that index in place.
+  editingConditionIdx: number | "new" | null;
+  // Buffer for the "new" / "editing" panel — kept separate from the array so
+  // Cancel discards cleanly without mutating committed legs.
+  buffer: DraftCondition;
   severity: "info" | "warning" | "critical";
   throttleSec: number;
   repeatIntervalSec: number;
@@ -28,8 +51,19 @@ export type RuleDraft = {
   channelIds: string[];
 };
 
+export const EMPTY_BUFFER: DraftCondition = {
+  conditionType: "",
+  conditionParams: {},
+  expertMode: false,
+};
+
 // Hydrate a draft from an existing rule (edit mode) or sensible defaults
 // (new mode). targetMode is inferred from which target list is populated.
+//
+// For legacy single-rule edit (initial != null, no group_id), we seed
+// draft.conditions with the one leg already collapsed (editingConditionIdx
+// = null). The wizard shell is responsible for fetching sibling rules when
+// initial.group_id is set and overriding conditions accordingly.
 export function initialDraft(initial: NotificationRule | null): RuleDraft {
   const hostIds = initial?.target_host_ids ?? [];
   const tags = initial?.target_tags ?? [];
@@ -38,13 +72,22 @@ export function initialDraft(initial: NotificationRule | null): RuleDraft {
   if (hostIds.length > 0) targetMode = "hosts";
   else if (groupIds.length > 0) targetMode = "groups";
   else if (tags.length > 0) targetMode = "tags";
+
+  const seedCondition: DraftCondition | null = initial?.condition_type
+    ? {
+        conditionType: initial.condition_type,
+        conditionParams: asRecord(initial.condition_params),
+        expertMode: false,
+      }
+    : null;
+
   return {
     step: 1,
-    expertMode: false,
     name: initial?.name ?? "",
     enabled: initial?.enabled ?? true,
-    conditionType: initial?.condition_type ?? "",
-    conditionParams: (initial?.condition_params as Params) ?? {},
+    conditions: seedCondition ? [seedCondition] : [],
+    editingConditionIdx: seedCondition ? null : "new",
+    buffer: { ...EMPTY_BUFFER },
     severity: initial?.severity ?? "warning",
     throttleSec: initial?.throttle_sec ?? 300,
     repeatIntervalSec: initial?.repeat_interval_sec ?? 0,
@@ -57,18 +100,21 @@ export function initialDraft(initial: NotificationRule | null): RuleDraft {
   };
 }
 
-// Step 1 needs a condition type AND, for the few parameterised types that
-// have a required field with no sensible default, that field present. Most
-// other defaults are auto-supplied by the panes themselves.
+// Replace the entire conditions array — used by the wizard shell when it
+// hydrates a multi-leg group from the backend.
+export function setConditions(d: RuleDraft, conds: DraftCondition[]): RuleDraft {
+  return { ...d, conditions: conds, editingConditionIdx: conds.length === 0 ? "new" : null };
+}
+
+// Step 1 needs at least one committed condition AND every committed leg
+// passing its own validation. The inline editor is allowed to be invalid
+// while the user types — they just can't leave Step 1 in that state.
 export function isStep1Valid(d: RuleDraft): boolean {
-  if (!d.conditionType) return false;
-  if (d.conditionType === "metric_threshold") {
-    const v = d.conditionParams.value;
-    if (v === undefined || v === null || v === "") return false;
-  }
-  if (d.conditionType === "audit_action") {
-    const actions = asStringArray(d.conditionParams.actions);
-    if (actions.length === 0) return false;
+  if (d.conditions.length === 0) return false;
+  if (d.editingConditionIdx !== null) return false; // must save/cancel first
+  for (const c of d.conditions) {
+    if (!c.conditionType) return false;
+    if (!isConditionValid(c.conditionType, c.conditionParams)) return false;
   }
   return true;
 }
@@ -81,4 +127,11 @@ export function isStep2Valid(_d: RuleDraft): boolean {
 // Step 3 needs a name and at least one channel.
 export function isStep3Valid(d: RuleDraft): boolean {
   return d.name.trim().length > 0 && d.channelIds.length > 0;
+}
+
+// The buffer is "valid enough to save" once a type is picked AND the
+// per-type validator is happy.
+export function isBufferValid(b: DraftCondition): boolean {
+  if (!b.conditionType) return false;
+  return isConditionValid(b.conditionType, b.conditionParams);
 }

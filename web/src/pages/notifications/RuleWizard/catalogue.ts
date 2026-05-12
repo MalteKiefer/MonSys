@@ -4,18 +4,30 @@
 
 import {
   Activity,
+  AlertTriangle,
   Bell,
   Box,
   ClipboardList,
+  FileWarning,
+  Gauge,
+  KeyRound,
   Mail,
   MessageCircle,
   MessageSquare,
+  Network,
   Package,
+  RefreshCcw,
+  RotateCw,
+  ScrollText,
   Server,
+  ServerCog,
   Shield,
+  ShieldAlert,
+  ShieldOff,
 } from "lucide-react";
 
 import type { ChannelType, NotificationConditionType } from "../../../lib/types";
+import { asNumberOrEmpty, asString, asStringArray, type Params } from "./coerce";
 
 export const CONDITION_TYPES: Array<{
   value: NotificationConditionType;
@@ -145,6 +157,191 @@ export const NO_PARAM_CONDITIONS = new Set<NotificationConditionType>([
   "nic_bond_degraded",
   "unexpected_reboot",
 ]);
+
+// Per-condition-type icon for the condition list card in Step 1 and for the
+// grouped-rule legs in RulesPage. Falls back to a neutral Bell.
+export function conditionIcon(ct: NotificationConditionType) {
+  switch (ct) {
+    case "metric_threshold":
+      return Gauge;
+    case "host_offline":
+    case "host_flap":
+    case "unexpected_reboot":
+      return Server;
+    case "monitor_failed":
+      return Activity;
+    case "cert_expiring":
+      return FileWarning;
+    case "login_failed_threshold":
+    case "login_anomaly":
+      return KeyRound;
+    case "security_updates_pending":
+    case "package_update_available":
+    case "image_update_pending":
+    case "agent_outdated":
+      return Package;
+    case "pending_reboot":
+      return RotateCw;
+    case "repo_metadata_stale":
+      return RefreshCcw;
+    case "firewall_state_change":
+      return ShieldOff;
+    case "fail2ban_jail_disappeared":
+      return ShieldAlert;
+    case "crowdsec_decision_threshold":
+      return Shield;
+    case "nic_link_down":
+    case "nic_bond_degraded":
+      return Network;
+    case "vm_state_change":
+      return ServerCog;
+    case "container_state_change":
+      return Box;
+    case "audit_action":
+      return ScrollText;
+    case "inventory_drift":
+      return ClipboardList;
+    default:
+      return AlertTriangle;
+  }
+}
+
+// Friendly label for a condition type (the same one shown in the picker).
+// Used for collapsed-card titles and the grouped-list legs in RulesPage.
+export function conditionLabel(ct: NotificationConditionType): string {
+  return CONDITION_TYPES.find((c) => c.value === ct)?.label ?? ct;
+}
+
+// conditionSummary renders the shared "X > Y for Z" 1-line sentence used by:
+//   • LivePreview (multi-condition bullet list)
+//   • StepDetect collapsed condition cards
+//   • RulesPage grouped-rule legs
+//
+// Returns plain text only — no JSX — so it can be used in both <p> and
+// <strong>-wrapped contexts. The caller is responsible for highlighting.
+export function conditionSummary(
+  ct: NotificationConditionType,
+  params: Params,
+): string {
+  switch (ct) {
+    case "metric_threshold": {
+      const metric = asString(params.metric, "cpu_usage_pct");
+      const comparator = asString(params.comparator, ">");
+      const value = asNumberOrEmpty(params.value);
+      const win = asNumberOrEmpty(params.window_sec);
+      const metricLabel = METRIC_KINDS.find((m) => m.value === metric)?.label ?? metric;
+      const v = value === "" ? "?" : String(value);
+      let s = `${metricLabel} ${comparator} ${v}`;
+      if (win !== "") {
+        const minutes = Math.round((win as number) / 60);
+        s += ` for ${minutes >= 1 ? `${minutes} min` : `${win}s`}`;
+      }
+      return s;
+    }
+    case "host_offline":
+      return "Host goes offline for the configured liveness window";
+    case "host_flap": {
+      const win = asNumberOrEmpty(params.window_sec);
+      const thr = asNumberOrEmpty(params.threshold);
+      const winSec = win === "" ? 1800 : (win as number);
+      const minutes = Math.round(winSec / 60);
+      const t = thr === "" ? 6 : (thr as number);
+      return `Host flaps > ${t} times within ${minutes} min`;
+    }
+    case "unexpected_reboot":
+      return "Host reboots unexpectedly";
+    case "monitor_failed":
+      return "A monitor reports a non-OK status";
+    case "cert_expiring": {
+      const days = asNumberOrEmpty(params.days_threshold);
+      return `Certificate expires within ${days === "" ? 30 : days} days`;
+    }
+    case "login_failed_threshold": {
+      const thr = asNumberOrEmpty(params.threshold);
+      const win = asNumberOrEmpty(params.window_sec);
+      return `More than ${thr === "" ? 10 : thr} failed logins in ${win === "" ? 300 : win}s`;
+    }
+    case "security_updates_pending": {
+      const thr = asNumberOrEmpty(params.threshold);
+      return `Host has ≥ ${thr === "" ? 1 : thr} pending security updates`;
+    }
+    case "agent_outdated": {
+      const min = asString(params.min_version);
+      return `Agent version below ${min || "the latest seen"}`;
+    }
+    case "image_update_pending": {
+      const h = asNumberOrEmpty(params.min_age_hours);
+      return `Container image update pending older than ${h === "" ? 24 : h}h`;
+    }
+    case "package_update_available": {
+      const thr = asNumberOrEmpty(params.threshold);
+      return `Host has more than ${thr === "" ? 50 : thr} pending package updates`;
+    }
+    case "pending_reboot":
+      return "Host has a pending reboot";
+    case "repo_metadata_stale": {
+      const s = asNumberOrEmpty(params.threshold_sec);
+      const secs = s === "" ? 86400 : (s as number);
+      const hours = Math.round(secs / 3600);
+      return `Repository metadata older than ${hours}h`;
+    }
+    case "login_anomaly":
+      return `Login anomaly (${asString(params.kind, "new_source_ip")})`;
+    case "inventory_drift":
+      return `Inventory drift (${asString(params.kind, "new_user")})`;
+    case "firewall_state_change":
+      return `Firewall state: ${asString(params.kind, "inactive")}`;
+    case "fail2ban_jail_disappeared":
+      return "A previously-known fail2ban jail disappears";
+    case "crowdsec_decision_threshold": {
+      const thr = asNumberOrEmpty(params.threshold);
+      return `CrowdSec active decisions > ${thr === "" ? 100 : thr}`;
+    }
+    case "nic_link_down":
+      return "A NIC link goes down";
+    case "nic_bond_degraded":
+      return "A NIC bond is degraded";
+    case "vm_state_change":
+      return `VM transition (${asString(params.subkind, "any_transition")})`;
+    case "container_state_change": {
+      const states = asStringArray(params.states);
+      const shown = states.length > 0 ? states.join(", ") : "exited, dead";
+      return `Container enters one of: ${shown}`;
+    }
+    case "audit_action": {
+      const actions = asStringArray(params.actions);
+      return `Audit action matches: ${actions.length > 0 ? actions.join(", ") : "—"}`;
+    }
+    default:
+      return ct;
+  }
+}
+
+// Stripping the auto-appended " — <condition_type>" suffix the backend adds
+// when a group has more than one leg. Used by RulesPage so the grouped card
+// header shows the operator-chosen name only once.
+const SUFFIX_RE = / — [a-z_]+$/i;
+export function stripConditionSuffix(name: string): string {
+  return name.replace(SUFFIX_RE, "");
+}
+
+// Per-condition validation used by isStep1Valid for both single and
+// multi-condition drafts. Returns true if this leg has the minimum required
+// params filled in (most types have sensible defaults and are always valid).
+export function isConditionValid(
+  ct: NotificationConditionType,
+  params: Params,
+): boolean {
+  if (ct === "metric_threshold") {
+    const v = params.value;
+    if (v === undefined || v === null || v === "") return false;
+  }
+  if (ct === "audit_action") {
+    const actions = asStringArray(params.actions);
+    if (actions.length === 0) return false;
+  }
+  return true;
+}
 
 // Lucide icon picker for channel types. Keep in sync with CHANNEL_TYPE_CARDS
 // in ChannelForm.tsx.
