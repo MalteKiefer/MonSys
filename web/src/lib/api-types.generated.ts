@@ -2456,6 +2456,7 @@ export interface components {
             notify_on_resolve?: boolean;
             /** Format: int64 */
             repeat_interval_sec?: number;
+            replace_existing_ids?: string[] | null;
             /** @enum {string} */
             severity: "info" | "warning" | "critical";
             target_group_ids?: string[] | null;

@@ -217,17 +217,17 @@ export function RuleForm({
         );
       }
 
-      // Group edit (or upgrade from single → multi): delete every existing
-      // sibling row, then POST the new batch. We do this client-side
-      // because the backend currently has no atomic "replace group"
-      // endpoint; the audit log records each event independently.
+      // Group edit (or upgrade from single → multi): hand the IDs to evict
+      // to the batch endpoint. The server atomically DELETEs them BEFORE
+      // running the new INSERTs in the same transaction, so a UNIQUE(name)
+      // collision rolls everything back instead of leaving us in a half-
+      // deleted state. No more N+1 round-trips, no more orphan rows.
+      let replaceExistingIDs: string[] = [];
       if (initial) {
         const siblings = initial.group_id
           ? allRules.filter((r) => r.group_id === initial.group_id)
           : [initial];
-        for (const r of siblings) {
-          await api(`/v1/notifications/rules/${r.id}`, { method: "DELETE" });
-        }
+        replaceExistingIDs = siblings.map((r) => r.id);
       }
 
       const body: NotificationRuleGroupInput = {
@@ -242,6 +242,7 @@ export function RuleForm({
         target_tags: targetTags,
         target_group_ids: targetGroupIds,
         conditions,
+        replace_existing_ids: replaceExistingIDs.length > 0 ? replaceExistingIDs : undefined,
       };
       return api<NotificationRuleGroupResponse>(
         "/v1/notifications/rules/batch",

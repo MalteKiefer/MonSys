@@ -2889,6 +2889,12 @@ components:
           format: int64
           minimum: 0
           type: integer
+        replace_existing_ids:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
         severity:
           enum:
             - info

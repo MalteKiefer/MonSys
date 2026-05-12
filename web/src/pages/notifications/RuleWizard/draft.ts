@@ -18,7 +18,7 @@ import type {
   NotificationConditionType,
   NotificationRule,
 } from "../../../lib/types";
-import { isConditionValid } from "./catalogue";
+import { isConditionValid, stripConditionSuffix } from "./catalogue";
 import { asRecord, type Params } from "./coerce";
 
 export type Step = 1 | 2 | 3;
@@ -81,9 +81,17 @@ export function initialDraft(initial: NotificationRule | null): RuleDraft {
       }
     : null;
 
+  // For a group leg, initial.name carries the per-row suffix the backend
+  // appended (e.g. " — metric_threshold"). Strip it so the wizard surfaces
+  // the user-meaningful base name; otherwise editing and re-saving would
+  // compound suffixes ("X — type — type1 — type2").
+  const baseName = initial?.group_id
+    ? stripConditionSuffix(initial.name ?? "")
+    : (initial?.name ?? "");
+
   return {
     step: 1,
-    name: initial?.name ?? "",
+    name: baseName,
     enabled: initial?.enabled ?? true,
     conditions: seedCondition ? [seedCondition] : [],
     editingConditionIdx: seedCondition ? null : "new",

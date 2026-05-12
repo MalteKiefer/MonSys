@@ -369,18 +369,48 @@ func (s *Store) CreateRuleGroup(ctx context.Context, in apitypes.NotificationRul
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	// Atomic replace: when the caller supplies a set of rule IDs to evict,
+	// drop them BEFORE the new inserts run, all inside the same tx so a
+	// later collision rolls everything back. Used by the wizard's edit-
+	// existing-group and convert-single-to-multi paths.
+	if len(in.ReplaceExistingIDs) > 0 {
+		if _, err := tx.Exec(ctx,
+			`DELETE FROM notification_rules WHERE id = ANY($1)`,
+			in.ReplaceExistingIDs,
+		); err != nil {
+			return apitypes.NotificationRuleGroupResponse{}, fmt.Errorf("replace delete: %w", err)
+		}
+	}
+
+	// Build a unique per-row name for each condition. Naively suffixing with
+	// condition_type collides when the same type appears twice in the batch
+	// (e.g. three metric_threshold legs); detect duplicates up front and
+	// append a 1-based index to the colliding type tokens.
+	typeCount := map[string]int{}
+	for _, c := range in.Conditions {
+		typeCount[c.ConditionType]++
+	}
+	typeIdx := map[string]int{}
+	rowNames := make([]string, len(in.Conditions))
+	for i, c := range in.Conditions {
+		if len(in.Conditions) == 1 {
+			rowNames[i] = in.Name
+			continue
+		}
+		typeIdx[c.ConditionType]++
+		suffix := c.ConditionType
+		if typeCount[c.ConditionType] > 1 {
+			suffix = fmt.Sprintf("%s %d", suffix, typeIdx[c.ConditionType])
+		}
+		rowNames[i] = fmt.Sprintf("%s — %s", in.Name, suffix)
+	}
+
 	out := make([]apitypes.NotificationRule, 0, len(in.Conditions))
 	for i, c := range in.Conditions {
 		if c.ConditionType == "" {
 			return apitypes.NotificationRuleGroupResponse{}, fmt.Errorf("condition %d: condition_type required", i)
 		}
-		// Build per-row name. For visual clarity in the rules list (which
-		// shows each row), suffix with the condition type when there's more
-		// than one leg so users can spot which leg fired.
-		rowName := in.Name
-		if len(in.Conditions) > 1 {
-			rowName = fmt.Sprintf("%s — %s", in.Name, c.ConditionType)
-		}
+		rowName := rowNames[i]
 		paramsJSON, err := json.Marshal(orEmptyAny(c.ConditionParams))
 		if err != nil {
 			return apitypes.NotificationRuleGroupResponse{}, fmt.Errorf("rule %d: marshal params: %w", i, err)

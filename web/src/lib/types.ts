@@ -446,6 +446,9 @@ export type NotificationRuleGroupInput = {
   target_host_ids?: string[];
   target_tags?: string[];
   target_group_ids?: string[];
+  // When set, server atomically deletes these rule ids before inserting the
+  // new batch, all in one tx. Used by the wizard for edit / single→multi.
+  replace_existing_ids?: string[];
 };
 
 export type NotificationRuleGroupResponse = {

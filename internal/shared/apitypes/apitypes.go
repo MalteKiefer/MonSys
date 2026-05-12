@@ -470,6 +470,13 @@ type NotificationRuleGroupInput struct {
 	TargetTags        []string                    `json:"target_tags,omitempty"`
 	TargetGroupIDs    []uuid.UUID                 `json:"target_group_ids,omitempty"`
 	Conditions        []NotificationRuleCondition `json:"conditions"          minItems:"1"`
+	// ReplaceExistingIDs, when non-empty, makes the batch create atomically
+	// replace those rules: server DELETEs the listed rule IDs and INSERTs
+	// the new rows in the same transaction, so a UNIQUE(name) collision
+	// during the insert rolls everything back and the caller is never left
+	// in a half-deleted state. Used by the wizard for the edit / single→
+	// multi paths.
+	ReplaceExistingIDs []uuid.UUID `json:"replace_existing_ids,omitempty"`
 }
 
 // NotificationRuleCondition is one (condition_type, condition_params) pair
