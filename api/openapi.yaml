@@ -5024,6 +5024,33 @@ paths:
       summary: Issue a password-reset token (and optionally email it)
       tags:
         - admin
+  /v1/admin/users/{id}/revoke-sessions:
+    post:
+      operationId: admin-revoke-user-sessions
+      parameters:
+        - description: host UUID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: host UUID
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Revoke every active web session for a user
+      tags:
+        - admin
   /v1/admin/users/{id}/unlock:
     post:
       operationId: admin-unlock-user

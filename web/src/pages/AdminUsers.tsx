@@ -1,10 +1,23 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Search, Send, Users } from "lucide-react";
-import { FormEvent, useMemo, useState } from "react";
+import {
+  Lock,
+  LockOpen,
+  LogOut,
+  Mail,
+  MoreVertical,
+  Search,
+  Send,
+  ShieldOff,
+  Trash2,
+  Users,
+} from "lucide-react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import { Page } from "../components/page";
 import {
   Button,
+  DropdownMenu,
+  DropdownItem,
   Empty,
   ErrorBox,
   Field,
@@ -24,6 +37,7 @@ import {
   TextInput,
 } from "../components/ui";
 import { api, ApiError } from "../lib/api";
+import { useAuth } from "../lib/auth";
 import { AdminCreateUserResponse, AdminUser } from "../lib/types";
 
 // TODO(theme): this page still uses raw `zinc-*` Tailwind classes which
@@ -45,9 +59,42 @@ const TABS: ReadonlyArray<TabItem<TabKey>> = [
   { key: "invites", label: "Invites", icon: Send },
 ];
 
+// ---- Page-level toast banner ---------------------------------------------
+
+// No global toast primitive exists in the design system yet, so this page
+// renders an inline auto-dismissing banner pinned to the top of the panel
+// content. The banner reuses Success/ErrorBox styling for visual parity.
+type Toast = { kind: "ok" | "err"; text: string };
+
+function ToastBanner({
+  toast,
+  onClose,
+}: {
+  toast: Toast | null;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    if (!toast) return;
+    const t = window.setTimeout(onClose, 3500);
+    return () => window.clearTimeout(t);
+  }, [toast, onClose]);
+  if (!toast) return null;
+  return (
+    <div role="status" aria-live="polite">
+      {toast.kind === "ok" ? (
+        <SuccessBox>{toast.text}</SuccessBox>
+      ) : (
+        <ErrorBox>{toast.text}</ErrorBox>
+      )}
+    </div>
+  );
+}
+
 export function AdminUsers() {
   const qc = useQueryClient();
   const [tab, setTab] = useState<TabKey>("list");
+  const [toast, setToast] = useState<Toast | null>(null);
+
   const list = useQuery({
     queryKey: ["admin-users"],
     queryFn: () => api<ListResponse>("/v1/admin/users"),
@@ -70,6 +117,8 @@ export function AdminUsers() {
           aria-labelledby="tab-list"
           className="space-y-6"
         >
+          <ToastBanner toast={toast} onClose={() => setToast(null)} />
+
           <CreateUserCard onCreated={invalidate} />
 
           <Panel>
@@ -82,7 +131,11 @@ export function AdminUsers() {
               ) : list.error ? (
                 <ErrorBox>{(list.error as Error).message}</ErrorBox>
               ) : (
-                <UserTable users={list.data?.users ?? []} onChange={invalidate} />
+                <UserTable
+                  users={list.data?.users ?? []}
+                  onChange={invalidate}
+                  onToast={setToast}
+                />
               )}
             </PanelBody>
           </Panel>
@@ -231,7 +284,16 @@ function CreateUserCard({ onCreated }: { onCreated: () => void }) {
   );
 }
 
-function UserTable({ users, onChange }: { users: AdminUser[]; onChange: () => void }) {
+function UserTable({
+  users,
+  onChange,
+  onToast,
+}: {
+  users: AdminUser[];
+  onChange: () => void;
+  onToast: (t: Toast) => void;
+}) {
+  const me = useAuth((s) => s.user);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -259,6 +321,14 @@ function UserTable({ users, onChange }: { users: AdminUser[]; onChange: () => vo
   const selectedVisible = useMemo(
     () => visible.filter((u) => selected.has(u.id)),
     [visible, selected],
+  );
+
+  // Count of currently-enabled admins drives the "last admin" UX gates.
+  // The server also enforces these invariants but the client-side gate keeps
+  // unsafe options out of the menu entirely.
+  const enabledAdminCount = useMemo(
+    () => users.filter((u) => u.role === "admin" && !u.disabled_at).length,
+    [users],
   );
 
   const allChecked = visible.length > 0 && selectedVisible.length === visible.length;
@@ -408,7 +478,7 @@ function UserTable({ users, onChange }: { users: AdminUser[]; onChange: () => vo
             <TH>Status</TH>
             <TH>2FA</TH>
             <TH>Last login</TH>
-            <TH>Actions</TH>
+            <TH className="w-12 text-right">Actions</TH>
           </tr>
         </THead>
         <TBody>
@@ -423,7 +493,10 @@ function UserTable({ users, onChange }: { users: AdminUser[]; onChange: () => vo
               <UserRow
                 key={u.id}
                 user={u}
+                meId={me?.id ?? null}
+                enabledAdminCount={enabledAdminCount}
                 onChange={onChange}
+                onToast={onToast}
                 checked={selected.has(u.id)}
                 onCheck={() => toggleOne(u.id)}
               />
@@ -435,22 +508,49 @@ function UserTable({ users, onChange }: { users: AdminUser[]; onChange: () => vo
   );
 }
 
+// ---- Per-row component ---------------------------------------------------
+
 function UserRow({
   user,
+  meId,
+  enabledAdminCount,
   onChange,
+  onToast,
   checked,
   onCheck,
 }: {
   user: AdminUser;
+  meId: string | null;
+  enabledAdminCount: number;
   onChange: () => void;
+  onToast: (t: Toast) => void;
   checked: boolean;
   onCheck: () => void;
 }) {
-  const [resetURL, setResetURL] = useState<string | null>(null);
+  // Modal state for the rare SMTP-failure fallback: the reset URL is shown
+  // inline only when the server couldn't email it. Otherwise we never expose
+  // the link in the UI.
+  const [resetFallbackURL, setResetFallbackURL] = useState<string | null>(null);
+
+  const isDisabled = !!user.disabled_at;
+  const isSelf = meId !== null && user.id === meId;
+  // "Last admin" — the user is the only enabled admin left. We use this to
+  // gate Lock and Delete (which would also kick the last admin out).
+  const isLastAdmin =
+    user.role === "admin" && enabledAdminCount === 1 && !user.disabled_at;
+
+  const reportError = (err: unknown) => {
+    const text = err instanceof ApiError ? err.detail : (err as Error).message;
+    onToast({ kind: "err", text });
+  };
+
+  // Generic POST mutation reused for lock/unlock/reset-2fa/revoke-sessions.
   const post = useMutation({
     mutationFn: (path: string) => api<unknown>(path, { method: "POST" }),
     onSuccess: onChange,
+    onError: reportError,
   });
+
   const reset = useMutation({
     mutationFn: () =>
       api<{ reset_url?: string; invite_sent: boolean }>(
@@ -458,16 +558,158 @@ function UserRow({
         { method: "POST" },
       ),
     onSuccess: (data) => {
-      if (data.reset_url) setResetURL(data.reset_url);
+      if (data.reset_url) {
+        // SMTP unavailable — surface the URL so the admin can hand it over
+        // out-of-band. Stays in a modal until the admin dismisses it.
+        setResetFallbackURL(data.reset_url);
+      } else if (data.invite_sent) {
+        onToast({
+          kind: "ok",
+          text: `Password reset link sent to ${user.email}.`,
+        });
+      } else {
+        // Shouldn't happen with the current backend contract, but keep a
+        // generic acknowledgement so the user gets feedback either way.
+        onToast({ kind: "ok", text: `Reset link issued for ${user.email}.` });
+      }
       onChange();
     },
-  });
-  const del = useMutation({
-    mutationFn: () => api<unknown>(`/v1/admin/users/${user.id}`, { method: "DELETE" }),
-    onSuccess: onChange,
+    onError: reportError,
   });
 
-  const disabled = !!user.disabled_at;
+  const del = useMutation({
+    mutationFn: () =>
+      api<unknown>(`/v1/admin/users/${user.id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      onToast({ kind: "ok", text: `User ${user.email} deleted.` });
+      onChange();
+    },
+    onError: reportError,
+  });
+
+  // ---- Confirm helpers ----------------------------------------------------
+  // Native confirm() is good enough for these destructive actions — they're
+  // admin-only and infrequent. A custom modal could come later if needed.
+
+  const onResetPassword = () => reset.mutate();
+
+  const onReset2FA = () => {
+    if (
+      !window.confirm(
+        `Wipes the user's TOTP enrollment. They will need to re-enroll on next login. Continue?`,
+      )
+    ) {
+      return;
+    }
+    post.mutate(`/v1/admin/users/${user.id}/reset-2fa`, {
+      onSuccess: () => {
+        onToast({ kind: "ok", text: `2FA reset for ${user.email}.` });
+        onChange();
+      },
+    });
+  };
+
+  const onRevokeSessions = () => {
+    if (
+      !window.confirm(
+        `Force ${user.email} to re-authenticate immediately on every device?`,
+      )
+    ) {
+      return;
+    }
+    post.mutate(`/v1/admin/users/${user.id}/revoke-sessions`, {
+      onSuccess: () => {
+        onToast({
+          kind: "ok",
+          text: `All sessions revoked for ${user.email}.`,
+        });
+        onChange();
+      },
+    });
+  };
+
+  const onLockToggle = () => {
+    const action = isDisabled ? "unlock" : "lock";
+    post.mutate(`/v1/admin/users/${user.id}/${action}`, {
+      onSuccess: () => {
+        onToast({
+          kind: "ok",
+          text: `${user.email} ${action === "lock" ? "locked" : "unlocked"}.`,
+        });
+        onChange();
+      },
+    });
+  };
+
+  const onDelete = () => {
+    if (!window.confirm(`Delete ${user.email}? This cannot be undone.`)) return;
+    del.mutate();
+  };
+
+  // ---- Menu item construction --------------------------------------------
+  //
+  // Each item carries client-side gating (`disabled` + `disabledReason`). The
+  // server still enforces these invariants — this is purely UX so admins
+  // don't see an action that's guaranteed to fail. Ordering is roughly
+  // "least destructive" → "most destructive".
+
+  const items: DropdownItem[] = [
+    {
+      key: "reset-password",
+      label: "Reset password",
+      icon: Mail,
+      onClick: onResetPassword,
+    },
+    {
+      key: "reset-2fa",
+      label: "Reset 2FA / MFA",
+      icon: ShieldOff,
+      destructive: true,
+      onClick: onReset2FA,
+      disabled: !user.totp_active,
+      disabledReason: !user.totp_active
+        ? "This user has no TOTP enrollment to reset."
+        : undefined,
+    },
+    {
+      key: "revoke-sessions",
+      label: "End all sessions",
+      icon: LogOut,
+      destructive: true,
+      onClick: onRevokeSessions,
+      disabled: isSelf,
+      disabledReason: isSelf
+        ? "Use the logout button for your own session."
+        : undefined,
+    },
+    {
+      key: "lock-unlock",
+      label: isDisabled ? "Unlock" : "Lock",
+      icon: isDisabled ? LockOpen : Lock,
+      onClick: onLockToggle,
+      // Locking yourself or the last enabled admin would brick the install.
+      disabled: !isDisabled && (isSelf || isLastAdmin),
+      disabledReason:
+        !isDisabled && isSelf
+          ? "You can't lock yourself out."
+          : !isDisabled && isLastAdmin
+            ? "This is the only enabled admin — promote or unlock another first."
+            : undefined,
+    },
+    {
+      key: "delete",
+      label: "Delete",
+      icon: Trash2,
+      destructive: true,
+      onClick: onDelete,
+      disabled: isSelf || isLastAdmin,
+      disabledReason: isSelf
+        ? "You can't delete your own account."
+        : isLastAdmin
+          ? "This is the only enabled admin — can't delete the last admin."
+          : undefined,
+    },
+  ];
 
   return (
     <>
@@ -483,7 +725,7 @@ function UserRow({
         <TD className="font-medium">{user.email}</TD>
         <TD className="text-fg-muted">{user.role}</TD>
         <TD>
-          {disabled ? (
+          {isDisabled ? (
             <StatusPill status="fail">locked</StatusPill>
           ) : (
             <StatusPill status="ok">active</StatusPill>
@@ -493,41 +735,82 @@ function UserRow({
         <TD className="text-fg-muted">
           {user.last_login_at ? new Date(user.last_login_at).toLocaleString() : "never"}
         </TD>
-        <TD className="space-x-1 text-xs">
-          {disabled ? (
-            <Button onClick={() => post.mutate(`/v1/admin/users/${user.id}/unlock`)}>
-              unlock
-            </Button>
-          ) : (
-            <Button onClick={() => post.mutate(`/v1/admin/users/${user.id}/lock`)}>
-              lock
-            </Button>
-          )}
-          <Button onClick={() => reset.mutate()}>reset pw</Button>
-          <Button
-            onClick={() => post.mutate(`/v1/admin/users/${user.id}/reset-2fa`)}
-            disabled={!user.totp_active}
-          >
-            reset 2fa
-          </Button>
-          <Button
-            variant="danger"
-            onClick={() => {
-              if (confirm(`Delete ${user.email}?`)) del.mutate();
-            }}
-          >
-            delete
-          </Button>
+        <TD className="text-right">
+          <DropdownMenu
+            align="right"
+            trigger={
+              <button
+                type="button"
+                aria-label={`Actions for ${user.email}`}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md text-fg-muted transition-colors duration-150 hover:bg-panel-2 hover:text-fg focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+              >
+                <MoreVertical className="h-4 w-4" />
+              </button>
+            }
+            items={items}
+          />
         </TD>
       </tr>
-      {resetURL && (
-        <tr className="bg-panel-2">
-          <td colSpan={7} className="px-3 py-2 font-mono text-xs">
-            <span className="text-fg-muted">Reset link:</span>{" "}
-            <code className="break-all text-fg">{location.origin + resetURL}</code>
+      {resetFallbackURL && (
+        <tr>
+          <td colSpan={7} className="px-0">
+            <ResetURLDialog
+              email={user.email}
+              url={resetFallbackURL}
+              onClose={() => setResetFallbackURL(null)}
+            />
           </td>
         </tr>
       )}
     </>
+  );
+}
+
+// ---- Reset URL fallback dialog -------------------------------------------
+
+// Rendered only when the API returns `reset_url` — i.e. SMTP was not
+// configured (or send failed). Shows the link with a Copy button and a
+// loud warning so the admin knows mail did *not* go out.
+function ResetURLDialog({
+  email,
+  url,
+  onClose,
+}: {
+  email: string;
+  url: string;
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const fullURL = location.origin + url;
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(fullURL);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard API can fail under HTTP/non-secure contexts — fall back
+      // to a manual selection prompt so the admin can still grab the URL.
+      window.prompt("Copy the reset link:", fullURL);
+    }
+  }
+
+  return (
+    <div className="my-2 mx-3 space-y-2 rounded-md border border-warn/40 bg-warn/5 p-3">
+      <p className="text-sm font-medium text-warn">
+        SMTP not configured or send failed — hand this to {email} out-of-band.
+      </p>
+      <div className="flex items-center gap-2">
+        <code className="flex-1 break-all rounded border border-border bg-panel-2 px-2 py-1 font-mono text-xs text-fg">
+          {fullURL}
+        </code>
+        <Button size="sm" onClick={copy}>
+          {copied ? "Copied" : "Copy"}
+        </Button>
+        <Button size="sm" variant="ghost" onClick={onClose}>
+          Dismiss
+        </Button>
+      </div>
+    </div>
   );
 }

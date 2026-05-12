@@ -3,7 +3,15 @@
 // component library is used — these compose directly on top of Tailwind.
 
 import { Check } from "lucide-react";
-import { ComponentPropsWithoutRef, KeyboardEvent, ReactNode, useRef } from "react";
+import {
+  ComponentPropsWithoutRef,
+  KeyboardEvent,
+  ReactNode,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 
 // ---- Layout primitives -----------------------------------------------------
 
@@ -500,5 +508,197 @@ export function Stepper({
         );
       })}
     </ol>
+  );
+}
+
+// ---- DropdownMenu --------------------------------------------------------
+
+// Tiny popover menu used for row-action kebabs. Click trigger to toggle,
+// Escape / outside-click to close, ArrowUp/Down for roving focus inside the
+// menu. Items can be disabled (with a hover tooltip via `disabledReason`)
+// and/or destructive (rendered in `text-fail`). The trigger is wrapped in a
+// span so consumers can pass either a styled <button> or a plain icon — the
+// keyboard handler is attached to the wrapper.
+
+export type DropdownItem = {
+  key: string;
+  label: string;
+  icon?: React.ComponentType<{ className?: string }>;
+  onClick: () => void;
+  destructive?: boolean;
+  disabled?: boolean;
+  // When set, shows as a native title tooltip on the disabled item so the
+  // user can discover *why* the action is unavailable.
+  disabledReason?: string;
+};
+
+export function DropdownMenu({
+  trigger,
+  items,
+  align = "right",
+}: {
+  trigger: ReactNode;
+  items: ReadonlyArray<DropdownItem>;
+  align?: "left" | "right";
+}) {
+  const [open, setOpen] = useState(false);
+  const [activeIdx, setActiveIdx] = useState<number>(-1);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const menuId = useId();
+
+  // Build a sparse refs array sized to the current items list so roving
+  // focus indices stay aligned across renders.
+  itemRefs.current = itemRefs.current.slice(0, items.length);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDocPointer(e: MouseEvent | TouchEvent) {
+      const root = wrapRef.current;
+      if (!root) return;
+      if (e.target instanceof Node && root.contains(e.target)) return;
+      setOpen(false);
+    }
+    function onKey(e: globalThis.KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setOpen(false);
+        // Return focus to the trigger so keyboard nav keeps a sane anchor.
+        const t = wrapRef.current?.querySelector<HTMLElement>(
+          "[data-dropdown-trigger]",
+        );
+        t?.focus();
+      }
+    }
+    document.addEventListener("mousedown", onDocPointer);
+    document.addEventListener("touchstart", onDocPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocPointer);
+      document.removeEventListener("touchstart", onDocPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  // Whenever we open, move focus to the first non-disabled item so screen
+  // readers and keyboard users land somewhere actionable.
+  useEffect(() => {
+    if (!open) {
+      setActiveIdx(-1);
+      return;
+    }
+    const firstEnabled = items.findIndex((it) => !it.disabled);
+    setActiveIdx(firstEnabled);
+  }, [open, items]);
+
+  useEffect(() => {
+    if (!open || activeIdx < 0) return;
+    itemRefs.current[activeIdx]?.focus();
+  }, [open, activeIdx]);
+
+  function moveFocus(delta: 1 | -1) {
+    if (items.length === 0) return;
+    let idx = activeIdx;
+    for (let i = 0; i < items.length; i++) {
+      idx = (idx + delta + items.length) % items.length;
+      if (!items[idx].disabled) {
+        setActiveIdx(idx);
+        return;
+      }
+    }
+  }
+
+  function onMenuKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      moveFocus(1);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      moveFocus(-1);
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      const first = items.findIndex((it) => !it.disabled);
+      if (first >= 0) setActiveIdx(first);
+    } else if (e.key === "End") {
+      e.preventDefault();
+      for (let i = items.length - 1; i >= 0; i--) {
+        if (!items[i].disabled) {
+          setActiveIdx(i);
+          return;
+        }
+      }
+    } else if (e.key === "Tab") {
+      // Tab out closes the menu so we don't trap focus inside.
+      setOpen(false);
+    }
+  }
+
+  function onTriggerKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") {
+      if (!open) {
+        e.preventDefault();
+        setOpen(true);
+      }
+    }
+  }
+
+  const alignCls = align === "left" ? "left-0" : "right-0";
+
+  return (
+    <div
+      ref={wrapRef}
+      className="relative inline-block"
+      onKeyDown={onTriggerKeyDown}
+    >
+      <div
+        data-dropdown-trigger
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={open ? menuId : undefined}
+        className="inline-flex"
+      >
+        {trigger}
+      </div>
+      {open && (
+        <div
+          id={menuId}
+          role="menu"
+          onKeyDown={onMenuKeyDown}
+          className={`absolute z-30 mt-1 min-w-[12rem] overflow-hidden rounded-md border border-border bg-panel shadow-panel ${alignCls}`}
+        >
+          {items.map((it, i) => {
+            const Icon = it.icon;
+            const base =
+              "flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors duration-150 focus:outline-none";
+            const enabled = it.destructive
+              ? "text-fail hover:bg-fail/10 focus-visible:bg-fail/10"
+              : "text-fg hover:bg-panel-2 focus-visible:bg-panel-2";
+            const disabledCls = "cursor-not-allowed text-fg-subtle opacity-60";
+            return (
+              <button
+                key={it.key}
+                ref={(el) => {
+                  itemRefs.current[i] = el;
+                }}
+                role="menuitem"
+                aria-disabled={it.disabled || undefined}
+                title={it.disabled ? it.disabledReason : undefined}
+                tabIndex={i === activeIdx ? 0 : -1}
+                onClick={() => {
+                  if (it.disabled) return;
+                  setOpen(false);
+                  it.onClick();
+                }}
+                className={`${base} ${it.disabled ? disabledCls : enabled}`}
+              >
+                {Icon && <Icon className="h-3.5 w-3.5 shrink-0" />}
+                <span className="flex-1 truncate">{it.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
