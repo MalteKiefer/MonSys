@@ -264,11 +264,162 @@ type PackageSummary struct {
 
 // Notification rules
 
+// Supported notification_rules.condition_type values. The constants are the
+// single source of truth — the engine, store validation, and OpenAPI enum
+// tags all reference them. Adding a new condition_type means: add a constant
+// here, add the matching evaluator in internal/server/alerts, and (if the
+// param shape is non-trivial) document it in the per-type comment below.
+const (
+	// host_offline: fires when liveness Watcher transitions a host to "offline".
+	// Params: none beyond targeting.
+	ConditionHostOffline = "host_offline"
+
+	// monitor_failed: fires on probe.ResultEvent with status != "ok".
+	// Params: none beyond targeting.
+	ConditionMonitorFailed = "monitor_failed"
+
+	// cert_expiring: fires on cert-probe results where remaining days < threshold.
+	// Params: { "days_threshold": int (default 30) }
+	ConditionCertExpiring = "cert_expiring"
+
+	// login_failed_threshold: periodic; >threshold failed logins in window_sec.
+	// Params: { "window_sec": int (default 300), "threshold": int (default 10) }
+	ConditionLoginFailedThreshold = "login_failed_threshold"
+
+	// security_updates_pending: periodic; security_updates >= threshold.
+	// Params: { "threshold": int (default 1) }
+	ConditionSecurityUpdatesPending = "security_updates_pending"
+
+	// metric_threshold: generic numeric threshold over a sliding window.
+	// Params:
+	//   metric:       one of MetricKind (see consts below)
+	//   comparator:   ">" | ">=" | "<" | "<="
+	//   value:        float64 — threshold to compare against
+	//   window_sec:   int    — how far back samples are considered (default 120)
+	//   for_sec:      int    — sustained-for window inside window_sec (default = window_sec)
+	//   scope:        optional {"mountpoint":"…","nic":"…","workload_id":"…","monitor_id":"…"}
+	ConditionMetricThreshold = "metric_threshold"
+
+	// agent_outdated: hosts whose agent_version is older than configured baseline.
+	// Params: { "min_version": "1.2.3" } — leave empty to compare against the
+	// running server's view of "latest" (hosts.agent_version of the freshest host).
+	ConditionAgentOutdated = "agent_outdated"
+
+	// image_update_pending: workload row with update_available=true persisting > min_age_hours.
+	// Params: { "min_age_hours": int (default 24) }
+	ConditionImageUpdatePending = "image_update_pending"
+
+	// package_update_available: total updates_count > threshold (separate from
+	// security_updates_pending which only counts security).
+	// Params: { "threshold": int (default 50) }
+	ConditionPackageUpdateAvailable = "package_update_available"
+
+	// pending_reboot: a kernel-named pkg appears in package_updates AND no
+	// reboot has been observed since the update was first seen.
+	// Params: none.
+	ConditionPendingReboot = "pending_reboot"
+
+	// repo_metadata_stale: package_repo_state.metadata_age_seconds > threshold.
+	// Params: { "threshold_sec": int (default 86400) }
+	ConditionRepoMetadataStale = "repo_metadata_stale"
+
+	// login_anomaly: subtypes of suspicious login events.
+	// Params: { "kind": "new_source_ip" | "root_success" | "sudo_spike",
+	//           "window_sec": int (default 86400),
+	//           "threshold": int (default 1) }
+	ConditionLoginAnomaly = "login_anomaly"
+
+	// inventory_drift: subtypes of unexpected inventory changes.
+	// Params: { "kind": "new_user" | "new_sudoer" | "new_disk" | "new_nic" |
+	//                   "mac_changed" | "kernel_changed" | "distro_changed" |
+	//                   "new_package" | "removed_package" }
+	ConditionInventoryDrift = "inventory_drift"
+
+	// firewall_state_change: subtypes of firewall regressions.
+	// Params: { "kind": "inactive" | "default_policy_weakened" | "rule_count_drop",
+	//           "drop_threshold": int (default 5; for rule_count_drop only) }
+	ConditionFirewallStateChange = "firewall_state_change"
+
+	// fail2ban_jail_disappeared: a previously-seen jail name is no longer reported.
+	// Params: none.
+	ConditionFail2banJailDisappeared = "fail2ban_jail_disappeared"
+
+	// crowdsec_decision_threshold: count(active CrowdSec decisions per host) > threshold.
+	// Params: { "threshold": int (default 100) }
+	ConditionCrowdSecDecisionThreshold = "crowdsec_decision_threshold"
+
+	// nic_link_down: NIC transitions speed_mbps -> 0 (or disappears from inventory while host online).
+	// Params: { "exclude_loopback": bool (default true), "exclude_virtual": bool (default true) }
+	ConditionNicLinkDown = "nic_link_down"
+
+	// nic_bond_degraded: bond/bridge master members[] length drops below baseline.
+	// Params: none — engine remembers per-bond baseline.
+	ConditionNicBondDegraded = "nic_bond_degraded"
+
+	// vm_state_change: VM transitions running -> stopped/paused, OR autostart=true && state!=running.
+	// Params: { "subkind": "stopped" | "autostart_violation" | "any_transition" (default) }
+	ConditionVMStateChange = "vm_state_change"
+
+	// container_state_change: workload transitions to "exited" or "dead".
+	// Params: { "states": ["exited","dead"] (default), "exclude_image_substring": "" }
+	ConditionContainerStateChange = "container_state_change"
+
+	// audit_action: matches new audit_log rows.
+	// Params: { "actions": ["admin.security.policy.update", …],
+	//           "actor_pattern": "" (regex over actor),
+	//           "target_pattern": "" }
+	ConditionAuditAction = "audit_action"
+
+	// host_flap: count(host_status_history transitions per host) in window > threshold.
+	// Params: { "window_sec": int (default 1800), "threshold": int (default 6) }
+	ConditionHostFlap = "host_flap"
+
+	// unexpected_reboot: SystemSample.uptime_sec resets below the prior sample
+	// without a matching package-update pending_reboot resolve.
+	// Params: none.
+	ConditionUnexpectedReboot = "unexpected_reboot"
+)
+
+// MetricKind identifies the numeric series metric_threshold operates on.
+// See alerts engine for the SQL each kind compiles to.
+const (
+	MetricCPUUsagePct        = "cpu_usage_pct"
+	MetricCPUPerCorePct      = "cpu_per_core_pct" // fires when ANY core > threshold
+	MetricLoad1              = "load_1"
+	MetricLoad5              = "load_5"
+	MetricLoad15             = "load_15"
+	MetricRAMUsedPct         = "ram_used_pct"
+	MetricSwapUsedPct        = "swap_used_pct"
+	MetricSwapUsedBytes      = "swap_used_bytes"
+	MetricDiskUsedPct        = "disk_used_pct" // per-mountpoint; uses scope.mountpoint or fires per mp
+	MetricDiskInodeUsedPct   = "disk_inode_used_pct"
+	MetricDiskIOPSTotal      = "disk_iops_total"
+	MetricDiskIOUtilPct      = "disk_io_util_pct"
+	MetricNICRxRate          = "nic_rx_bytes_per_sec"
+	MetricNICTxRate          = "nic_tx_bytes_per_sec"
+	MetricNICErrRate         = "nic_err_per_sec"
+	MetricNICDropRate        = "nic_drop_per_sec"
+	MetricWorkloadCPUPct     = "workload_cpu_usage_pct"
+	MetricWorkloadMemPct     = "workload_mem_used_pct"
+	MetricFail2banBanned     = "fail2ban_currently_banned"
+	MetricCrowdSecActive     = "crowdsec_active_decisions"
+	MetricRepoMetadataAgeSec = "repo_metadata_age_sec"
+	MetricMonitorLatencyMs   = "monitor_last_latency_ms"
+)
+
+// The condition_type enum value used in the OpenAPI tags below. Keep this
+// string in sync with the Condition* constants above; struct tags can't
+// reference constants at compile time, so the literal lives here as a single
+// source of truth that mirrors the const block.
+//
+//nolint:unused // referenced via struct tags
+const conditionTypeEnum = "host_offline,monitor_failed,cert_expiring,login_failed_threshold,security_updates_pending,metric_threshold,agent_outdated,image_update_pending,package_update_available,pending_reboot,repo_metadata_stale,login_anomaly,inventory_drift,firewall_state_change,fail2ban_jail_disappeared,crowdsec_decision_threshold,nic_link_down,nic_bond_degraded,vm_state_change,container_state_change,audit_action,host_flap,unexpected_reboot"
+
 type NotificationRule struct {
 	ID              string         `json:"id"               format:"uuid" maxLength:"36" readOnly:"true"`
 	Name            string         `json:"name"             maxLength:"100"`
 	Enabled         bool           `json:"enabled"`
-	ConditionType   string         `json:"condition_type"   enum:"host_offline,monitor_failed,cert_expiring,login_failed_threshold,security_updates_pending"`
+	ConditionType   string         `json:"condition_type"   enum:"host_offline,monitor_failed,cert_expiring,login_failed_threshold,security_updates_pending,metric_threshold,agent_outdated,image_update_pending,package_update_available,pending_reboot,repo_metadata_stale,login_anomaly,inventory_drift,firewall_state_change,fail2ban_jail_disappeared,crowdsec_decision_threshold,nic_link_down,nic_bond_degraded,vm_state_change,container_state_change,audit_action,host_flap,unexpected_reboot"`
 	ConditionParams map[string]any `json:"condition_params,omitempty"`
 	ChannelIDs      []string       `json:"channel_ids"`
 	Severity          string         `json:"severity"            enum:"info,warning,critical"`
@@ -285,7 +436,7 @@ type NotificationRule struct {
 type NotificationRuleInput struct {
 	Name              string         `json:"name"                minLength:"1" maxLength:"100"`
 	Enabled           bool           `json:"enabled"`
-	ConditionType     string         `json:"condition_type"      enum:"host_offline,monitor_failed,cert_expiring,login_failed_threshold,security_updates_pending"`
+	ConditionType     string         `json:"condition_type"      enum:"host_offline,monitor_failed,cert_expiring,login_failed_threshold,security_updates_pending,metric_threshold,agent_outdated,image_update_pending,package_update_available,pending_reboot,repo_metadata_stale,login_anomaly,inventory_drift,firewall_state_change,fail2ban_jail_disappeared,crowdsec_decision_threshold,nic_link_down,nic_bond_degraded,vm_state_change,container_state_change,audit_action,host_flap,unexpected_reboot"`
 	ConditionParams   map[string]any `json:"condition_params,omitempty"`
 	ChannelIDs        []string       `json:"channel_ids"         minItems:"1"`
 	Severity          string         `json:"severity"            enum:"info,warning,critical"`
@@ -295,6 +446,103 @@ type NotificationRuleInput struct {
 	TargetHostIDs     []string       `json:"target_host_ids,omitempty"`
 	TargetTags        []string       `json:"target_tags,omitempty"`
 	TargetGroupIDs    []string       `json:"target_group_ids,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
+// Documented condition_params shapes
+// ---------------------------------------------------------------------------
+// The wire format for NotificationRule.ConditionParams is map[string]any so
+// the engine can read params via assertions and older clients with custom
+// params keep working. The structs below exist so the OpenAPI schema exposes
+// a typed shape for clients that want it — they are documentation only and
+// are NOT directly embedded in NotificationRule.
+//
+// When adding a new condition_type whose params are non-trivial, define a
+// matching *Params struct here so generated clients have something to bind
+// to.
+
+// MetricThresholdParams is the documented shape of condition_params when
+// condition_type=metric_threshold.
+type MetricThresholdParams struct {
+	Metric     string            `json:"metric"     enum:"cpu_usage_pct,cpu_per_core_pct,load_1,load_5,load_15,ram_used_pct,swap_used_pct,swap_used_bytes,disk_used_pct,disk_inode_used_pct,disk_iops_total,disk_io_util_pct,nic_rx_bytes_per_sec,nic_tx_bytes_per_sec,nic_err_per_sec,nic_drop_per_sec,workload_cpu_usage_pct,workload_mem_used_pct,fail2ban_currently_banned,crowdsec_active_decisions,repo_metadata_age_sec,monitor_last_latency_ms"`
+	Comparator string            `json:"comparator" enum:">,>=,<,<="`
+	Value      float64           `json:"value"`
+	WindowSec  int               `json:"window_sec"`
+	ForSec     int               `json:"for_sec,omitempty"`
+	Scope      map[string]string `json:"scope,omitempty" doc:"optional narrowing keys: mountpoint, nic, workload_id, monitor_id"`
+}
+
+// AgentOutdatedParams documents condition_params for condition_type=agent_outdated.
+type AgentOutdatedParams struct {
+	MinVersion string `json:"min_version,omitempty" doc:"semver baseline; empty = compare against freshest host's agent_version"`
+}
+
+// ImageUpdatePendingParams documents condition_params for condition_type=image_update_pending.
+type ImageUpdatePendingParams struct {
+	MinAgeHours int `json:"min_age_hours" minimum:"0" doc:"update_available must persist this long before alerting; default 24"`
+}
+
+// PackageUpdateAvailableParams documents condition_params for condition_type=package_update_available.
+type PackageUpdateAvailableParams struct {
+	Threshold int `json:"threshold" minimum:"0" doc:"total updates_count > threshold fires; default 50"`
+}
+
+// RepoMetadataStaleParams documents condition_params for condition_type=repo_metadata_stale.
+type RepoMetadataStaleParams struct {
+	ThresholdSec int `json:"threshold_sec" minimum:"0" doc:"package_repo_state.metadata_age_seconds > threshold_sec fires; default 86400"`
+}
+
+// LoginAnomalyParams documents condition_params for condition_type=login_anomaly.
+type LoginAnomalyParams struct {
+	Kind      string `json:"kind"       enum:"new_source_ip,root_success,sudo_spike"`
+	WindowSec int    `json:"window_sec" minimum:"0" doc:"observation window; default 86400"`
+	Threshold int    `json:"threshold"  minimum:"1" doc:"events in window to fire; default 1"`
+}
+
+// InventoryDriftParams documents condition_params for condition_type=inventory_drift.
+type InventoryDriftParams struct {
+	Kind string `json:"kind" enum:"new_user,new_sudoer,new_disk,new_nic,mac_changed,kernel_changed,distro_changed,new_package,removed_package"`
+}
+
+// FirewallStateChangeParams documents condition_params for condition_type=firewall_state_change.
+type FirewallStateChangeParams struct {
+	Kind          string `json:"kind"                     enum:"inactive,default_policy_weakened,rule_count_drop"`
+	DropThreshold int    `json:"drop_threshold,omitempty" minimum:"1" doc:"only used for kind=rule_count_drop; default 5"`
+}
+
+// CrowdSecDecisionThresholdParams documents condition_params for condition_type=crowdsec_decision_threshold.
+type CrowdSecDecisionThresholdParams struct {
+	Threshold int `json:"threshold" minimum:"1" doc:"active decisions per host > threshold fires; default 100"`
+}
+
+// NICLinkDownParams documents condition_params for condition_type=nic_link_down.
+type NICLinkDownParams struct {
+	ExcludeLoopback bool `json:"exclude_loopback" doc:"default true"`
+	ExcludeVirtual  bool `json:"exclude_virtual"  doc:"default true; veth/docker0/bridges etc."`
+}
+
+// VMStateChangeParams documents condition_params for condition_type=vm_state_change.
+type VMStateChangeParams struct {
+	Subkind string `json:"subkind" enum:"stopped,autostart_violation,any_transition" doc:"default any_transition"`
+}
+
+// ContainerStateChangeParams documents condition_params for condition_type=container_state_change.
+type ContainerStateChangeParams struct {
+	States                []string `json:"states,omitempty"                  doc:"workload states that fire; default [\"exited\",\"dead\"]"`
+	ExcludeImageSubstring string   `json:"exclude_image_substring,omitempty" doc:"skip workloads whose image contains this substring"`
+}
+
+// AuditActionParams documents condition_params for condition_type=audit_action.
+type AuditActionParams struct {
+	Actions       []string `json:"actions"                  minItems:"1" doc:"e.g. [\"admin.security.policy.update\"]"`
+	ActorPattern  string   `json:"actor_pattern,omitempty"  doc:"optional regex applied to audit_log.actor"`
+	TargetPattern string   `json:"target_pattern,omitempty" doc:"optional regex applied to audit_log.target"`
+}
+
+// HostFlapParams documents condition_params for condition_type=host_flap.
+type HostFlapParams struct {
+	WindowSec int `json:"window_sec" minimum:"60" doc:"observation window; default 1800"`
+	Threshold int `json:"threshold"  minimum:"2"  doc:"online/offline transitions in window to fire; default 6"`
 }
 
 type AlertHistoryEntry struct {
