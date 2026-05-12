@@ -86,6 +86,7 @@ function PackagesPanel({
       {updates.length > 0 && (
         <div>
           <h4 className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">{t("hostDetail:packages.pendingTitle")}</h4>
+          <div className="overflow-x-auto">
           <Table>
             <THead>
               <tr><TH>{t("hostDetail:packages.colManager")}</TH><TH>{t("hostDetail:packages.colName")}</TH><TH>{t("hostDetail:packages.colCurrent")}</TH><TH>{t("hostDetail:packages.colAvailable")}</TH><TH>{t("hostDetail:packages.colSecurity")}</TH></tr>
@@ -102,6 +103,7 @@ function PackagesPanel({
               ))}
             </TBody>
           </Table>
+          </div>
         </div>
       )}
     </div>

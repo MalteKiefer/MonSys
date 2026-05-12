@@ -493,6 +493,7 @@ function UserTable({
       )}
       {bulkErr && <ErrorBox>{bulkErr}</ErrorBox>}
 
+      <div className="overflow-x-auto">
       <Table>
         <THead>
           <tr>
@@ -539,6 +540,7 @@ function UserTable({
           )}
         </TBody>
       </Table>
+      </div>
     </div>
   );
 }

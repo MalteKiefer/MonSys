@@ -82,9 +82,11 @@ export function MobileDrawer({ open, onClose }: { open: boolean; onClose: () => 
             type="button"
             onClick={onClose}
             aria-label={t("actions.close_navigation")}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-panel text-fg-muted transition-colors hover:bg-panel-2 hover:text-fg focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+            // Match the hamburger's 44×44 target — the drawer only ever shows
+            // <md, so we don't need a desktop-narrower variant here.
+            className="inline-flex h-11 w-11 items-center justify-center rounded-md border border-border bg-panel text-fg-muted transition-colors hover:bg-panel-2 hover:text-fg focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           >
-            <X className="h-4 w-4" />
+            <X className="h-5 w-5" />
           </button>
         </div>
         <SidebarNav collapsed={false} onNavigate={onClose} />

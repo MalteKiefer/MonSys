@@ -129,6 +129,7 @@ function SecurityPanel({ data, loading }: { data?: HostSecurity; loading: boolea
           )}
         </div>
         {cs.length === 0 ? <p className="text-sm text-fg-subtle">{t("hostDetail:security.noDecisions")}</p> : (
+          <div className="overflow-x-auto">
           <Table>
             <THead>
               <tr><TH>{t("hostDetail:security.colScope")}</TH><TH>{t("hostDetail:security.colTarget")}</TH><TH>{t("hostDetail:security.colType")}</TH><TH>{t("hostDetail:security.colOrigin")}</TH><TH>{t("hostDetail:security.colReason")}</TH><TH>{t("hostDetail:security.colUntil")}</TH></tr>
@@ -148,6 +149,7 @@ function SecurityPanel({ data, loading }: { data?: HostSecurity; loading: boolea
               ))}
             </TBody>
           </Table>
+          </div>
         )}
       </div>
     </div>

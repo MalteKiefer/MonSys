@@ -163,7 +163,10 @@ function LanguageSwitcher() {
         <button
           type="button"
           aria-label={t("nav:topbar.change_language")}
-          className="inline-flex h-8 min-w-8 items-center justify-center rounded-md border border-border bg-panel px-2 text-[11px] font-semibold uppercase tracking-wide text-fg-muted transition-colors hover:bg-panel-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+          // Tap target: 40×40 on phones (≥ Apple HIG 44 minor axis with padding),
+          // 32×32 from sm: up where pointer precision is fine. Keeps desktop
+          // density unchanged while giving thumbs a reachable surface.
+          className="inline-flex h-10 min-w-[2.5rem] items-center justify-center rounded-md border border-border bg-panel px-2 text-[11px] font-semibold uppercase tracking-wide text-fg-muted transition-colors hover:bg-panel-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 sm:h-8 sm:min-w-8"
         >
           {current}
         </button>
@@ -213,9 +216,11 @@ export function TopBar({ onOpenMobile }: { onOpenMobile: () => void }) {
           onClick={onOpenMobile}
           aria-label="Open navigation"
           aria-haspopup="dialog"
-          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-panel text-fg-muted transition-colors hover:bg-panel-2 hover:text-fg md:hidden"
+          // 44×44 — clears Apple HIG and Material's minimum touch target. Only
+          // ever shown <md, so the desktop layout is unaffected.
+          className="inline-flex h-11 w-11 items-center justify-center rounded-md border border-border bg-panel text-fg-muted transition-colors hover:bg-panel-2 hover:text-fg md:hidden"
         >
-          <Menu className="h-4 w-4" />
+          <Menu className="h-5 w-5" />
         </button>
         <Link to="/" className="flex items-center gap-2 text-sm font-semibold tracking-tight">
           <Activity className="h-4 w-4 text-accent" aria-hidden />

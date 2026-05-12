@@ -179,6 +179,9 @@ export function Hosts() {
             ) : filtered.length === 0 ? (
               <EmptyState icon={Server} title={t("hosts:empty.noMatch")} />
             ) : (
+              // Wide host table — let the scroll live inside the panel on
+              // mobile so the body itself never gets a horizontal scrollbar.
+              <div className="overflow-x-auto">
               <Table>
                 <THead>
                   <tr>
@@ -269,6 +272,7 @@ export function Hosts() {
                   ))}
                 </TBody>
               </Table>
+              </div>
             )}
           </Panel>
         </>

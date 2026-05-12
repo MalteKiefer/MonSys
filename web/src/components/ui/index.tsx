@@ -149,10 +149,11 @@ export function Button({
 
 export function TextInput({ className = "", ...rest }: ComponentPropsWithoutRef<"input">) {
   // `min-h-9` (36px) matches `--touch-min` so taps land reliably on mobile;
-  // the existing `py-2 text-sm` keeps the desktop look identical.
+  // `text-base` (16px) on phones suppresses iOS's auto-zoom-on-focus, while
+  // `sm:text-sm` preserves the existing 14px desktop look identically.
   return (
     <input
-      className={`w-full min-h-9 rounded-md border border-border bg-panel px-3 py-2 text-sm text-fg placeholder:text-fg-subtle transition-colors duration-150 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30 ${className}`}
+      className={`w-full min-h-9 rounded-md border border-border bg-panel px-3 py-2 text-base text-fg placeholder:text-fg-subtle transition-colors duration-150 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30 sm:text-sm ${className}`}
       {...rest}
     />
   );
