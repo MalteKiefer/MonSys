@@ -916,11 +916,19 @@ components:
           format: email
           maxLength: 254
           type: string
+        grace_until:
+          format: date-time
+          type: string
         id:
           format: uuid
           maxLength: 36
           readOnly: true
           type: string
+        must_enroll:
+          type: boolean
+        passkey_count:
+          format: int64
+          type: integer
         role:
           description: admin or user
           enum:
@@ -934,6 +942,7 @@ components:
         - email
         - role
         - totp_active
+        - passkey_count
       type: object
     DiskInfo:
       additionalProperties: false
@@ -2019,6 +2028,25 @@ components:
       required:
         - monitors
       type: object
+    ListPasskeysResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://mon.kiefer-networks.de/schemas/ListPasskeysResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        passkeys:
+          items:
+            $ref: "#/components/schemas/Passkey"
+          type:
+            - array
+            - "null"
+      required:
+        - passkeys
+      type: object
     ListRulesOutputBody:
       additionalProperties: false
       properties:
@@ -2147,6 +2175,9 @@ components:
           format: date-time
           readOnly: true
           type: string
+        needs_passkey:
+          description: true when force_mode=passkey_required and the user has no passkey and no grace remaining
+          type: boolean
         needs_totp:
           description: true → call /v1/auth/2fa/challenge with challenge_token + code
           type: boolean
@@ -3126,6 +3157,45 @@ components:
         - security_updates
         - metadata_age_seconds
       type: object
+    Passkey:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://mon.kiefer-networks.de/schemas/Passkey.json
+          format: uri
+          readOnly: true
+          type: string
+        aaguid:
+          type: string
+        backup_eligible:
+          type: boolean
+        backup_state:
+          type: boolean
+        created_at:
+          format: date-time
+          type: string
+        id:
+          type: string
+        last_used_at:
+          format: date-time
+          type: string
+        name:
+          type: string
+        transports:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+      required:
+        - id
+        - name
+        - backup_eligible
+        - backup_state
+        - created_at
+      type: object
     PasswordPolicy:
       additionalProperties: false
       properties:
@@ -3196,6 +3266,21 @@ components:
         - available_version
         - is_security
       type: object
+    RenamePasskeyRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://mon.kiefer-networks.de/schemas/RenamePasskeyRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        name:
+          type: string
+      required:
+        - name
+      type: object
     RepoMetaState:
       additionalProperties: false
       properties:
@@ -3215,6 +3300,22 @@ components:
         - metadata_mtime
         - metadata_age_seconds
         - refreshed_externally
+      type: object
+    RevokeAllSessionsResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://mon.kiefer-networks.de/schemas/RevokeAllSessionsResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        revoked:
+          format: int64
+          type: integer
+      required:
+        - revoked
       type: object
     SearchPackagesOutputBody:
       additionalProperties: false
@@ -3246,6 +3347,33 @@ components:
         - limit
         - offset
         - packages
+      type: object
+    SecurityPolicy:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://mon.kiefer-networks.de/schemas/SecurityPolicy.json
+          format: uri
+          readOnly: true
+          type: string
+        force_mode:
+          type: string
+        grace_days:
+          format: int64
+          type: integer
+        idle_timeout_minutes:
+          format: int64
+          type: integer
+        max_session_hours:
+          format: int64
+          type: integer
+      required:
+        - force_mode
+        - grace_days
+        - max_session_hours
+        - idle_timeout_minutes
       type: object
     SecurityReport:
       additionalProperties: false
@@ -3675,6 +3803,99 @@ components:
         - mem_bytes
         - autostart
         - last_seen_at
+      type: object
+    WebAuthnLoginBeginResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://mon.kiefer-networks.de/schemas/WebAuthnLoginBeginResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        challenge_token:
+          type: string
+        options:
+          additionalProperties: {}
+          type: object
+      required:
+        - challenge_token
+        - options
+      type: object
+    WebAuthnLoginFinishRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://mon.kiefer-networks.de/schemas/WebAuthnLoginFinishRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        challenge_token:
+          type: string
+        credential:
+          additionalProperties: {}
+          type: object
+      required:
+        - challenge_token
+        - credential
+      type: object
+    WebAuthnRegisterBeginRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://mon.kiefer-networks.de/schemas/WebAuthnRegisterBeginRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        name:
+          type: string
+      required:
+        - name
+      type: object
+    WebAuthnRegisterBeginResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://mon.kiefer-networks.de/schemas/WebAuthnRegisterBeginResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        challenge_token:
+          type: string
+        options:
+          additionalProperties: {}
+          type: object
+      required:
+        - challenge_token
+        - options
+      type: object
+    WebAuthnRegisterFinishRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://mon.kiefer-networks.de/schemas/WebAuthnRegisterFinishRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        challenge_token:
+          type: string
+        credential:
+          additionalProperties: {}
+          type: object
+        name:
+          type: string
+      required:
+        - challenge_token
+        - credential
       type: object
     WorkloadInfo:
       additionalProperties: false
@@ -4415,6 +4636,68 @@ paths:
       summary: Replace the password policy
       tags:
         - admin
+  /v1/admin/security/policy:
+    get:
+      operationId: admin-get-security-policy
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SecurityPolicy"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get the active security policy (force-mode, session caps)
+      tags:
+        - admin
+    put:
+      operationId: admin-set-security-policy
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SecurityPolicy"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Replace the security policy
+      tags:
+        - admin
+  /v1/admin/security/revoke-all-sessions:
+    post:
+      operationId: admin-revoke-all-sessions
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RevokeAllSessionsResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Revoke every active session except the caller's
+      tags:
+        - admin
   /v1/admin/users:
     get:
       operationId: admin-list-users
@@ -4940,6 +5223,176 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Return the authenticated user
+      tags:
+        - auth
+  /v1/auth/me/passkeys:
+    get:
+      operationId: auth-list-passkeys
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListPasskeysResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List the caller's registered passkeys
+      tags:
+        - auth
+  /v1/auth/me/passkeys/{id}:
+    delete:
+      operationId: auth-delete-passkey
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Delete one of the caller's passkeys
+      tags:
+        - auth
+    put:
+      operationId: auth-rename-passkey
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RenamePasskeyRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Rename one of the caller's passkeys
+      tags:
+        - auth
+  /v1/auth/webauthn/login/begin:
+    post:
+      operationId: auth-webauthn-login-begin
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebAuthnLoginBeginResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Begin a discoverable-credential passkey login
+      tags:
+        - auth
+  /v1/auth/webauthn/login/finish:
+    post:
+      operationId: auth-webauthn-login-finish
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebAuthnLoginFinishRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Finish a discoverable-credential passkey login; returns session
+      tags:
+        - auth
+  /v1/auth/webauthn/register/begin:
+    post:
+      operationId: auth-webauthn-register-begin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebAuthnRegisterBeginRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebAuthnRegisterBeginResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Begin a passkey registration ceremony
+      tags:
+        - auth
+  /v1/auth/webauthn/register/finish:
+    post:
+      operationId: auth-webauthn-register-finish
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebAuthnRegisterFinishRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Passkey"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Finish a passkey registration ceremony
       tags:
         - auth
   /v1/groups:
