@@ -22,6 +22,7 @@ func (s *Store) ListRules(ctx context.Context) ([]apitypes.NotificationRule, err
 		       channel_ids, severity, throttle_sec,
 		       repeat_interval_sec, notify_on_resolve,
 		       target_host_ids, target_tags, target_group_ids,
+		       group_id,
 		       created_at, COALESCE(created_by,'')
 		FROM notification_rules ORDER BY name`)
 	if err != nil {
@@ -45,6 +46,7 @@ func (s *Store) GetRule(ctx context.Context, id uuid.UUID) (apitypes.Notificatio
 		       channel_ids, severity, throttle_sec,
 		       repeat_interval_sec, notify_on_resolve,
 		       target_host_ids, target_tags, target_group_ids,
+		       group_id,
 		       created_at, COALESCE(created_by,'')
 		FROM notification_rules WHERE id = $1`, id)
 	if err != nil {
@@ -96,12 +98,12 @@ func (s *Store) CreateRule(ctx context.Context, in apitypes.NotificationRuleInpu
 		                                channel_ids, severity, throttle_sec,
 		                                repeat_interval_sec, notify_on_resolve,
 		                                target_host_ids, target_tags, target_group_ids,
-		                                created_by)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+		                                group_id, created_by)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
 		RETURNING id`,
 		in.Name, in.Enabled, in.ConditionType, params, channels, severity,
 		in.ThrottleSec, in.RepeatIntervalSec, in.NotifyOnResolve,
-		hostIDs, tags, groupIDs, nullableString(createdBy),
+		hostIDs, tags, groupIDs, nullableUUID(in.GroupID), nullableString(createdBy),
 	).Scan(&id)
 	if err != nil {
 		if pgIsUniqueViolation(err) {
@@ -146,12 +148,13 @@ func (s *Store) UpdateRule(ctx context.Context, id uuid.UUID, in apitypes.Notifi
 			name = $2, enabled = $3, condition_type = $4, condition_params = $5,
 			channel_ids = $6, severity = $7, throttle_sec = $8,
 			repeat_interval_sec = $9, notify_on_resolve = $10,
-			target_host_ids = $11, target_tags = $12, target_group_ids = $13
+			target_host_ids = $11, target_tags = $12, target_group_ids = $13,
+			group_id = $14
 		WHERE id = $1`,
 		id, in.Name, in.Enabled, in.ConditionType, params,
 		channels, severity, in.ThrottleSec,
 		in.RepeatIntervalSec, in.NotifyOnResolve,
-		hostIDs, tags, groupIDs)
+		hostIDs, tags, groupIDs, nullableUUID(in.GroupID))
 	if err != nil {
 		if pgIsUniqueViolation(err) {
 			return apitypes.NotificationRule{}, errors.New("a rule with this name already exists")
@@ -253,14 +256,17 @@ func scanRule(scan func(...any) error) (apitypes.NotificationRule, error) {
 		hostIDs    []uuid.UUID
 		groupIDs   []uuid.UUID
 		tags       []string
+		groupID    *uuid.UUID
 	)
 	if err := scan(&idVal, &r.Name, &r.Enabled, &r.ConditionType, &paramsRaw,
 		&channelIDs, &r.Severity, &r.ThrottleSec,
 		&r.RepeatIntervalSec, &r.NotifyOnResolve,
 		&hostIDs, &tags, &groupIDs,
+		&groupID,
 		&r.CreatedAt, &r.CreatedBy); err != nil {
 		return r, err
 	}
+	r.GroupID = groupID
 	r.ID = idVal.String()
 	r.ConditionParams = map[string]any{}
 	if len(paramsRaw) > 0 {
@@ -311,4 +317,106 @@ func parseChannelIDs(in []string) ([]uuid.UUID, error) {
 		out = append(out, u)
 	}
 	return out, nil
+}
+
+// CreateRuleGroup creates N notification_rules in one transaction. All share
+// the same group_id (newly generated), name, scope, and notify config; each
+// gets its own condition_type / condition_params. Returns the group_id and
+// the created rules. UNIQUE(name) on notification_rules forces us to suffix
+// per-row names with the condition_type when N > 1; the shared group_id is
+// what the UI uses to roll them back into a single logical rule.
+func (s *Store) CreateRuleGroup(ctx context.Context, in apitypes.NotificationRuleGroupInput, createdBy string) (apitypes.NotificationRuleGroupResponse, error) {
+	if len(in.Conditions) == 0 {
+		return apitypes.NotificationRuleGroupResponse{}, errors.New("at least one condition required")
+	}
+	if in.Name == "" {
+		return apitypes.NotificationRuleGroupResponse{}, errors.New("name required")
+	}
+	if len(in.ChannelIDs) == 0 {
+		return apitypes.NotificationRuleGroupResponse{}, errors.New("at least one channel required")
+	}
+	if in.ThrottleSec < 0 {
+		in.ThrottleSec = 0
+	}
+	if err := validateRepeat(in.RepeatIntervalSec); err != nil {
+		return apitypes.NotificationRuleGroupResponse{}, err
+	}
+
+	sev := in.Severity
+	if sev == "" {
+		sev = "warning"
+	}
+	groupID := uuid.New()
+
+	// Normalize array inputs to non-nil so pgx encodes empty arrays correctly.
+	channels := in.ChannelIDs
+	if channels == nil {
+		channels = []uuid.UUID{}
+	}
+	hostIDs := in.TargetHostIDs
+	if hostIDs == nil {
+		hostIDs = []uuid.UUID{}
+	}
+	tgtGroups := in.TargetGroupIDs
+	if tgtGroups == nil {
+		tgtGroups = []uuid.UUID{}
+	}
+	tags := orEmptyStrings(in.TargetTags)
+
+	tx, err := s.Pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return apitypes.NotificationRuleGroupResponse{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	out := make([]apitypes.NotificationRule, 0, len(in.Conditions))
+	for i, c := range in.Conditions {
+		if c.ConditionType == "" {
+			return apitypes.NotificationRuleGroupResponse{}, fmt.Errorf("condition %d: condition_type required", i)
+		}
+		// Build per-row name. For visual clarity in the rules list (which
+		// shows each row), suffix with the condition type when there's more
+		// than one leg so users can spot which leg fired.
+		rowName := in.Name
+		if len(in.Conditions) > 1 {
+			rowName = fmt.Sprintf("%s — %s", in.Name, c.ConditionType)
+		}
+		paramsJSON, err := json.Marshal(orEmptyAny(c.ConditionParams))
+		if err != nil {
+			return apitypes.NotificationRuleGroupResponse{}, fmt.Errorf("rule %d: marshal params: %w", i, err)
+		}
+
+		row := tx.QueryRow(ctx, `
+			INSERT INTO notification_rules
+				(name, enabled, condition_type, condition_params,
+				 channel_ids, severity, throttle_sec,
+				 repeat_interval_sec, notify_on_resolve,
+				 target_host_ids, target_tags, target_group_ids,
+				 group_id, created_by)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+			RETURNING id, name, enabled, condition_type, condition_params,
+			          channel_ids, severity, throttle_sec,
+			          repeat_interval_sec, notify_on_resolve,
+			          target_host_ids, target_tags, target_group_ids,
+			          group_id,
+			          created_at, COALESCE(created_by,'')`,
+			rowName, in.Enabled, c.ConditionType, paramsJSON,
+			channels, sev, in.ThrottleSec,
+			in.RepeatIntervalSec, in.NotifyOnResolve,
+			hostIDs, tags, tgtGroups,
+			groupID, nullableString(createdBy),
+		)
+		r, err := scanRule(row.Scan)
+		if err != nil {
+			if pgIsUniqueViolation(err) {
+				return apitypes.NotificationRuleGroupResponse{}, fmt.Errorf("rule %d: name %q already exists", i, rowName)
+			}
+			return apitypes.NotificationRuleGroupResponse{}, fmt.Errorf("rule %d: %w", i, err)
+		}
+		out = append(out, r)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return apitypes.NotificationRuleGroupResponse{}, err
+	}
+	return apitypes.NotificationRuleGroupResponse{GroupID: groupID, Rules: out}, nil
 }

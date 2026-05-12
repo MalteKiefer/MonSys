@@ -1,6 +1,10 @@
 package apitypes
 
-import "time"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 // AgentRegisterRequest is sent by an agent on first start with the bootstrap token
 // in the Authorization: Bearer header. The server responds with a per-host agent_key
@@ -418,6 +422,7 @@ const conditionTypeEnum = "host_offline,monitor_failed,cert_expiring,login_faile
 type NotificationRule struct {
 	ID              string         `json:"id"               format:"uuid" maxLength:"36" readOnly:"true"`
 	Name            string         `json:"name"             maxLength:"100"`
+	GroupID         *uuid.UUID     `json:"group_id,omitempty" doc:"set when this rule is one leg of a rule group"`
 	Enabled         bool           `json:"enabled"`
 	ConditionType   string         `json:"condition_type"   enum:"host_offline,monitor_failed,cert_expiring,login_failed_threshold,security_updates_pending,metric_threshold,agent_outdated,image_update_pending,package_update_available,pending_reboot,repo_metadata_stale,login_anomaly,inventory_drift,firewall_state_change,fail2ban_jail_disappeared,crowdsec_decision_threshold,nic_link_down,nic_bond_degraded,vm_state_change,container_state_change,audit_action,host_flap,unexpected_reboot"`
 	ConditionParams map[string]any `json:"condition_params,omitempty"`
@@ -436,6 +441,7 @@ type NotificationRule struct {
 type NotificationRuleInput struct {
 	Name              string         `json:"name"                minLength:"1" maxLength:"100"`
 	Enabled           bool           `json:"enabled"`
+	GroupID           *uuid.UUID     `json:"group_id,omitempty"`
 	ConditionType     string         `json:"condition_type"      enum:"host_offline,monitor_failed,cert_expiring,login_failed_threshold,security_updates_pending,metric_threshold,agent_outdated,image_update_pending,package_update_available,pending_reboot,repo_metadata_stale,login_anomaly,inventory_drift,firewall_state_change,fail2ban_jail_disappeared,crowdsec_decision_threshold,nic_link_down,nic_bond_degraded,vm_state_change,container_state_change,audit_action,host_flap,unexpected_reboot"`
 	ConditionParams   map[string]any `json:"condition_params,omitempty"`
 	ChannelIDs        []string       `json:"channel_ids"         minItems:"1"`
@@ -446,6 +452,38 @@ type NotificationRuleInput struct {
 	TargetHostIDs     []string       `json:"target_host_ids,omitempty"`
 	TargetTags        []string       `json:"target_tags,omitempty"`
 	TargetGroupIDs    []string       `json:"target_group_ids,omitempty"`
+}
+
+// NotificationRuleGroupInput describes a rule group — one named rule with N
+// underlying conditions that all share the same scope + channels + severity +
+// throttle. The server expands this into N rows in notification_rules, all
+// stamped with the same group_id, and returns them.
+type NotificationRuleGroupInput struct {
+	Name              string                      `json:"name"                minLength:"1" maxLength:"200"`
+	Enabled           bool                        `json:"enabled"`
+	Severity          string                      `json:"severity"            enum:"info,warning,critical"`
+	ThrottleSec       int                         `json:"throttle_sec"        minimum:"0"`
+	RepeatIntervalSec int                         `json:"repeat_interval_sec,omitempty" minimum:"0"`
+	NotifyOnResolve   bool                        `json:"notify_on_resolve,omitempty"`
+	ChannelIDs        []uuid.UUID                 `json:"channel_ids"`
+	TargetHostIDs     []uuid.UUID                 `json:"target_host_ids,omitempty"`
+	TargetTags        []string                    `json:"target_tags,omitempty"`
+	TargetGroupIDs    []uuid.UUID                 `json:"target_group_ids,omitempty"`
+	Conditions        []NotificationRuleCondition `json:"conditions"          minItems:"1"`
+}
+
+// NotificationRuleCondition is one (condition_type, condition_params) pair
+// inside a rule group.
+type NotificationRuleCondition struct {
+	ConditionType   string         `json:"condition_type"   enum:"host_offline,monitor_failed,cert_expiring,login_failed_threshold,security_updates_pending,metric_threshold,agent_outdated,image_update_pending,package_update_available,pending_reboot,repo_metadata_stale,login_anomaly,inventory_drift,firewall_state_change,fail2ban_jail_disappeared,crowdsec_decision_threshold,nic_link_down,nic_bond_degraded,vm_state_change,container_state_change,audit_action,host_flap,unexpected_reboot"`
+	ConditionParams map[string]any `json:"condition_params,omitempty"`
+}
+
+// NotificationRuleGroupResponse is the result of CreateRuleGroup: the shared
+// group_id plus every row the server inserted.
+type NotificationRuleGroupResponse struct {
+	GroupID uuid.UUID          `json:"group_id"`
+	Rules   []NotificationRule `json:"rules"`
 }
 
 // ---------------------------------------------------------------------------

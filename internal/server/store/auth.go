@@ -298,3 +298,12 @@ func nullableString(s string) any {
 	}
 	return s
 }
+
+// nullableUUID converts a *uuid.UUID to driver-friendly any: nil pointer
+// produces SQL NULL, otherwise the concrete uuid.UUID value.
+func nullableUUID(id *uuid.UUID) any {
+	if id == nil {
+		return nil
+	}
+	return *id
+}

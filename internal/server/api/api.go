@@ -667,6 +667,14 @@ func (s *Server) registerRoutes() {
 		Middlewares: adminOnly,
 	}, s.handleCreateRule)
 	huma.Register(s.API, huma.Operation{
+		OperationID: "notif-rule-group-create",
+		Method:      http.MethodPost,
+		Path:        "/v1/notifications/rules/batch",
+		Summary:     "Create N rules sharing one group_id",
+		Tags:        []string{"notifications"},
+		Middlewares: adminOnly,
+	}, s.handleCreateRuleGroup)
+	huma.Register(s.API, huma.Operation{
 		OperationID: "update-rule",
 		Method:      http.MethodPut,
 		Path:        "/v1/notifications/rules/{id}",
@@ -1787,6 +1795,37 @@ func (s *Server) handleCreateRule(ctx context.Context, in *createRuleInput) (*ru
 	}
 	s.audit(ctx, "rule.create", r.ID, r.Name)
 	return &ruleOutput{Body: r}, nil
+}
+
+type ruleGroupInput struct {
+	Body apitypes.NotificationRuleGroupInput
+}
+type ruleGroupOutput struct {
+	Body apitypes.NotificationRuleGroupResponse
+}
+
+// handleCreateRuleGroup expands one NotificationRuleGroupInput into N
+// notification_rules rows under a shared group_id, so the UI can present a
+// single rule with multiple conditions while the alert engine still sees
+// flat rule rows.
+func (s *Server) handleCreateRuleGroup(ctx context.Context, in *ruleGroupInput) (*ruleGroupOutput, error) {
+	if s.Store == nil {
+		return nil, huma.Error503ServiceUnavailable("server has no store configured")
+	}
+	u, _ := userFromContext(ctx)
+	resp, err := s.Store.CreateRuleGroup(ctx, in.Body, u.Email)
+	if err != nil {
+		if strings.Contains(err.Error(), "required") ||
+			strings.Contains(err.Error(), "already exists") ||
+			strings.Contains(err.Error(), "repeat_interval_sec") {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
+		return nil, internalErr(ctx, "create rule group", err)
+	}
+	detail := fmt.Sprintf("{\"name\":%q,\"condition_count\":%d,\"channel_ids\":%d}",
+		in.Body.Name, len(in.Body.Conditions), len(in.Body.ChannelIDs))
+	s.audit(ctx, "rule.group.create", resp.GroupID.String(), detail)
+	return &ruleGroupOutput{Body: resp}, nil
 }
 
 type updateRuleInput struct {
