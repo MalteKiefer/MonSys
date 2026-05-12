@@ -21,9 +21,14 @@
     --color-fg: 9 9 11;
     --color-fg-muted: 82 82 91;
     --color-fg-subtle: 113 113 122;
-    --color-accent: 5 150 105;
-    --color-accent-hover: 4 120 87;
-    --color-ok: 5 150 105;
+    /* Accent: emerald-700 (#047857) gives 5.07:1 against white — passes WCAG
+       AA for normal text (4.5:1) and for white-on-accent button surfaces.
+       Previously emerald-600 (#059669) which only hit 3.76:1 and tripped
+       Lighthouse `color-contrast`. Hover darkens to emerald-800 to keep a
+       visible state change without breaking the brand emerald hue. */
+    --color-accent: 4 120 87;
+    --color-accent-hover: 6 95 70;
+    --color-ok: 4 120 87;
     --color-warn: 217 119 6;
     --color-fail: 220 38 38;
     --color-stale: 217 119 6;
