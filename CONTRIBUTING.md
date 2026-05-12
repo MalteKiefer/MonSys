@@ -28,6 +28,26 @@ PRs that fail these will not be merged.
 Whatever style you use, the subject line should describe the change in the
 imperative mood and stay readable in `git log --oneline`.
 
+## Signing commits
+
+Every commit in a PR must be signed. The `commit-signing` job in
+`.github/workflows/ci.yaml` walks `base..head` of the PR and rejects
+any commit whose `git log %G?` code is not `G` (good) or `U` (good but
+unknown trust).
+
+See [docs/COMMIT-SIGNING.md](./docs/COMMIT-SIGNING.md) for setup. The
+short version: use your existing SSH key with
+`git config gpg.format ssh` and
+`git config commit.gpgsign true`, then add the same key to GitHub as a
+**Signing key**. GPG works too if you already have a keyring.
+
+`make install-hooks` also installs an advisory pre-commit hook that
+warns (does not block) when `commit.gpgsign` is unset locally — the CI
+gate is the actual enforcement point.
+
+Historical pre-gate commits on `main` are not required to be
+retroactively re-signed. Going forward only.
+
 ## Security-relevant changes
 
 If a PR fixes or touches a security-sensitive code path:

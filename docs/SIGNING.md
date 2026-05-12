@@ -28,6 +28,13 @@ All merges into `main` MUST be signed. PRs from external contributors
 are accepted unsigned but are squash-merged by a maintainer whose merge
 commit is signed.
 
+> For new contributors: SSH-based signing reuses your existing
+> `id_ed25519` key and avoids the GPG keyring entirely. See
+> [COMMIT-SIGNING.md](./COMMIT-SIGNING.md) for the SSH path, the CI
+> gate that enforces signatures on PRs, and the advisory pre-commit
+> hook. The GPG flow below remains supported for contributors who
+> already have a key.
+
 ### One-time setup
 
 ```sh

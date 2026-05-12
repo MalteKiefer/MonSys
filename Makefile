@@ -20,11 +20,19 @@ BIN_DIR := bin
 
 all: web build
 
-# Install local git hooks (commit-msg blocks AI-attribution trailers).
+# Install local git hooks:
+#   commit-msg                  -> blocks AI-attribution trailers
+#   pre-commit (symlink to
+#     pre-commit-signing-check) -> warns (does NOT block) when
+#                                  commit.gpgsign is unset; the CI
+#                                  commit-signing job is the actual
+#                                  enforcement point. See
+#                                  docs/COMMIT-SIGNING.md.
 # Idempotent — re-running it is safe.
 install-hooks:
 	git config core.hooksPath .githooks
 	@echo "core.hooksPath -> .githooks"
+	@echo "hooks active: commit-msg, pre-commit (advisory signing check)"
 
 # `make web` builds the SPA and stages it into the embed directory used by
 # `internal/server/spa`. Run this before `make build-server` if you've

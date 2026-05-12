@@ -1,0 +1,39 @@
+#!/bin/sh
+# Advisory hook — warns when commit.gpgsign is unset for this checkout.
+# Does NOT block the commit; the CI commit-signing job is the actual
+# enforcement point. Enable for the repo with: make install-hooks
+# (or: git config core.hooksPath .githooks).
+#
+# See docs/COMMIT-SIGNING.md for setup instructions.
+set -e
+
+# git config prints empty + non-zero on unset keys; default to "" on miss.
+gpgsign=$(git config --get commit.gpgsign 2>/dev/null || true)
+
+case "$gpgsign" in
+    true|1|yes|on)
+        # Signing is on. Nothing to warn about.
+        exit 0
+        ;;
+esac
+
+# Warn but do not block.
+cat >&2 <<'EOF'
+pre-commit-signing-check: commit.gpgsign is not enabled for this repo.
+
+  This commit will be UNSIGNED and will be rejected by the CI
+  `commit-signing` job when you open a PR.
+
+  Enable signing (SSH-based, reuses your id_ed25519):
+
+      git config gpg.format ssh
+      git config user.signingkey ~/.ssh/id_ed25519.pub
+      git config commit.gpgsign true
+
+  See docs/COMMIT-SIGNING.md for full setup, including GPG and the
+  GitHub "Signing key" registration step.
+
+  (This is a warning only — the commit is NOT blocked.)
+EOF
+
+exit 0
