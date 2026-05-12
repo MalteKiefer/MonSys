@@ -880,6 +880,14 @@ func (s *Server) registerRoutes() {
 		Tags:        []string{"admin"},
 		Middlewares: adminOnly,
 	}, s.handleAdminReset2FA)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "admin-revoke-user-sessions",
+		Method:      http.MethodPost,
+		Path:        "/v1/admin/users/{id}/revoke-sessions",
+		Summary:     "Revoke every active web session for a user",
+		Tags:        []string{"admin"},
+		Middlewares: adminOnly,
+	}, s.handleAdminRevokeUserSessions)
 
 	// Admin: outbound SMTP transport (singleton).
 	huma.Register(s.API, huma.Operation{
@@ -2841,11 +2849,43 @@ func (s *Server) handleAdminResetPassword(ctx context.Context, in *hostIDInput) 
 		return nil, internalErr(ctx, "reset token failed", err)
 	}
 	out := &adminResetPwOutput{}
-	out.Body.ResetURL = inviteURL(tok)
-	if err := s.sendInviteMail(ctx, u.Email, out.Body.ResetURL); err == nil {
+	url := inviteURL(tok)
+	if err := s.sendInviteMail(ctx, u.Email, url); err == nil {
+		// Mail delivery succeeded — withhold the URL so admins can't
+		// shoulder-surf it from the UI. The user clicks the link in their
+		// inbox; no other path exists.
 		out.Body.InviteSent = true
+	} else {
+		// SMTP not configured or send failed — surface the URL as a
+		// fallback so the admin can still hand it off manually. Logged
+		// loud enough that an investigator can tell apart "we mailed it"
+		// vs "we exposed it in the response".
+		slog.WarnContext(ctx, "admin reset-password: mail send failed; returning URL fallback",
+			"err", err, "target_id", in.ID)
+		out.Body.ResetURL = url
 	}
 	s.audit(ctx, "user.reset_password", in.ID, u.Email)
+	return out, nil
+}
+
+func (s *Server) handleAdminRevokeUserSessions(ctx context.Context, in *hostIDInput) (*emptyOutput, error) {
+	id, err := uuid.Parse(in.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid id")
+	}
+	caller, _ := userFromContext(ctx)
+	if caller.ID == id {
+		// Self-targeting from the admin user list is refused — admins who
+		// want to drop their own session use logout. Prevents the surprise
+		// of an admin locking themselves out via a misclick.
+		return nil, huma.Error400BadRequest("cannot revoke your own sessions from the user list; use logout instead")
+	}
+	if err := s.Store.RevokeUserSessions(ctx, id); err != nil {
+		return nil, internalErr(ctx, "revoke user sessions", err)
+	}
+	s.audit(ctx, "user.session.revoke_all", in.ID, "")
+	out := &emptyOutput{}
+	out.Body.OK = true
 	return out, nil
 }
 
