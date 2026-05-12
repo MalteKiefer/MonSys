@@ -1102,6 +1102,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/notifications/rules/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create N rules sharing one group_id */
+        post: operations["notif-rule-group-create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/notifications/rules/{id}": {
         parameters: {
             query?: never;
@@ -2392,6 +2409,8 @@ export interface components {
             readonly created_at: string;
             readonly created_by?: string;
             enabled: boolean;
+            /** @description set when this rule is one leg of a rule group */
+            group_id?: string;
             /** Format: uuid */
             readonly id: string;
             name: string;
@@ -2416,6 +2435,45 @@ export interface components {
              */
             throttle_sec: number;
         };
+        NotificationRuleCondition: {
+            condition_params?: {
+                [key: string]: unknown;
+            };
+            /** @enum {string} */
+            condition_type: "host_offline" | "monitor_failed" | "cert_expiring" | "login_failed_threshold" | "security_updates_pending" | "metric_threshold" | "agent_outdated" | "image_update_pending" | "package_update_available" | "pending_reboot" | "repo_metadata_stale" | "login_anomaly" | "inventory_drift" | "firewall_state_change" | "fail2ban_jail_disappeared" | "crowdsec_decision_threshold" | "nic_link_down" | "nic_bond_degraded" | "vm_state_change" | "container_state_change" | "audit_action" | "host_flap" | "unexpected_reboot";
+        };
+        NotificationRuleGroupInput: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://mon.kiefer-networks.de/schemas/NotificationRuleGroupInput.json
+             */
+            readonly $schema?: string;
+            channel_ids: string[] | null;
+            conditions: components["schemas"]["NotificationRuleCondition"][] | null;
+            enabled: boolean;
+            name: string;
+            notify_on_resolve?: boolean;
+            /** Format: int64 */
+            repeat_interval_sec?: number;
+            /** @enum {string} */
+            severity: "info" | "warning" | "critical";
+            target_group_ids?: string[] | null;
+            target_host_ids?: string[] | null;
+            target_tags?: string[] | null;
+            /** Format: int64 */
+            throttle_sec: number;
+        };
+        NotificationRuleGroupResponse: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://mon.kiefer-networks.de/schemas/NotificationRuleGroupResponse.json
+             */
+            readonly $schema?: string;
+            group_id: string;
+            rules: components["schemas"]["NotificationRule"][] | null;
+        };
         NotificationRuleInput: {
             /**
              * Format: uri
@@ -2430,6 +2488,7 @@ export interface components {
             /** @enum {string} */
             condition_type: "host_offline" | "monitor_failed" | "cert_expiring" | "login_failed_threshold" | "security_updates_pending" | "metric_threshold" | "agent_outdated" | "image_update_pending" | "package_update_available" | "pending_reboot" | "repo_metadata_stale" | "login_anomaly" | "inventory_drift" | "firewall_state_change" | "fail2ban_jail_disappeared" | "crowdsec_decision_threshold" | "nic_link_down" | "nic_bond_degraded" | "vm_state_change" | "container_state_change" | "audit_action" | "host_flap" | "unexpected_reboot";
             enabled: boolean;
+            group_id?: string;
             name: string;
             notify_on_resolve: boolean;
             /** Format: int64 */
@@ -5607,6 +5666,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NotificationRule"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "notif-rule-group-create": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NotificationRuleGroupInput"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationRuleGroupResponse"];
                 };
             };
             /** @description Error */

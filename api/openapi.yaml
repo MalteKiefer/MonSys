@@ -2753,6 +2753,9 @@ components:
           type: string
         enabled:
           type: boolean
+        group_id:
+          description: set when this rule is one leg of a rule group
+          type: string
         id:
           format: uuid
           maxLength: 36
@@ -2816,6 +2819,134 @@ components:
         - target_group_ids
         - created_at
       type: object
+    NotificationRuleCondition:
+      additionalProperties: false
+      properties:
+        condition_params:
+          additionalProperties: {}
+          type: object
+        condition_type:
+          enum:
+            - host_offline
+            - monitor_failed
+            - cert_expiring
+            - login_failed_threshold
+            - security_updates_pending
+            - metric_threshold
+            - agent_outdated
+            - image_update_pending
+            - package_update_available
+            - pending_reboot
+            - repo_metadata_stale
+            - login_anomaly
+            - inventory_drift
+            - firewall_state_change
+            - fail2ban_jail_disappeared
+            - crowdsec_decision_threshold
+            - nic_link_down
+            - nic_bond_degraded
+            - vm_state_change
+            - container_state_change
+            - audit_action
+            - host_flap
+            - unexpected_reboot
+          type: string
+      required:
+        - condition_type
+      type: object
+    NotificationRuleGroupInput:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://mon.kiefer-networks.de/schemas/NotificationRuleGroupInput.json
+          format: uri
+          readOnly: true
+          type: string
+        channel_ids:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        conditions:
+          items:
+            $ref: "#/components/schemas/NotificationRuleCondition"
+          minItems: 1
+          type:
+            - array
+            - "null"
+        enabled:
+          type: boolean
+        name:
+          maxLength: 200
+          minLength: 1
+          type: string
+        notify_on_resolve:
+          type: boolean
+        repeat_interval_sec:
+          format: int64
+          minimum: 0
+          type: integer
+        severity:
+          enum:
+            - info
+            - warning
+            - critical
+          type: string
+        target_group_ids:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        target_host_ids:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        target_tags:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        throttle_sec:
+          format: int64
+          minimum: 0
+          type: integer
+      required:
+        - name
+        - enabled
+        - severity
+        - throttle_sec
+        - channel_ids
+        - conditions
+      type: object
+    NotificationRuleGroupResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://mon.kiefer-networks.de/schemas/NotificationRuleGroupResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        group_id:
+          type: string
+        rules:
+          items:
+            $ref: "#/components/schemas/NotificationRule"
+          type:
+            - array
+            - "null"
+      required:
+        - group_id
+        - rules
+      type: object
     NotificationRuleInput:
       additionalProperties: false
       properties:
@@ -2864,6 +2995,8 @@ components:
           type: string
         enabled:
           type: boolean
+        group_id:
+          type: string
         name:
           maxLength: 100
           minLength: 1
@@ -6329,6 +6462,31 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Create a notification rule
+      tags:
+        - notifications
+  /v1/notifications/rules/batch:
+    post:
+      operationId: notif-rule-group-create
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationRuleGroupInput"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationRuleGroupResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Create N rules sharing one group_id
       tags:
         - notifications
   /v1/notifications/rules/{id}:
