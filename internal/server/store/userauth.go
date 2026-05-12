@@ -351,6 +351,31 @@ func (s *Store) GetUser(ctx context.Context, id uuid.UUID) (User, error) {
 	return u, nil
 }
 
+// GetUserByEmail mirrors GetUser but keys on email (case-insensitive).
+// Used by CLI recovery flags that take --user-email.
+func (s *Store) GetUserByEmail(ctx context.Context, email string) (User, error) {
+	var (
+		u           User
+		disabledAt  *time.Time
+		totpEnabled *time.Time
+	)
+	err := s.Pool.QueryRow(ctx, `
+		SELECT u.id, u.email, u.role, u.created_at, u.disabled_at, t.enabled_at
+		FROM users u
+		LEFT JOIN user_totp t ON t.user_id = u.id
+		WHERE lower(u.email) = lower($1)`, email,
+	).Scan(&u.ID, &u.Email, &u.Role, &u.CreatedAt, &disabledAt, &totpEnabled)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return User{}, ErrUserNotFound
+	}
+	if err != nil {
+		return User{}, err
+	}
+	u.Disabled = disabledAt != nil
+	u.TOTPActive = totpEnabled != nil
+	return u, nil
+}
+
 // SetPassword unconditionally rewrites the user's bcrypt hash. Used by the
 // admin reset-password CLI flag — there is no current-password check, so the
 // caller must already have shell-level trust on the box.

@@ -40,6 +40,20 @@ func main() {
 		createUserRole    = flag.String("user-role", "user", "role for --create-user (admin|user)")
 		createUserPassword = flag.String("user-password", "", "password for --create-user; if empty, read from stdin")
 		resetPassword      = flag.Bool("reset-password", false, "reset a user's password (use --user-email + --user-password) and exit")
+
+		// CLI recovery flags for 2FA / passkeys / security policy. All are
+		// admin shell-level recovery: they bypass current-password / current-
+		// factor checks because the operator already has docker-exec access.
+		disableTOTP       = flag.Bool("disable-totp", false, "wipe a user's TOTP enrollment (use --user-email) and exit")
+		listPasskeys      = flag.Bool("list-passkeys", false, "list a user's registered passkeys (use --user-email) and exit")
+		deleteAllPasskeys = flag.Bool("delete-all-passkeys", false, "wipe all of a user's passkeys (use --user-email) and exit")
+		getSecPolicy      = flag.Bool("get-security-policy", false, "print the global security policy as JSON and exit")
+		setSecPolicy      = flag.Bool("set-security-policy", false, "update the global security policy; only fields whose flags are explicitly set are changed; then exit")
+		secForceMode      = flag.String("force-mode", "", "for --set-security-policy: off|2fa_any|passkey_required")
+		secGraceDays      = flag.Int("grace-days", -1, "for --set-security-policy: 0..365 (-1 = no change)")
+		secMaxSessionHrs  = flag.Int("max-session-hours", -1, "for --set-security-policy: 1..8760 (-1 = no change)")
+		secIdleMinutes    = flag.Int("idle-timeout-minutes", -1, "for --set-security-policy: 0..10080 (-1 = no change; 0 = disabled)")
+		revokeAllSess     = flag.Bool("revoke-all-sessions", false, "revoke every active web session and exit")
 	)
 	flag.Parse()
 
@@ -141,6 +155,136 @@ func main() {
 			os.Exit(1)
 		}
 		slog.Info("password reset", "email", *createUserEmail)
+		return
+	}
+
+	if *disableTOTP {
+		if *createUserEmail == "" {
+			slog.Error("--disable-totp requires --user-email")
+			os.Exit(2)
+		}
+		u, err := st.GetUserByEmail(openCtx, *createUserEmail)
+		if err != nil {
+			slog.Error("lookup user", "email", *createUserEmail, "err", err)
+			os.Exit(1)
+		}
+		if err := st.DisableTOTP(openCtx, u.ID); err != nil {
+			slog.Error("disable totp", "err", err)
+			os.Exit(1)
+		}
+		slog.Info("totp disabled", "email", u.Email, "id", u.ID.String())
+		return
+	}
+
+	if *listPasskeys {
+		if *createUserEmail == "" {
+			slog.Error("--list-passkeys requires --user-email")
+			os.Exit(2)
+		}
+		u, err := st.GetUserByEmail(openCtx, *createUserEmail)
+		if err != nil {
+			slog.Error("lookup user", "email", *createUserEmail, "err", err)
+			os.Exit(1)
+		}
+		pks, err := st.ListPasskeys(openCtx, u.ID)
+		if err != nil {
+			slog.Error("list passkeys", "err", err)
+			os.Exit(1)
+		}
+		if len(pks) == 0 {
+			_, _ = fmt.Fprintln(os.Stdout, "no passkeys registered")
+			return
+		}
+		for _, p := range pks {
+			last := "never"
+			if p.LastUsedAt != nil {
+				last = p.LastUsedAt.Format(time.RFC3339)
+			}
+			_, _ = fmt.Fprintf(os.Stdout, "%s  %-32s  aaguid=%s  last_used=%s  created=%s\n",
+				p.ID, truncate(p.Name, 32), defaultStr(p.AAGUID, "-"), last, p.CreatedAt.Format(time.RFC3339))
+		}
+		return
+	}
+
+	if *deleteAllPasskeys {
+		if *createUserEmail == "" {
+			slog.Error("--delete-all-passkeys requires --user-email")
+			os.Exit(2)
+		}
+		u, err := st.GetUserByEmail(openCtx, *createUserEmail)
+		if err != nil {
+			slog.Error("lookup user", "email", *createUserEmail, "err", err)
+			os.Exit(1)
+		}
+		n, err := st.DeleteAllPasskeysForUser(openCtx, u.ID)
+		if err != nil {
+			slog.Error("delete passkeys", "err", err)
+			os.Exit(1)
+		}
+		slog.Info("passkeys deleted", "email", u.Email, "count", n)
+		return
+	}
+
+	if *getSecPolicy {
+		p, err := st.GetSecurityPolicy(openCtx)
+		if err != nil {
+			slog.Error("get security policy", "err", err)
+			os.Exit(1)
+		}
+		raw, _ := json.MarshalIndent(p, "", "  ")
+		_, _ = os.Stdout.Write(raw)
+		_, _ = os.Stdout.WriteString("\n")
+		return
+	}
+
+	if *setSecPolicy {
+		cur, err := st.GetSecurityPolicy(openCtx)
+		if err != nil {
+			slog.Error("get current security policy", "err", err)
+			os.Exit(1)
+		}
+		// Track which CLI flags the operator explicitly passed so we only
+		// overwrite those fields. The sentinels (-1 for ints, "" for strings)
+		// distinguish "not provided" from a valid zero value (idle=0 means
+		// disabled, which IS valid input).
+		set := map[string]bool{}
+		flag.Visit(func(f *flag.Flag) { set[f.Name] = true })
+
+		next := cur
+		if set["force-mode"] {
+			next.ForceMode = *secForceMode
+		}
+		if set["grace-days"] {
+			next.GraceDays = *secGraceDays
+		}
+		if set["max-session-hours"] {
+			next.MaxSessionHours = *secMaxSessionHrs
+		}
+		if set["idle-timeout-minutes"] {
+			next.IdleTimeoutMinutes = *secIdleMinutes
+		}
+		if next == cur {
+			slog.Error("--set-security-policy needs at least one of --force-mode, --grace-days, --max-session-hours, --idle-timeout-minutes")
+			os.Exit(2)
+		}
+		if err := st.SetSecurityPolicy(openCtx, next, "cli"); err != nil {
+			slog.Error("set security policy", "err", err)
+			os.Exit(1)
+		}
+		raw, _ := json.MarshalIndent(next, "", "  ")
+		_, _ = os.Stdout.Write(raw)
+		_, _ = os.Stdout.WriteString("\n")
+		slog.Info("security policy updated")
+		return
+	}
+
+	if *revokeAllSess {
+		n, err := st.RevokeAllSessions(openCtx, "")
+		if err != nil {
+			slog.Error("revoke all sessions", "err", err)
+			os.Exit(1)
+		}
+		slog.Info("sessions revoked", "count", n)
 		return
 	}
 
@@ -299,6 +443,23 @@ func envInt(key string, def int) int {
 		}
 	}
 	return def
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	if n <= 1 {
+		return s[:n]
+	}
+	return s[:n-1] + "…"
+}
+
+func defaultStr(s, def string) string {
+	if s == "" {
+		return def
+	}
+	return s
 }
 
 func readLine(r *os.File) (string, error) {

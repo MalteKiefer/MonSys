@@ -640,3 +640,16 @@ func (s *Store) DeletePasskey(ctx context.Context, userID, credID uuid.UUID) err
 	}
 	return nil
 }
+
+// DeleteAllPasskeysForUser wipes every credential row owned by userID.
+// Returns the number of rows deleted. Intended for CLI recovery: an admin
+// who's locked themselves out via a misconfigured passkey can shell into the
+// container and wipe their own credentials to fall back on password+TOTP.
+func (s *Store) DeleteAllPasskeysForUser(ctx context.Context, userID uuid.UUID) (int, error) {
+	tag, err := s.Pool.Exec(ctx,
+		`DELETE FROM user_credentials WHERE user_id = $1`, userID)
+	if err != nil {
+		return 0, err
+	}
+	return int(tag.RowsAffected()), nil
+}
