@@ -1,7 +1,16 @@
+//go:build linux
+
 // Package packages collects installed-package state, pending updates, and
 // repo-metadata freshness via the host's native package manager (dpkg, rpm,
-// pacman, apk). All commands are read-only and run through safeexec so we
-// never accidentally mutate package state and so the runtime is bounded.
+// pacman, apk).
+//
+// All commands are read-only and run through safeexec so we never accidentally
+// mutate package state and so the runtime is bounded.
+//
+// The package is Linux-only: it shells `dpkg-query`/`rpm`/`pacman`/`apk` and
+// stats /var/lib/{apt,dnf,pacman,apk}, none of which exist on other platforms.
+// Per-manager logic is split into companion files (packages_apt.go etc.) but
+// all share this build tag.
 package packages
 
 import (
@@ -10,7 +19,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"sort"
 	"strings"
@@ -24,6 +35,8 @@ import (
 // Manager identifies the active package manager.
 type Manager string
 
+// Supported package managers, in dispatch-priority order: dpkg is checked
+// first because Debian/Ubuntu derivatives also commonly install rpm-tools.
 const (
 	ManagerDpkg   Manager = "dpkg"
 	ManagerRPM    Manager = "rpm"
@@ -31,20 +44,52 @@ const (
 	ManagerAPK    Manager = "apk"
 )
 
-// Collector implements collector.Source. Inventory is intentionally NOT
-// implemented: package state lives in PackageReport which already covers
-// "current snapshot" semantics, and dpkg can produce 100k-line listings that
-// would dwarf the rest of the inventory if we duplicated it there.
+// Command names. Centralised so safeexec calls and Available() probes stay in
+// sync if a binary ever moves.
+const (
+	cmdDpkgQuery = "dpkg-query"
+	cmdRPM       = "rpm"
+	cmdPacman    = "pacman"
+	cmdAPK       = "apk"
+	cmdAPT       = "apt"
+	cmdDNF       = "dnf"
+)
+
+// Per-command timeouts. dnf is the slowest because `check-update` and
+// `updateinfo list` both hit the network; the others operate on local
+// metadata only.
+const (
+	timeoutInstalled    = 30 * time.Second
+	timeoutAPTList      = 30 * time.Second
+	timeoutDNFCheck     = 60 * time.Second
+	timeoutPacmanUpd    = 20 * time.Second
+	timeoutAPKVersion   = 20 * time.Second
+	scannerMaxLineBytes = 1 << 20 // 1 MiB — dpkg lists can have very long Description lines
+	scannerInitialBuf   = 64 * 1024
+)
+
+// ErrUnsupportedManager is returned by the internal dispatch when c.mgr was
+// constructed with a value outside the four supported managers. In practice
+// New() guards against this, but it surfaces clearly in tests.
+var ErrUnsupportedManager = errors.New("unsupported package manager")
+
+// Collector implements collector.Source.
+//
+// Inventory is intentionally NOT implemented: package state lives in
+// PackageReport which already covers "current snapshot" semantics, and dpkg
+// can produce 100k-line listings that would dwarf the rest of the inventory
+// if we duplicated it there.
 type Collector struct {
-	cfg     config.PackagesConfig
-	mgr     Manager
-	lastRun time.Time
+	cfg      config.PackagesConfig
+	mgr      Manager
+	log      *slog.Logger
+	lastRun  time.Time
 	lastHash string
 
-	// pluggable for tests; defaults to safeexec.RunWithTimeout
-	run    func(ctx context.Context, d time.Duration, name string, args ...string) ([]byte, error)
-	stat   func(string) (os.FileInfo, error)
-	now    func() time.Time
+	// run is pluggable for tests; defaults to safeexec.RunWithTimeout.
+	run  func(ctx context.Context, d time.Duration, name string, args ...string) ([]byte, error)
+	stat func(string) (os.FileInfo, error)
+	now  func() time.Time
 }
 
 // New picks the first package manager available on the host. Returns
@@ -56,6 +101,7 @@ func New(cfg config.PackagesConfig) (*Collector, bool) {
 			return &Collector{
 				cfg:  cfg,
 				mgr:  m,
+				log:  slog.With("component", "packages", "manager", string(m)),
 				run:  safeexec.RunWithTimeout,
 				stat: os.Stat,
 				now:  func() time.Time { return time.Now().UTC() },
@@ -65,6 +111,8 @@ func New(cfg config.PackagesConfig) (*Collector, bool) {
 	return nil, false
 }
 
+// Name returns the collector identifier, including the active manager so logs
+// disambiguate dpkg vs rpm hosts.
 func (c *Collector) Name() string { return "packages-" + string(c.mgr) }
 
 // Collect runs at the agent tick rate but is internally throttled by
@@ -99,6 +147,7 @@ func (c *Collector) Collect(ctx context.Context, batch *apitypes.IngestRequest) 
 	if err != nil {
 		// Non-fatal: a flaky network or rate-limited mirror shouldn't drop
 		// the installed snapshot. We just leave updates empty.
+		c.log.Debug("list updates failed", "err", err)
 		updates = nil
 	}
 	report.Updates = updates
@@ -118,8 +167,7 @@ func (c *Collector) Collect(ctx context.Context, batch *apitypes.IngestRequest) 
 	return nil
 }
 
-// --- Installed lists -------------------------------------------------------
-
+// listInstalled dispatches to the per-manager installed-package reader.
 func (c *Collector) listInstalled(ctx context.Context) ([]apitypes.InstalledPackage, error) {
 	switch c.mgr {
 	case ManagerDpkg:
@@ -131,80 +179,12 @@ func (c *Collector) listInstalled(ctx context.Context) ([]apitypes.InstalledPack
 	case ManagerAPK:
 		return c.installedAPK(ctx)
 	}
-	return nil, fmt.Errorf("unsupported manager %q", c.mgr)
+	return nil, fmt.Errorf("%w: %q", ErrUnsupportedManager, c.mgr)
 }
 
-func (c *Collector) installedDpkg(ctx context.Context) ([]apitypes.InstalledPackage, error) {
-	out, err := c.run(ctx, 30*time.Second, "dpkg-query", "-W",
-		`-f=${binary:Package}\t${Version}\t${Architecture}\n`)
-	if err != nil {
-		return nil, err
-	}
-	return parseTSV(out, ManagerDpkg, 3, func(f []string) apitypes.InstalledPackage {
-		return apitypes.InstalledPackage{Manager: string(ManagerDpkg), Name: f[0], Version: f[1], Arch: f[2]}
-	}), nil
-}
-
-func (c *Collector) installedRPM(ctx context.Context) ([]apitypes.InstalledPackage, error) {
-	out, err := c.run(ctx, 30*time.Second, "rpm", "-qa",
-		"--queryformat", "%{NAME}\t%{VERSION}-%{RELEASE}\t%{ARCH}\n")
-	if err != nil {
-		return nil, err
-	}
-	return parseTSV(out, ManagerRPM, 3, func(f []string) apitypes.InstalledPackage {
-		return apitypes.InstalledPackage{Manager: string(ManagerRPM), Name: f[0], Version: f[1], Arch: f[2]}
-	}), nil
-}
-
-func (c *Collector) installedPacman(ctx context.Context) ([]apitypes.InstalledPackage, error) {
-	// `pacman -Q` lists "name version" — no arch. Fine: pacman is single-arch
-	// per system in practice, so we leave Arch empty.
-	out, err := c.run(ctx, 30*time.Second, "pacman", "-Q")
-	if err != nil {
-		return nil, err
-	}
-	var pkgs []apitypes.InstalledPackage
-	sc := bufio.NewScanner(bytes.NewReader(out))
-	sc.Buffer(make([]byte, 64*1024), 1<<20)
-	for sc.Scan() {
-		f := strings.Fields(sc.Text())
-		if len(f) < 2 {
-			continue
-		}
-		pkgs = append(pkgs, apitypes.InstalledPackage{
-			Manager: string(ManagerPacman), Name: f[0], Version: f[1],
-		})
-	}
-	return pkgs, sc.Err()
-}
-
-func (c *Collector) installedAPK(ctx context.Context) ([]apitypes.InstalledPackage, error) {
-	out, err := c.run(ctx, 30*time.Second, "apk", "info", "-v")
-	if err != nil {
-		return nil, err
-	}
-	// `apk info -v` prints lines like "name-1.2.3-r0" — no arch.
-	var pkgs []apitypes.InstalledPackage
-	sc := bufio.NewScanner(bytes.NewReader(out))
-	for sc.Scan() {
-		nv := strings.TrimSpace(sc.Text())
-		if nv == "" {
-			continue
-		}
-		// Split at the LAST occurrence of "-<digit>" (version separator).
-		name, version := splitAPKNameVersion(nv)
-		if name == "" {
-			continue
-		}
-		pkgs = append(pkgs, apitypes.InstalledPackage{
-			Manager: string(ManagerAPK), Name: name, Version: version,
-		})
-	}
-	return pkgs, sc.Err()
-}
-
-// --- Updates lists ---------------------------------------------------------
-
+// listUpdates dispatches to the per-manager pending-update reader. Managers
+// without a known update mechanism return (nil, nil) rather than an error so
+// Collect() can still emit the installed snapshot.
 func (c *Collector) listUpdates(ctx context.Context) ([]apitypes.PendingUpdate, error) {
 	switch c.mgr {
 	case ManagerPacman:
@@ -219,176 +199,9 @@ func (c *Collector) listUpdates(ctx context.Context) ([]apitypes.PendingUpdate, 
 	return nil, nil
 }
 
-func (c *Collector) updatesPacman(ctx context.Context) ([]apitypes.PendingUpdate, error) {
-	// `pacman -Qu` prints "name current_version -> available_version" for
-	// every out-of-sync package. Exit code 1 means "no updates", which
-	// safeexec reports as an error; we tolerate it.
-	out, _ := c.run(ctx, 20*time.Second, "pacman", "-Qu")
-	var ups []apitypes.PendingUpdate
-	sc := bufio.NewScanner(bytes.NewReader(out))
-	for sc.Scan() {
-		f := strings.Fields(sc.Text())
-		if len(f) < 4 || f[2] != "->" {
-			continue
-		}
-		ups = append(ups, apitypes.PendingUpdate{
-			Manager:          string(ManagerPacman),
-			Name:             f[0],
-			CurrentVersion:   f[1],
-			AvailableVersion: f[3],
-		})
-	}
-	return ups, sc.Err()
-}
-
-func (c *Collector) updatesAPT(ctx context.Context) ([]apitypes.PendingUpdate, error) {
-	if !safeexec.Available("apt") {
-		return nil, nil
-	}
-	out, err := c.run(ctx, 30*time.Second, "apt", "list", "--upgradable")
-	if err != nil {
-		return nil, err
-	}
-	var ups []apitypes.PendingUpdate
-	sc := bufio.NewScanner(bytes.NewReader(out))
-	for sc.Scan() {
-		line := sc.Text()
-		if !strings.Contains(line, "[upgradable from:") {
-			continue
-		}
-		// Format: "name/repo version arch [upgradable from: oldver]"
-		// repo is comma-separated when the package is available from multiple
-		// suites, e.g. "noble-updates,noble-security". The "-security" suffix
-		// on any segment classifies the update as a security update — matches
-		// what unattended-upgrades and apt's own UI rely on.
-		f := strings.Fields(line)
-		if len(f) < 6 {
-			continue
-		}
-		nameRepo := strings.SplitN(f[0], "/", 2)
-		repo := ""
-		if len(nameRepo) == 2 {
-			repo = nameRepo[1]
-		}
-		oldVer := strings.TrimSuffix(f[len(f)-1], "]")
-		ups = append(ups, apitypes.PendingUpdate{
-			Manager:          string(ManagerDpkg),
-			Name:             nameRepo[0],
-			Arch:             f[2],
-			CurrentVersion:   oldVer,
-			AvailableVersion: f[1],
-			SourceRepo:       repo,
-			IsSecurity:       aptRepoIsSecurity(repo),
-		})
-	}
-	return ups, sc.Err()
-}
-
-// aptRepoIsSecurity returns true if any comma-separated suite segment of the
-// apt source carries the "-security" suffix. Covers Debian (bookworm-security,
-// bullseye-security), Ubuntu (noble-security, jammy-security), and the
-// derivatives that mirror that naming. Case-folded for safety against
-// non-standard mirrors.
-func aptRepoIsSecurity(repo string) bool {
-	if repo == "" {
-		return false
-	}
-	for _, seg := range strings.Split(repo, ",") {
-		seg = strings.ToLower(strings.TrimSpace(seg))
-		// Match "<suite>-security" anywhere: e.g. "noble-security/main" after
-		// splitting on '/' the leading half is "noble-security"; in apt-list
-		// output the trailing path is dropped so we just check the suite.
-		if strings.HasSuffix(seg, "-security") ||
-			strings.Contains(seg, "-security/") {
-			return true
-		}
-	}
-	return false
-}
-
-func (c *Collector) updatesDNF(ctx context.Context) ([]apitypes.PendingUpdate, error) {
-	if !safeexec.Available("dnf") {
-		return nil, nil
-	}
-	// dnf check-update returns 100 when updates exist, 0 when none, others =
-	// error. safeexec reports non-zero as error; we ignore that path as a
-	// status signal.
-	out, _ := c.run(ctx, 60*time.Second, "dnf", "check-update", "--quiet")
-
-	// Second pass for security flagging — RHEL/Fedora repos don't carry a
-	// "-security" suffix the way apt does. `dnf updateinfo list --security
-	// --quiet` prints "<advisory> <severity> <pkg-name-arch>"; we just want
-	// the package names so we can mark the matching rows. Empty result = no
-	// security updates pending, which is the desired no-op.
-	secNames := map[string]bool{}
-	secOut, _ := c.run(ctx, 60*time.Second, "dnf", "updateinfo", "list", "--security", "--quiet")
-	scSec := bufio.NewScanner(bytes.NewReader(secOut))
-	for scSec.Scan() {
-		f := strings.Fields(scSec.Text())
-		if len(f) < 3 {
-			continue
-		}
-		// Strip the trailing ".<arch>" and the leading "<advisory>" tokens.
-		pkg := f[len(f)-1]
-		if dot := strings.LastIndex(pkg, "."); dot > 0 {
-			pkg = pkg[:dot]
-		}
-		// dnf formats names as "name-version-release", but updateinfo prints
-		// just "name" in --list mode on most distros. Tolerate both: split on
-		// the last '-' that precedes a digit if present.
-		secNames[pkg] = true
-	}
-
-	var ups []apitypes.PendingUpdate
-	sc := bufio.NewScanner(bytes.NewReader(out))
-	for sc.Scan() {
-		f := strings.Fields(sc.Text())
-		if len(f) < 3 {
-			continue
-		}
-		nameArch := strings.SplitN(f[0], ".", 2)
-		arch := ""
-		if len(nameArch) == 2 {
-			arch = nameArch[1]
-		}
-		ups = append(ups, apitypes.PendingUpdate{
-			Manager:          string(ManagerRPM),
-			Name:             nameArch[0],
-			Arch:             arch,
-			AvailableVersion: f[1],
-			SourceRepo:       f[2],
-			IsSecurity:       secNames[nameArch[0]],
-		})
-	}
-	return ups, sc.Err()
-}
-
-func (c *Collector) updatesAPK(ctx context.Context) ([]apitypes.PendingUpdate, error) {
-	out, err := c.run(ctx, 20*time.Second, "apk", "version", "-l", "<")
-	if err != nil {
-		return nil, err
-	}
-	var ups []apitypes.PendingUpdate
-	sc := bufio.NewScanner(bytes.NewReader(out))
-	for sc.Scan() {
-		f := strings.Fields(sc.Text())
-		// expect: name-1.2.3-r0 < 1.2.4-r0
-		if len(f) < 3 || f[1] != "<" {
-			continue
-		}
-		name, ver := splitAPKNameVersion(f[0])
-		ups = append(ups, apitypes.PendingUpdate{
-			Manager:          string(ManagerAPK),
-			Name:             name,
-			CurrentVersion:   ver,
-			AvailableVersion: f[2],
-		})
-	}
-	return ups, sc.Err()
-}
-
-// --- Repo metadata freshness ----------------------------------------------
-
+// repoState reports the mtime of the manager's metadata cache directory.
+// Returns ok=false when the path is missing or unreadable — that's a legitimate
+// "no signal" state, not an error worth surfacing.
 func (c *Collector) repoState() (apitypes.RepoMetaState, bool) {
 	var path string
 	switch c.mgr {
@@ -415,12 +228,13 @@ func (c *Collector) repoState() (apitypes.RepoMetaState, bool) {
 	}, true
 }
 
-// --- helpers ---------------------------------------------------------------
-
-func parseTSV(out []byte, _ Manager, expectedFields int, build func([]string) apitypes.InstalledPackage) []apitypes.InstalledPackage {
+// parseTSV scans tab-separated output and builds an InstalledPackage per row.
+// Rows with fewer than expectedFields columns are skipped silently — they're
+// typically blank lines or warnings that some package tools print to stdout.
+func parseTSV(out []byte, expectedFields int, build func([]string) apitypes.InstalledPackage) []apitypes.InstalledPackage {
 	var pkgs []apitypes.InstalledPackage
 	sc := bufio.NewScanner(bytes.NewReader(out))
-	sc.Buffer(make([]byte, 64*1024), 1<<20)
+	sc.Buffer(make([]byte, scannerInitialBuf), scannerMaxLineBytes)
 	for sc.Scan() {
 		f := strings.Split(sc.Text(), "\t")
 		if len(f) < expectedFields {
@@ -431,6 +245,9 @@ func parseTSV(out []byte, _ Manager, expectedFields int, build func([]string) ap
 	return pkgs
 }
 
+// stateHash produces a stable SHA-256 over the installed-package set. The
+// caller uses it to skip re-emitting the full list when nothing changed
+// between collection ticks.
 func stateHash(installed []apitypes.InstalledPackage) string {
 	cpy := make([]apitypes.InstalledPackage, len(installed))
 	copy(cpy, installed)
@@ -452,23 +269,3 @@ func stateHash(installed []apitypes.InstalledPackage) string {
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
-
-// splitAPKNameVersion splits "name-1.2.3-r0" into ("name", "1.2.3-r0").
-// The last two `-`-separated tokens form the version (release suffix included).
-func splitAPKNameVersion(s string) (name, version string) {
-	parts := strings.Split(s, "-")
-	if len(parts) < 3 {
-		return s, ""
-	}
-	// Find the index where the version token starts. Heuristic: version
-	// token starts with a digit.
-	for i := 1; i < len(parts); i++ {
-		if len(parts[i]) > 0 && parts[i][0] >= '0' && parts[i][0] <= '9' {
-			name = strings.Join(parts[:i], "-")
-			version = strings.Join(parts[i:], "-")
-			return
-		}
-	}
-	return s, ""
-}
-

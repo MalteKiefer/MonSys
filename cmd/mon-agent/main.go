@@ -1,3 +1,15 @@
+//go:build linux
+
+// Command mon-agent is the host-side agent binary: it gathers system metrics,
+// inventory, and security posture on a Linux host and ships them to the
+// mon-server.
+//
+// The agent is Linux-only today — collectors shell to apt/dnf/pacman/apk,
+// libvirt/lxc/qm/pct, ufw/nft/iptables/pve-firewall/fail2ban/cscli, journalctl,
+// and read /proc, /sys, /etc/machine-id. A Windows port is tracked
+// separately; every collector package and the agent runtime already carry
+// //go:build linux so a sibling Windows tree can sit next to them without
+// colliding.
 package main
 
 import (

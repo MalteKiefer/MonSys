@@ -5,6 +5,32 @@ import (
 	"strings"
 )
 
+// # Semver comparison strategy
+//
+// This package implements a small bespoke semver comparator rather than
+// pulling in golang.org/x/mod/semver. The decision is intentional:
+//
+//   - mon-agent versioning mixes real semvers ("v0.2.0") with rolling
+//     describe-style pseudo-versions ("v0.1.5-23-gabcd") emitted by
+//     `git describe`. golang.org/x/mod/semver treats the describe suffix
+//     as a pre-release tag (so v0.1.5-23-gabcd would sort BEFORE v0.1.5),
+//     which is the opposite of what we want for downgrade protection.
+//
+//   - The numeric components (major.minor.patch) are parsed with
+//     strconv.Atoi and compared with cmpInt, so "1.10.0" correctly sorts
+//     ABOVE "1.9.0" — a naive lexical comparator would get this wrong.
+//     This is the property the AUDIT-402 downgrade check relies on.
+//
+//   - The "v"/"V" prefix is tolerated, "-dirty" is recognized as a
+//     newer-than-clean marker for the same numeric base, and bare commit
+//     hashes fall back to a case-insensitive lexical compare so unequal
+//     inputs stay distinguishable.
+//
+// If the project ever drops describe-style version strings and ships only
+// real semvers, this file can be replaced with a thin wrapper around
+// golang.org/x/mod/semver.Compare. Until then, the custom parser is the
+// correct trade-off.
+
 // compareSemver returns -1 if a < b, 0 if equal, +1 if a > b.
 //
 // It accepts three input shapes:
@@ -17,7 +43,8 @@ import (
 //  3. Bare commit hashes ("abc1234") — treated as pseudo with NN=0.
 //
 // Comparison rules:
-//   - Two real semvers compare numerically component-wise (major.minor.patch).
+//   - Two real semvers compare numerically component-wise (major.minor.patch),
+//     so "1.10.0" > "1.9.0".
 //   - Two pseudo-versions compare first on the underlying tag, then on NN.
 //   - A real semver and a pseudo derived from the same tag: the pseudo wins
 //     when it has a positive NN (more commits than the tag), the real semver
@@ -53,7 +80,7 @@ func compareSemver(a, b string) int {
 		return 1
 	}
 
-	// Compare base triplet first.
+	// Compare base triplet first. Each component is an int, so 10 > 9.
 	if c := cmpInt(pa.major, pb.major); c != 0 {
 		return c
 	}
@@ -84,6 +111,8 @@ func compareSemver(a, b string) int {
 	return cmpStrings(strings.ToLower(pa.extra), strings.ToLower(pb.extra))
 }
 
+// parsedVersion is the structured form of a version string after
+// parseVersion has had a go at it.
 type parsedVersion struct {
 	major, minor, patch int
 	commits             int    // commits-since-tag from `git describe`; 0 means "the tag itself"
@@ -173,6 +202,7 @@ func parseVersion(v string) parsedVersion {
 	return out
 }
 
+// cmpInt returns -1, 0, +1 for a<b, a==b, a>b.
 func cmpInt(a, b int) int {
 	switch {
 	case a < b:
@@ -184,6 +214,7 @@ func cmpInt(a, b int) int {
 	}
 }
 
+// cmpStrings returns -1, 0, +1 for the byte-lexical order of a and b.
 func cmpStrings(a, b string) int {
 	switch {
 	case a < b:

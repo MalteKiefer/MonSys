@@ -1,3 +1,5 @@
+//go:build linux
+
 // Proxmox VE discovery for the virt collector.
 //
 // Proxmox manages KVM VMs and LXC containers through its own stack (`qm`,
@@ -13,9 +15,11 @@
 // the collector degrades quietly when the calls fail, mirroring the
 // libvirt/lxc-ls behaviour.
 //
-// TODO(operator): document a permission story (ExecStartPre setfacl on
-// /etc/pve, or supplementary group www-data) in the install guide so the
-// Proxmox path actually returns data on a vanilla install.
+// DOCS(install-guide): the install guide needs a Proxmox section that
+// documents the permission story (ExecStartPre setfacl on /etc/pve, or a
+// supplementary www-data group on monagent) so the Proxmox path actually
+// returns data on a vanilla install. Tracked outside the codebase; do not
+// retag this comment without updating the install guide.
 
 package virt
 
@@ -26,11 +30,15 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/MalteKiefer/MonSys/internal/agent/safeexec"
 	"github.com/MalteKiefer/MonSys/internal/shared/apitypes"
 )
+
+// etcPVE is the canonical Proxmox VE state directory. Its presence is the
+// only reliable way to tell a real PVE install from a host that merely has
+// the qemu-server / pve-container packages installed.
+const etcPVE = "/etc/pve"
 
 // proxmoxAvailable reports whether this host looks like a Proxmox VE node:
 // both `qm` and `pct` resolvable on SafePath, AND /etc/pve exists. The
@@ -40,7 +48,7 @@ func proxmoxAvailable() bool {
 	if !safeexec.Available("qm") || !safeexec.Available("pct") {
 		return false
 	}
-	if _, err := os.Stat("/etc/pve"); err != nil {
+	if _, err := os.Stat(etcPVE); err != nil {
 		return false
 	}
 	return true
@@ -58,7 +66,7 @@ func proxmoxAvailable() bool {
 // the parser tolerant of stray warning lines that PVE occasionally prints
 // (e.g. "ipcc_send_rec[…] failed: Connection refused").
 func (c *Collector) proxmoxVMs(ctx context.Context) ([]apitypes.VMInfo, error) {
-	out, err := safeexec.RunWithTimeout(ctx, 8*time.Second, "qm", "list")
+	out, err := safeexec.RunWithTimeout(ctx, qmListTimeout, "qm", "list")
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +115,7 @@ func (c *Collector) proxmoxVMs(ctx context.Context) ([]apitypes.VMInfo, error) {
 // count alone — we anchor on the numeric VMID and treat the trailing token
 // as the name.
 func (c *Collector) proxmoxLXC(ctx context.Context) ([]apitypes.VMInfo, error) {
-	out, err := safeexec.RunWithTimeout(ctx, 8*time.Second, "pct", "list")
+	out, err := safeexec.RunWithTimeout(ctx, pctListTimeout, "pct", "list")
 	if err != nil {
 		return nil, err
 	}

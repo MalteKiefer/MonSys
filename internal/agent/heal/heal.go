@@ -1,7 +1,13 @@
+//go:build linux
+
 // Package heal performs startup-time self-repair on the agent's runtime
 // state: spool directory, key file parent dir, and their permissions. It is
 // intentionally tolerant of pre-existing state — the goal is to reach a
 // known-good baseline, not to clobber operator changes.
+//
+// Linux-only: relies on POSIX permission bits and the Linux default config
+// paths emitted by internal/agent/config. A future heal_windows.go would
+// validate NTFS ACLs against %ProgramData%\mon-agent instead.
 package heal
 
 import (
