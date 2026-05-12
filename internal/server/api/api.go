@@ -329,6 +329,39 @@ func (s *Server) currentUserWithSecurity(ctx context.Context, u store.User) apit
 func (s *Server) Handler() http.Handler { return s.Router }
 
 func (s *Server) registerRoutes() {
+	// Middleware bundles. See per-stack docs at first use below.
+	//
+	// openProtected: session-required, but NO compliance gate. Endpoints that
+	// a non-compliant user must still be able to reach in order to BECOME
+	// compliant (enroll a passkey/TOTP, change password, view /me, log out)
+	// use this so the force-mode middleware doesn't lock them out of the
+	// remediation surface.
+	openProtected := huma.Middlewares{s.requireUser}
+	// Read APIs require a user session AND compliance with the active
+	// force-mode (passkey/2FA enrollment, when configured).
+	protected := huma.Middlewares{s.requireUser, s.requireMethodCompliance}
+	// Operator surfaces (user management, agent config, notification rules, …)
+	// require an admin in addition to a valid session and method compliance.
+	adminOnly := huma.Middlewares{s.requireUser, s.requireMethodCompliance, s.requireAdmin}
+
+	s.registerHealthRoutes()
+	s.registerAgentLifecycleRoutes()
+	s.registerPublicRoutes()
+	s.registerAuthRoutes(openProtected)
+	s.registerHostRoutes(protected)
+	s.registerNotificationRoutes(protected, adminOnly)
+	s.registerMonitorRoutes(protected)
+	s.registerSelfServiceAuthRoutes(openProtected, protected)
+	s.registerAdminRoutes(adminOnly)
+
+	// SPA mount: anything not claimed by /v1, /healthz, /readyz, /docs is
+	// served from the embedded React build. Registered last so huma's API
+	// routes win.
+	s.Router.Handle("/*", spa.Handler())
+}
+
+// registerHealthRoutes wires the unauthenticated liveness/readiness probes.
+func (s *Server) registerHealthRoutes() {
 	s.Router.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok\n"))
@@ -347,7 +380,12 @@ func (s *Server) registerRoutes() {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ready\n"))
 	})
+}
 
+// registerAgentLifecycleRoutes wires agent registration, ingest, and self-update
+// metadata. These endpoints authenticate with agent-issued bearer tokens rather
+// than web sessions.
+func (s *Server) registerAgentLifecycleRoutes() {
 	huma.Register(s.API, huma.Operation{
 		OperationID: "agent-register",
 		Method:      http.MethodPost,
@@ -378,14 +416,32 @@ func (s *Server) registerRoutes() {
 		Security:    secNoAuth,
 	}, s.handleAgentLatestVersion)
 
-	// Public: dynamic curl|bash installer. The token in ?t=… is the only
-	// credential and is single-use (consumed by the bootstrap call inside
-	// the script). Wired on the chi router directly because the response
-	// body is raw shell, not a typed huma envelope.
+	// Agent-config: agents fetch their resolved config (auth via agent_key,
+	// not web user). Admin CRUD lives separately under /v1/admin/agent-config
+	// and is registered in registerAdminRoutes.
+	huma.Register(s.API, huma.Operation{
+		OperationID: "agent-config-fetch",
+		Method:      http.MethodGet,
+		Path:        "/v1/agent/config",
+		Summary:     "Agent fetches its resolved config (auth: Bearer agent_key)",
+		Tags:        []string{"agents"},
+	}, s.handleAgentConfigFetch)
+}
+
+// registerPublicRoutes wires routes that must be reachable with no auth at all
+// (curl|bash installer, RFC 9116 security.txt). The installer's ?t=… query
+// param is the only credential and is single-use.
+func (s *Server) registerPublicRoutes() {
 	s.Router.Get("/v1/agents/install.sh", s.handleInstallScript)
 	s.Router.Get("/v1/agents/install-qr", s.handleInstallQR)
+	s.Router.Get("/.well-known/security.txt", s.handleSecurityTxt)
+}
 
-	// Auth: login + me + logout. Login itself is unauthenticated.
+// registerAuthRoutes wires login, the post-login session surface (/me, logout,
+// config), and the 2FA challenge step. Login itself is unauthenticated; the
+// /me-style endpoints accept session-only (no compliance gate) so a user under
+// a strict force-mode can still reach the remediation surface.
+func (s *Server) registerAuthRoutes(openProtected huma.Middlewares) {
 	huma.Register(s.API, huma.Operation{
 		OperationID: "auth-login",
 		Method:      http.MethodPost,
@@ -393,13 +449,6 @@ func (s *Server) registerRoutes() {
 		Summary:     "Exchange email+password for a session token",
 		Tags:        []string{"auth"},
 	}, s.handleLogin)
-
-	// openProtected: session-required, but NO compliance gate. Endpoints that
-	// a non-compliant user must still be able to reach in order to BECOME
-	// compliant (enroll a passkey/TOTP, change password, view /me, log out)
-	// use this so the force-mode middleware doesn't lock them out of the
-	// remediation surface.
-	openProtected := huma.Middlewares{s.requireUser}
 
 	huma.Register(s.API, huma.Operation{
 		OperationID: "auth-logout",
@@ -431,13 +480,21 @@ func (s *Server) registerRoutes() {
 		Middlewares: openProtected,
 	}, s.handleAuthConfig)
 
-	// Read APIs require a user session AND compliance with the active
-	// force-mode (passkey/2FA enrollment, when configured).
-	protected := huma.Middlewares{s.requireUser, s.requireMethodCompliance}
-	// Operator surfaces (user management, agent config, notification rules, …)
-	// require an admin in addition to a valid session and method compliance.
-	adminOnly := huma.Middlewares{s.requireUser, s.requireMethodCompliance, s.requireAdmin}
+	// 2FA challenge after password login (unauthenticated; protected by the
+	// short-lived challenge token).
+	huma.Register(s.API, huma.Operation{
+		OperationID: "auth-2fa-challenge",
+		Method:      http.MethodPost,
+		Path:        "/v1/auth/2fa/challenge",
+		Summary:     "Complete login with a TOTP code",
+		Tags:        []string{"auth"},
+	}, s.handleTOTPChallenge)
+}
 
+// registerHostRoutes wires the host inventory + per-host metrics + groups +
+// packages + security read surface. All endpoints require an authenticated
+// (and compliant) user; group mutations additionally require admin.
+func (s *Server) registerHostRoutes(protected huma.Middlewares) {
 	huma.Register(s.API, huma.Operation{
 		OperationID: "list-hosts",
 		Method:      http.MethodGet,
@@ -474,6 +531,15 @@ func (s *Server) registerRoutes() {
 		Middlewares: protected,
 	}, s.handleListTags)
 
+	s.registerHostGroupRoutes(protected)
+	s.registerHostMetricsRoutes(protected)
+}
+
+// registerHostGroupRoutes wires host group CRUD + membership management. Group
+// mutations are admin-only (the bundle inlined per route, not the shared
+// `protected` bundle the helper receives) because they affect every host in
+// the group.
+func (s *Server) registerHostGroupRoutes(protected huma.Middlewares) {
 	// Host groups
 	huma.Register(s.API, huma.Operation{
 		OperationID: "list-groups",
@@ -515,7 +581,11 @@ func (s *Server) registerRoutes() {
 		Tags:        []string{"groups"},
 		Middlewares: huma.Middlewares{s.requireUser, s.requireAdmin},
 	}, s.handleSetGroupMembers)
+}
 
+// registerHostMetricsRoutes wires per-host time-series read endpoints
+// (system/disk/network metrics), package listings, and the security snapshot.
+func (s *Server) registerHostMetricsRoutes(protected huma.Middlewares) {
 	huma.Register(s.API, huma.Operation{
 		OperationID: "host-system-metrics",
 		Method:      http.MethodGet,
@@ -587,7 +657,12 @@ func (s *Server) registerRoutes() {
 		Tags:        []string{"security"},
 		Middlewares: protected,
 	}, s.handleHostLogins)
+}
 
+// registerNotificationRoutes wires the channel CRUD (any compliant user owns
+// their own channels) and rule CRUD + alert history (rule mutations are
+// admin-only, see comment block at the rule-list operation).
+func (s *Server) registerNotificationRoutes(protected, adminOnly huma.Middlewares) {
 	// Notification channel CRUD
 	huma.Register(s.API, huma.Operation{
 		OperationID: "list-channels",
@@ -638,6 +713,11 @@ func (s *Server) registerRoutes() {
 		Middlewares: protected,
 	}, s.handleTestChannel)
 
+	s.registerNotificationRuleRoutes(protected, adminOnly)
+}
+
+// registerMonitorRoutes wires the active-monitor CRUD + results read endpoints.
+func (s *Server) registerMonitorRoutes(protected huma.Middlewares) {
 	// Active monitors
 	huma.Register(s.API, huma.Operation{
 		OperationID: "list-monitors",
@@ -687,12 +767,14 @@ func (s *Server) registerRoutes() {
 		Tags:        []string{"monitors"},
 		Middlewares: protected,
 	}, s.handleMonitorResults)
+}
 
-	// Notification rules + alert history.
-	// Rule CRUD is admin-only: operators compose rules that target the
-	// channels users own. notification_rules has no owner column, so a
-	// non-admin who knew (or guessed) another user's channel UUID could
-	// otherwise POST a rule that fired on it.
+// registerNotificationRuleRoutes wires rule CRUD + alert history.
+// Rule CRUD is admin-only: operators compose rules that target the channels
+// users own. notification_rules has no owner column, so a non-admin who knew
+// (or guessed) another user's channel UUID could otherwise POST a rule that
+// fired on it.
+func (s *Server) registerNotificationRuleRoutes(protected, adminOnly huma.Middlewares) {
 	huma.Register(s.API, huma.Operation{
 		OperationID: "list-rules",
 		Method:      http.MethodGet,
@@ -741,19 +823,28 @@ func (s *Server) registerRoutes() {
 		Tags:        []string{"notifications"},
 		Middlewares: protected,
 	}, s.handleAlertHistory)
+}
 
-	// 2FA challenge after password login (unauthenticated; protected by the
-	// short-lived challenge token).
-	huma.Register(s.API, huma.Operation{
-		OperationID: "auth-2fa-challenge",
-		Method:      http.MethodPost,
-		Path:        "/v1/auth/2fa/challenge",
-		Summary:     "Complete login with a TOTP code",
-		Tags:        []string{"auth"},
-	}, s.handleTOTPChallenge)
+// registerSelfServiceAuthRoutes wires the user's self-management surface:
+// change password/email, TOTP setup/verify/disable, WebAuthn/passkey
+// ceremonies, public reset consume, avatar upload/delete, UI language, and the
+// verified email-change flow.
+//
+// openProtected vs protected: endpoints that a non-compliant user must reach
+// IN ORDER to become compliant (enroll TOTP/passkey, change password, view
+// /me) use openProtected. Pure profile customisation (avatar, language) sits
+// under protected per F-10 — no business mutating those past the grace window.
+func (s *Server) registerSelfServiceAuthRoutes(openProtected, protected huma.Middlewares) {
+	s.registerSelfServiceProfileRoutes(openProtected)
+	s.registerWebAuthnRoutes(openProtected)
+	s.registerSelfServiceExtrasRoutes(protected)
+}
 
-	// Self-service profile (session required, but no compliance gate — these
-	// are the endpoints a non-compliant user uses to become compliant).
+// registerSelfServiceProfileRoutes wires the credential-management surface
+// (change password/email, TOTP setup/verify/disable). All sit under
+// openProtected — these are the endpoints a non-compliant user reaches in
+// order to become compliant under a strict force-mode.
+func (s *Server) registerSelfServiceProfileRoutes(openProtected huma.Middlewares) {
 	huma.Register(s.API, huma.Operation{
 		OperationID: "auth-change-password",
 		Method:      http.MethodPost,
@@ -794,11 +885,14 @@ func (s *Server) registerRoutes() {
 		Tags:        []string{"auth"},
 		Middlewares: openProtected,
 	}, s.handleTOTPDisable)
+}
 
-	// WebAuthn / passkey ceremonies. Login halves are unauthenticated (no
-	// session yet). Register halves and self-management endpoints are
-	// session-required but exempt from the force-mode compliance gate so a
-	// user can enroll a passkey under a strict policy.
+// registerWebAuthnRoutes wires WebAuthn/passkey ceremonies, passkey
+// self-management, and the public consume-reset token endpoint. Login halves
+// are unauthenticated (no session yet); register halves and management endpoints
+// are session-required but exempt from the force-mode compliance gate so a user
+// can enroll a passkey under a strict policy.
+func (s *Server) registerWebAuthnRoutes(openProtected huma.Middlewares) {
 	huma.Register(s.API, huma.Operation{
 		OperationID: "auth-webauthn-register-begin",
 		Method:      http.MethodPost,
@@ -865,11 +959,17 @@ func (s *Server) registerRoutes() {
 		Summary:     "Set a new password via an admin-issued reset/invite token",
 		Tags:        []string{"auth"},
 	}, s.handleConsumeReset)
+}
 
-	// Self-service avatar upload/delete. Sit under `protected` (the
-	// compliance gate) — they're profile customisation, NOT a step on
-	// the path to becoming compliant, so a non-compliant user past their
-	// grace window has no business mutating them. audit 2026-05-12 F-10.
+// registerSelfServiceExtrasRoutes wires pure profile-customisation endpoints
+// (avatar upload/delete, UI language) and the verified email-change flow. All
+// sit under `protected` per F-10 — no business mutating these past the grace
+// window. The public consume-token step of the email-change flow is wired
+// without auth (the token IS the credential, rate-limited by authPaths).
+//
+// The avatar GET is wired directly on chi to stream raw image bytes (huma's
+// content negotiation always wraps replies in a typed envelope).
+func (s *Server) registerSelfServiceExtrasRoutes(protected huma.Middlewares) {
 	huma.Register(s.API, huma.Operation{
 		OperationID: "auth-me-avatar-upload",
 		Method:      http.MethodPost,
@@ -929,7 +1029,22 @@ func (s *Server) registerRoutes() {
 		Summary:     "Confirm an email change by presenting the token sent to the new address",
 		Tags:        []string{"auth"},
 	}, s.handleConfirmEmailChange)
+}
 
+// registerAdminRoutes wires every operator-facing endpoint. All require an
+// authenticated, compliant admin session. Split across three helpers by area
+// of operation: user management, platform settings (SMTP/quiet-hours/agent-
+// config/server logs/ingests), and security/governance (password + security
+// policy, enrollment management, audit log).
+func (s *Server) registerAdminRoutes(adminOnly huma.Middlewares) {
+	s.registerAdminUserRoutes(adminOnly)
+	s.registerAdminPlatformRoutes(adminOnly)
+	s.registerAdminSecurityRoutes(adminOnly)
+}
+
+// registerAdminUserRoutes wires per-user admin actions: list/create/delete,
+// lock/unlock, password + 2FA reset, and force session revocation.
+func (s *Server) registerAdminUserRoutes(adminOnly huma.Middlewares) {
 	// Admin: user management
 	huma.Register(s.API, huma.Operation{
 		OperationID: "admin-list-users",
@@ -995,7 +1110,12 @@ func (s *Server) registerRoutes() {
 		Tags:        []string{"admin"},
 		Middlewares: adminOnly,
 	}, s.handleAdminRevokeUserSessions)
+}
 
+// registerAdminPlatformRoutes wires platform-wide singletons + read surfaces:
+// outbound SMTP, global quiet hours, agent-config CRUD, server logs, and the
+// raw ingest debug viewer.
+func (s *Server) registerAdminPlatformRoutes(adminOnly huma.Middlewares) {
 	// Admin: outbound SMTP transport (singleton).
 	huma.Register(s.API, huma.Operation{
 		OperationID: "admin-get-smtp",
@@ -1042,16 +1162,9 @@ func (s *Server) registerRoutes() {
 		Middlewares: adminOnly,
 	}, s.handleAdminPutQuietHours)
 
-	// Agent-config: agents fetch their resolved config (auth via agent_key,
-	// not web user). Admin CRUD lives separately under /v1/admin/agent-config.
-	huma.Register(s.API, huma.Operation{
-		OperationID: "agent-config-fetch",
-		Method:      http.MethodGet,
-		Path:        "/v1/agent/config",
-		Summary:     "Agent fetches its resolved config (auth: Bearer agent_key)",
-		Tags:        []string{"agents"},
-	}, s.handleAgentConfigFetch)
-
+	// Admin: agent-config CRUD. The agent-side fetch endpoint
+	// (/v1/agent/config) is wired in registerAgentLifecycleRoutes — it
+	// authenticates with the agent_key, not a web session.
 	huma.Register(s.API, huma.Operation{
 		OperationID: "list-agent-configs",
 		Method:      http.MethodGet,
@@ -1112,7 +1225,12 @@ func (s *Server) registerRoutes() {
 		Tags:        []string{"admin"},
 		Middlewares: adminOnly,
 	}, s.handleAdminGetIngest)
+}
 
+// registerAdminSecurityRoutes wires the security/governance admin surface:
+// password policy, security policy (force-mode + session caps), global session
+// revocation, agent self-enrollment management, and the audit log read.
+func (s *Server) registerAdminSecurityRoutes(adminOnly huma.Middlewares) {
 	// Admin: password policy
 	huma.Register(s.API, huma.Operation{
 		OperationID: "admin-get-password-policy",
@@ -1202,11 +1320,6 @@ func (s *Server) registerRoutes() {
 		Tags:        []string{"admin"},
 		Middlewares: adminOnly,
 	}, s.handleAdminListAudit)
-
-	// SPA mount: anything not claimed by /v1, /healthz, /readyz, /docs is
-	// served from the embedded React build. Registered last so huma's API
-	// routes win.
-	s.Router.Handle("/*", spa.Handler())
 }
 
 // --- Register ---------------------------------------------------------------

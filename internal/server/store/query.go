@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -181,23 +182,23 @@ func (s *Store) detectServices(ctx context.Context, hostIDs []uuid.UUID) (map[st
 		return nil, err
 	}
 
-	out := map[string][]string{}
+	return sortedServiceHits(hits), nil
+}
+
+// sortedServiceHits flattens the per-host set-of-matches map into a sorted
+// string slice per host. Stable order keeps the UI from shuffling badges on
+// every refetch.
+func sortedServiceHits(hits map[string]map[string]struct{}) map[string][]string {
+	out := make(map[string][]string, len(hits))
 	for k, v := range hits {
 		list := make([]string, 0, len(v))
 		for s := range v {
 			list = append(list, s)
 		}
-		// Stable order so the UI doesn't shuffle on every refetch.
-		for i := 0; i < len(list); i++ {
-			for j := i + 1; j < len(list); j++ {
-				if list[j] < list[i] {
-					list[i], list[j] = list[j], list[i]
-				}
-			}
-		}
+		sort.Strings(list)
 		out[k] = list
 	}
-	return out, nil
+	return out
 }
 
 type serviceMatcher struct {

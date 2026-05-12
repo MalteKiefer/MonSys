@@ -438,16 +438,13 @@ func buildMongoHello() ([]byte, error) {
 	// Entry: type byte, name C-string, value.
 	// hello: int32 1 (type 0x10)
 	// $db: string "admin" (type 0x02)
-	doc := []byte{}
-	// hello: 1
-	doc = append(doc, 0x10, 'h', 'e', 'l', 'l', 'o', 0x00)
-	doc = append(doc, byte(1), 0, 0, 0)
-	// $db: "admin"
-	doc = append(doc, 0x02)
-	doc = append(doc, []byte("$db")...)
-	doc = append(doc, 0x00)
+	// hello: int32(1) (0x10), then $db: "admin" (0x02) C-string-keyed.
 	dbName := []byte("admin\x00")
-	doc = append(doc, byte(len(dbName)), 0, 0, 0) //nolint:gosec // BSON/OP_MSG little-endian length prefix; values bounded by hardcoded packet shape
+	doc := []byte{
+		0x10, 'h', 'e', 'l', 'l', 'o', 0x00, byte(1), 0, 0, 0,
+		0x02, '$', 'd', 'b', 0x00,
+		byte(len(dbName)), 0, 0, 0, //nolint:gosec // BSON little-endian length prefix; values bounded by hardcoded packet shape
+	}
 	doc = append(doc, dbName...)
 
 	docSize := 4 + len(doc) + 1

@@ -54,6 +54,25 @@ func isValidForceMode(v string) bool {
 	}
 }
 
+// validateSecurityPolicy checks each field of p against the schema-level
+// bounds. Returns the first violation as an error so the API layer can surface
+// it 1:1. Bounds mirror the apitypes.SecurityPolicy JSON-schema annotations.
+func validateSecurityPolicy(p apitypes.SecurityPolicy) error {
+	if !isValidForceMode(p.ForceMode) {
+		return errors.New("invalid force_mode")
+	}
+	if p.GraceDays < 0 || p.GraceDays > 365 {
+		return errors.New("grace_days out of range (0-365)")
+	}
+	if p.MaxSessionHours < 1 || p.MaxSessionHours > 8760 {
+		return errors.New("max_session_hours out of range (1-8760)")
+	}
+	if p.IdleTimeoutMinutes < 0 || p.IdleTimeoutMinutes > 10080 {
+		return errors.New("idle_timeout_minutes out of range (0-10080)")
+	}
+	return nil
+}
+
 // GetSecurityPolicy returns the active policy, falling back to
 // defaultSecurityPolicy when the row is missing or malformed. The returned
 // policy is range-clamped so callers can trust its fields even if someone
@@ -103,17 +122,8 @@ func (s *Store) GetSecurityPolicy(ctx context.Context) (apitypes.SecurityPolicy,
 // transitions back to "off", force_grace_until is cleared everywhere so the
 // next time the admin tightens the policy a fresh grace window applies.
 func (s *Store) SetSecurityPolicy(ctx context.Context, p apitypes.SecurityPolicy, updatedBy string) error {
-	if !isValidForceMode(p.ForceMode) {
-		return errors.New("invalid force_mode")
-	}
-	if p.GraceDays < 0 || p.GraceDays > 365 {
-		return errors.New("grace_days out of range (0-365)")
-	}
-	if p.MaxSessionHours < 1 || p.MaxSessionHours > 8760 {
-		return errors.New("max_session_hours out of range (1-8760)")
-	}
-	if p.IdleTimeoutMinutes < 0 || p.IdleTimeoutMinutes > 10080 {
-		return errors.New("idle_timeout_minutes out of range (0-10080)")
+	if err := validateSecurityPolicy(p); err != nil {
+		return err
 	}
 
 	prev, err := s.GetSecurityPolicy(ctx)

@@ -144,7 +144,8 @@ func main() {
 	if err != nil {
 		slog.Error("db open", "err", err)
 		cancel()
-		os.Exit(1)
+		stop()
+		os.Exit(1) //nolint:gocritic // stop()+cancel() invoked manually above; defers are no-op fallback for success path
 	}
 	defer st.Close()
 

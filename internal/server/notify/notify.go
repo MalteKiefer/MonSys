@@ -73,6 +73,7 @@ var httpClient = &http.Client{Timeout: 15 * time.Second}
 
 type SMTP struct{}
 
+//nolint:cyclop // SMTP envelope construction is inherently a sequence of guarded field reads (host/port/user/pass/from/to/tls-mode/auth-mode/timeouts/body) feeding net/smtp. Each branch is a one-line precondition or a header write; splitting would scatter the message-build sequence across helpers that all touch the same builder.
 func (SMTP) Send(ctx context.Context, ch Channel, m Message) error {
 	host := stringField(ch.Config, "host")
 	port := intField(ch.Config, "port", 587)

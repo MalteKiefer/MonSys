@@ -14,6 +14,8 @@ import (
 
 // SaveIngest persists an IngestRequest for the given host: optional inventory
 // upsert first (so disk/nic/workload IDs exist), then metric samples.
+//
+//nolint:cyclop,funlen // dispatch over an open-ended set of optional metric tables (system/disk/net/workload/packages/security/firewall/fail2ban/repo/...): each present-or-nil block is one tx.Exec on its own table. Splitting would scatter the single shared transaction across helpers and bury the tx.Rollback contract.
 func (s *Store) SaveIngest(ctx context.Context, hostID uuid.UUID, req apitypes.IngestRequest) error {
 	tx, err := s.Pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
@@ -154,6 +156,7 @@ type (
 	workloadKey struct{ Kind, ExternalID string }
 )
 
+//nolint:cyclop,funlen // same shape as SaveIngest — dispatch across optional inventory bundles (hosts/disks/nics/workloads/vms/users/packages) sharing one tx. Each bundle's upsert + diff against the last snapshot is self-contained and stays adjacent to the tx.Exec it drives.
 func saveInventoryTx(ctx context.Context, tx pgx.Tx, hostID uuid.UUID, snap apitypes.InventorySnap) error {
 	if snap.Hostname != "" || snap.Kernel != "" || snap.Distro != "" || snap.AgentVersion != "" || len(snap.Labels) > 0 {
 		labelsJSON, err := json.Marshal(orEmpty(snap.Labels))

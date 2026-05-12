@@ -242,6 +242,31 @@ func (s *Store) SetPasswordPolicy(ctx context.Context, p apitypes.PasswordPolicy
 	return s.SetSetting(ctx, "password_policy", raw, updatedBy)
 }
 
+// passwordCharClasses tallies which character classes (upper/lower/digit/
+// symbol) appear at least once in pw. Symbol is the catch-all bucket for
+// anything that isn't ASCII A-Z, a-z, or 0-9 — matching what the policy
+// schema means by "RequireSymbol".
+type passwordCharClasses struct {
+	HasUpper, HasLower, HasDigit, HasSymbol bool
+}
+
+func scanPasswordClasses(pw string) passwordCharClasses {
+	var c passwordCharClasses
+	for _, r := range pw {
+		switch {
+		case r >= 'A' && r <= 'Z':
+			c.HasUpper = true
+		case r >= 'a' && r <= 'z':
+			c.HasLower = true
+		case r >= '0' && r <= '9':
+			c.HasDigit = true
+		default:
+			c.HasSymbol = true
+		}
+	}
+	return c
+}
+
 // CheckPassword evaluates pw against the active password policy. Returns nil
 // if pw passes; otherwise a list of human-readable problems joined with
 // commas.
@@ -250,33 +275,21 @@ func (s *Store) CheckPassword(ctx context.Context, pw string) error {
 	if err != nil {
 		return err
 	}
+	classes := scanPasswordClasses(pw)
 	var problems []string
 	if len(pw) < p.MinLength {
 		problems = append(problems, fmt.Sprintf("at least %d characters", p.MinLength))
 	}
-	hasUpper, hasLower, hasDigit, hasSymbol := false, false, false, false
-	for _, c := range pw {
-		switch {
-		case c >= 'A' && c <= 'Z':
-			hasUpper = true
-		case c >= 'a' && c <= 'z':
-			hasLower = true
-		case c >= '0' && c <= '9':
-			hasDigit = true
-		default:
-			hasSymbol = true
-		}
-	}
-	if p.RequireUpper && !hasUpper {
+	if p.RequireUpper && !classes.HasUpper {
 		problems = append(problems, "at least one uppercase letter")
 	}
-	if p.RequireLower && !hasLower {
+	if p.RequireLower && !classes.HasLower {
 		problems = append(problems, "at least one lowercase letter")
 	}
-	if p.RequireDigit && !hasDigit {
+	if p.RequireDigit && !classes.HasDigit {
 		problems = append(problems, "at least one digit")
 	}
-	if p.RequireSymbol && !hasSymbol {
+	if p.RequireSymbol && !classes.HasSymbol {
 		problems = append(problems, "at least one symbol")
 	}
 	if len(problems) == 0 {

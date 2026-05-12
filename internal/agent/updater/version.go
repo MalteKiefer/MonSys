@@ -139,22 +139,33 @@ func parseVersion(v string) parsedVersion {
 		v = strings.TrimSuffix(v, "-dirty")
 	}
 
-	// Split off the first three dot-separated segments as major.minor.patch.
-	rest := v
-	parts := strings.SplitN(rest, ".", 3)
+	major, minor, patch, suffix, ok := splitSemverHead(v)
+	if !ok {
+		return out
+	}
+	out.major, out.minor, out.patch = major, minor, patch
+	out.ok = true
+	applyDescribeSuffix(&out, suffix)
+	return out
+}
+
+// splitSemverHead parses "X.Y.Z..." into its three integer components and the
+// trailing suffix (everything after the patch digits). Returns ok=false when
+// the input doesn't have three dot-separated segments or any of major/minor/
+// patch isn't a leading-decimal integer.
+func splitSemverHead(v string) (major, minor, patch int, suffix string, ok bool) {
+	parts := strings.SplitN(v, ".", 3)
 	if len(parts) < 3 {
 		// Not enough dots to be a real semver; could still be a bare commit hash.
-		return out
+		return 0, 0, 0, "", false
 	}
-	major, err := strconv.Atoi(parts[0])
-	if err != nil {
-		return out
+	var err error
+	if major, err = strconv.Atoi(parts[0]); err != nil {
+		return 0, 0, 0, "", false
 	}
-	minor, err := strconv.Atoi(parts[1])
-	if err != nil {
-		return out
+	if minor, err = strconv.Atoi(parts[1]); err != nil {
+		return 0, 0, 0, "", false
 	}
-
 	// parts[2] is "Z[-NN-gSHA][...extra]"; pull leading digits as patch.
 	tail := parts[2]
 	patchEnd := 0
@@ -162,44 +173,44 @@ func parseVersion(v string) parsedVersion {
 		patchEnd++
 	}
 	if patchEnd == 0 {
-		return out
+		return 0, 0, 0, "", false
 	}
-	patch, err := strconv.Atoi(tail[:patchEnd])
-	if err != nil {
-		return out
+	if patch, err = strconv.Atoi(tail[:patchEnd]); err != nil {
+		return 0, 0, 0, "", false
 	}
-	out.major, out.minor, out.patch = major, minor, patch
-	out.ok = true
-	suffix := tail[patchEnd:]
+	return major, minor, patch, tail[patchEnd:], true
+}
 
-	// Look for "-NN-gSHA" (commit-count + abbrev sha). git describe always
-	// places the commit count immediately after the tag.
-	if strings.HasPrefix(suffix, "-") {
-		seg := strings.TrimPrefix(suffix, "-")
-		// Pull the leading digit run.
-		i := 0
-		for i < len(seg) && seg[i] >= '0' && seg[i] <= '9' {
-			i++
-		}
-		if i > 0 && i < len(seg) && seg[i] == '-' {
-			// Confirm what follows looks like "g<hex>" before trusting it as
-			// a describe suffix; otherwise it's just a pre-release tag.
-			tail2 := seg[i+1:]
-			if len(tail2) > 1 && (tail2[0] == 'g' || tail2[0] == 'G') {
-				if n, err := strconv.Atoi(seg[:i]); err == nil {
-					out.commits = n
-					// Anything past the SHA segment becomes "extra" for lexical tie-break.
-					if dash := strings.Index(tail2, "-"); dash >= 0 {
-						out.extra = tail2[dash:]
-					}
-					return out
+// applyDescribeSuffix folds the trailing suffix from splitSemverHead into out.
+// Recognises git-describe "-NN-gSHA[-extra]" and stamps commits/extra; any
+// other shape lands in extra verbatim for lexical tie-break in cmpVersion.
+func applyDescribeSuffix(out *parsedVersion, suffix string) {
+	if !strings.HasPrefix(suffix, "-") {
+		return
+	}
+	seg := strings.TrimPrefix(suffix, "-")
+	// Pull the leading digit run.
+	i := 0
+	for i < len(seg) && seg[i] >= '0' && seg[i] <= '9' {
+		i++
+	}
+	if i > 0 && i < len(seg) && seg[i] == '-' {
+		// Confirm what follows looks like "g<hex>" before trusting it as a
+		// describe suffix; otherwise it's just a pre-release tag.
+		tail2 := seg[i+1:]
+		if len(tail2) > 1 && (tail2[0] == 'g' || tail2[0] == 'G') {
+			if n, err := strconv.Atoi(seg[:i]); err == nil {
+				out.commits = n
+				// Anything past the SHA segment becomes "extra" for lexical tie-break.
+				if dash := strings.Index(tail2, "-"); dash >= 0 {
+					out.extra = tail2[dash:]
 				}
+				return
 			}
 		}
-		// Not a describe suffix — keep it as a pre-release tag for tie-breaking.
-		out.extra = suffix
 	}
-	return out
+	// Not a describe suffix — keep it as a pre-release tag for tie-breaking.
+	out.extra = suffix
 }
 
 // cmpInt returns -1, 0, +1 for a<b, a==b, a>b.

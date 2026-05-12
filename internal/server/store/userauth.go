@@ -170,25 +170,28 @@ func (f *FailedLoginAttempts) GC() {
 		return
 	}
 	now := time.Now()
-	cutoff := now.Add(-loginAttemptWindow)
+	f.gcStaleAttempts(now.Add(-loginAttemptWindow))
+	f.gcExpiredLockouts(now)
+}
 
-	// Pass 1: stale attempt buckets. Snapshot under read lock, delete
-	// per-key under brief write locks with re-validation.
+// gcStaleAttempts runs pass 1: snapshot attempt buckets whose newest entry is
+// older than cutoff, then delete each under a per-key write lock with a
+// re-check. Locked-out buckets are skipped — gcExpiredLockouts cleans those
+// when the lockout itself expires.
+func (f *FailedLoginAttempts) gcStaleAttempts(cutoff time.Time) {
 	f.mu.RLock()
-	attemptCandidates := make([]string, 0, len(f.attempts))
+	candidates := make([]string, 0, len(f.attempts))
 	for key, ts := range f.attempts {
 		if _, locked := f.lockedAt[key]; locked {
-			// Locked-out entries are kept so the lockout horizon survives a
-			// GC pass; pass 2 will clean them when the lock itself expires.
 			continue
 		}
 		if len(ts) == 0 || !ts[len(ts)-1].After(cutoff) {
-			attemptCandidates = append(attemptCandidates, key)
+			candidates = append(candidates, key)
 		}
 	}
 	f.mu.RUnlock()
 
-	for _, key := range attemptCandidates {
+	for _, key := range candidates {
 		f.mu.Lock()
 		// Re-check under the write lock — the bucket may have been touched
 		// in the meantime by RecordFailedLogin or wiped by ClearFailedLogins.
@@ -202,19 +205,22 @@ func (f *FailedLoginAttempts) GC() {
 		}
 		f.mu.Unlock()
 	}
+}
 
-	// Pass 2: expired lockouts. Same shape — snapshot, then delete with
-	// per-key re-validation.
+// gcExpiredLockouts runs pass 2: drop lockout entries whose deadline has
+// passed (and their now-irrelevant attempt history). Same snapshot+re-check
+// pattern as gcStaleAttempts to avoid racing concurrent RecordFailedLogin.
+func (f *FailedLoginAttempts) gcExpiredLockouts(now time.Time) {
 	f.mu.RLock()
-	lockCandidates := make([]string, 0, len(f.lockedAt))
+	candidates := make([]string, 0, len(f.lockedAt))
 	for key, until := range f.lockedAt {
 		if now.After(until) {
-			lockCandidates = append(lockCandidates, key)
+			candidates = append(candidates, key)
 		}
 	}
 	f.mu.RUnlock()
 
-	for _, key := range lockCandidates {
+	for _, key := range candidates {
 		f.mu.Lock()
 		if until, ok := f.lockedAt[key]; ok && now.After(until) {
 			delete(f.lockedAt, key)

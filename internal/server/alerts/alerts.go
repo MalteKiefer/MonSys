@@ -1304,7 +1304,7 @@ func (e *Engine) evalMetricThreshold(ctx context.Context) {
 			slog.Warn("alerts: metric_threshold missing metric", "rule", r.Name)
 			continue
 		}
-		e.runMetricRule(ctx, r, metric, op, val, windowSec, forSec, scope)
+		e.runMetricRule(ctx, r, metric, op, val, forSec, scope)
 	}
 }
 
@@ -1312,20 +1312,22 @@ func (e *Engine) evalMetricThreshold(ctx context.Context) {
 // per-metric query builder. The split keeps each metric's SQL self-contained
 // (some need joins to disks/nics, some are cumulative counters that need a
 // window function to compute a rate, some are one-shot lookups).
-func (e *Engine) runMetricRule(ctx context.Context, r ruleRow, metric, op string, val float64, windowSec, forSec int, scope map[string]string) {
+//
+//nolint:cyclop // closed-enum dispatch over apitypes.MetricKind; each case is a one-line call to a self-contained query builder. Splitting would only obscure the metric-to-helper mapping.
+func (e *Engine) runMetricRule(ctx context.Context, r ruleRow, metric, op string, val float64, forSec int, scope map[string]string) {
 	switch metric {
 	case "cpu_usage_pct":
-		e.metricSimpleHost(ctx, r, metric, "metrics_system", "cpu_usage_pct", op, val, forSec)
+		e.metricSimpleHost(ctx, r, metric, "cpu_usage_pct", op, val, forSec)
 	case "load_1":
-		e.metricSimpleHost(ctx, r, metric, "metrics_system", "load_1", op, val, forSec)
+		e.metricSimpleHost(ctx, r, metric, "load_1", op, val, forSec)
 	case "load_5":
-		e.metricSimpleHost(ctx, r, metric, "metrics_system", "load_5", op, val, forSec)
+		e.metricSimpleHost(ctx, r, metric, "load_5", op, val, forSec)
 	case "load_15":
-		e.metricSimpleHost(ctx, r, metric, "metrics_system", "load_15", op, val, forSec)
+		e.metricSimpleHost(ctx, r, metric, "load_15", op, val, forSec)
 	case "swap_used_bytes":
-		e.metricSimpleHost(ctx, r, metric, "metrics_system", "swap_used_bytes::float", op, val, forSec)
+		e.metricSimpleHost(ctx, r, metric, "swap_used_bytes::float", op, val, forSec)
 	case "ram_used_pct":
-		e.metricSimpleHost(ctx, r, metric, "metrics_system",
+		e.metricSimpleHost(ctx, r, metric,
 			"100.0 * ram_used_bytes::float / NULLIF(ram_used_bytes + ram_avail_bytes, 0)",
 			op, val, forSec)
 	case "swap_used_pct":
@@ -1404,14 +1406,14 @@ func (e *Engine) runMetricRule(ctx context.Context, r ruleRow, metric, op string
 // metricSimpleHost runs a HAVING bool_and(<expr> <op> $2) query over
 // metrics_system for the given host-grain expression. Used for cpu/load/ram.
 //
-// expr/table: compile-time constants. See the SQL-injection contract above.
-func (e *Engine) metricSimpleHost(ctx context.Context, r ruleRow, metric, table, expr, op string, val float64, forSec int) {
+// expr: compile-time constant. See the SQL-injection contract above.
+func (e *Engine) metricSimpleHost(ctx context.Context, r ruleRow, metric, expr, op string, val float64, forSec int) {
 	sql := fmt.Sprintf(`
 		SELECT host_id, max(time) AS last_t, count(*) AS samples
-		FROM %s
+		FROM metrics_system
 		WHERE time > now() - make_interval(secs => $1)
 		GROUP BY host_id
-		HAVING bool_and(%s %s $2) AND count(*) >= 2`, table, expr, op)
+		HAVING bool_and(%s %s $2) AND count(*) >= 2`, expr, op)
 	rows, err := e.Pool.Query(ctx, sql, forSec, val)
 	if err != nil {
 		slog.Warn("alerts: metric_threshold query", "metric", metric, "err", err)
@@ -1992,6 +1994,8 @@ func (e *Engine) evalHostFlap(ctx context.Context) {
 // the configured "bad" set. The first tick after engine boot seeds the cache
 // without firing (matches prior state) so a long-running already-exited
 // container doesn't alarm at restart.
+//
+//nolint:cyclop // linear pipeline: load rules, snapshot containers, diff against per-rule cache, fire on entry to bad set. The branches are sequential guards (no rules / DB error / empty rows / seeding / transition) coupled to the per-condition cache type; splitting harms readability.
 func (e *Engine) evalContainerStateChange(ctx context.Context) {
 	rules, err := e.loadRules(ctx, "container_state_change")
 	if err != nil || len(rules) == 0 {
@@ -2054,6 +2058,8 @@ func (e *Engine) evalContainerStateChange(ctx context.Context) {
 }
 
 // --- vm_state_change ------------------------------------------------------
+//
+//nolint:cyclop // same shape as evalContainerStateChange — linear snapshot/diff/fire over the per-rule VM cache. The bad-set membership and dedup-key construction are inlined intentionally to keep the alert payload close to the fire call.
 func (e *Engine) evalVMStateChange(ctx context.Context) {
 	rules, err := e.loadRules(ctx, "vm_state_change")
 	if err != nil || len(rules) == 0 {
@@ -2132,6 +2138,8 @@ func (e *Engine) evalVMStateChange(ctx context.Context) {
 }
 
 // --- nic_link_down --------------------------------------------------------
+//
+//nolint:cyclop // same snapshot/diff/fire shape as the other state-change evaluators; the branch count comes from per-NIC filtering (operstate parsing, scope match against scope["nic"]) inlined to keep the alert label adjacent to the fire call.
 func (e *Engine) evalNICLinkDown(ctx context.Context) {
 	rules, err := e.loadRules(ctx, "nic_link_down")
 	if err != nil || len(rules) == 0 {
@@ -3066,6 +3074,8 @@ func (e *Engine) evalAuditAction(ctx context.Context) {
 }
 
 // --- firewall_state_change ------------------------------------------------
+//
+//nolint:cyclop // snapshot/diff/fire pipeline. Multiple firewall backends (ufw/nft/iptables/pve-firewall) each contribute one state column; the inline checks keep their backend-specific transition semantics adjacent to the alert dedup key.
 func (e *Engine) evalFirewallStateChange(ctx context.Context) {
 	rules, err := e.loadRules(ctx, "firewall_state_change")
 	if err != nil || len(rules) == 0 {
@@ -3158,6 +3168,8 @@ func policyIsRestrictive(p string) bool {
 // We track which (host, jail) pairs we've ever seen. On each tick we mark
 // the ones still present; pairs that were previously seen but absent in the
 // current snapshot fire a one-shot alert.
+//
+//nolint:cyclop // same snapshot/diff/fire shape; the branch count is fix-the-cache (still-present pairs marked, missing pairs fire, brand-new pairs only seeded). Splitting would require sharing the per-rule "ever-seen" set across helpers — currently a single map[string]map[string]bool keyed by ruleID then (hostID,jail).
 func (e *Engine) evalFail2banJailDisappeared(ctx context.Context) {
 	rules, err := e.loadRules(ctx, "fail2ban_jail_disappeared")
 	if err != nil || len(rules) == 0 {

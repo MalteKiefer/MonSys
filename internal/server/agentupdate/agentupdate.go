@@ -173,20 +173,44 @@ func (r *Resolver) githubManifest(ctx context.Context) (*Manifest, error) {
 		Binaries:  map[string]Binary{},
 	}
 
-	// Locate SHA256SUMS asset and parse it. Format:
-	//   <hash>  <filename>
-	var sumsURL string
-	urlByName := map[string]string{}
-	for _, a := range rel.Assets {
+	// Locate SHA256SUMS asset and parse it.
+	sumsURL, urlByName := indexReleaseAssets(rel.Assets)
+	if sumsURL == "" {
+		return nil, errors.New("github releases: SHA256SUMS asset missing")
+	}
+	body, err := r.fetchSHA256Sums(ctx, sumsURL)
+	if err != nil {
+		return nil, err
+	}
+	populateBinariesFromSums(m, body, urlByName)
+	if len(m.Binaries) == 0 {
+		return nil, errors.New("github releases: no matching mon-agent assets in SHA256SUMS")
+	}
+	return m, nil
+}
+
+// indexReleaseAssets walks the release's asset list, returning the SHA256SUMS
+// asset's download URL (or "" if missing) and a name->URL index over all
+// other assets so the parsed sums file can resolve binary URLs.
+func indexReleaseAssets(assets []struct {
+	Name               string `json:"name"`
+	BrowserDownloadURL string `json:"browser_download_url"`
+},
+) (sumsURL string, urlByName map[string]string) {
+	urlByName = make(map[string]string, len(assets))
+	for _, a := range assets {
 		urlByName[a.Name] = a.BrowserDownloadURL
 		if a.Name == "SHA256SUMS" {
 			sumsURL = a.BrowserDownloadURL
 		}
 	}
-	if sumsURL == "" {
-		return nil, errors.New("github releases: SHA256SUMS asset missing")
-	}
+	return sumsURL, urlByName
+}
 
+// fetchSHA256Sums GETs the SHA256SUMS file and returns its raw bytes, capped
+// at 64 KiB. The body is fully consumed before returning so the response can
+// be garbage-collected immediately.
+func (r *Resolver) fetchSHA256Sums(ctx context.Context, sumsURL string) ([]byte, error) {
 	sumReq, _ := http.NewRequestWithContext(ctx, http.MethodGet, sumsURL, http.NoBody)
 	sumResp, err := r.cli.Do(sumReq)
 	if err != nil {
@@ -200,7 +224,15 @@ func (r *Resolver) githubManifest(ctx context.Context) (*Manifest, error) {
 	if err != nil {
 		return nil, fmt.Errorf("SHA256SUMS read: %w", err)
 	}
+	return body, nil
+}
 
+// populateBinariesFromSums walks the SHA256SUMS text (one "<hash>  <filename>"
+// pair per line) and inserts a Binary into m for every line that resolves
+// to a known mon-agent os/arch key and a known asset URL. Lines that don't
+// parse, don't have a known os/arch, or reference an unknown asset are
+// silently skipped.
+func populateBinariesFromSums(m *Manifest, body []byte, urlByName map[string]string) {
 	for _, line := range strings.Split(string(body), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) != 2 {
@@ -220,10 +252,6 @@ func (r *Resolver) githubManifest(ctx context.Context) (*Manifest, error) {
 		}
 		m.Binaries[key] = Binary{URL: url, SHA256: hash}
 	}
-	if len(m.Binaries) == 0 {
-		return nil, errors.New("github releases: no matching mon-agent assets in SHA256SUMS")
-	}
-	return m, nil
 }
 
 // agentKeyFromName maps a release asset filename to its os/arch key. Only

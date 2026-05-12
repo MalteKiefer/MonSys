@@ -82,6 +82,8 @@ func (s *Store) CreateBootstrapToken(ctx context.Context, description string, tt
 // Operators reading the log should treat agent.register as the canonical "host
 // onboarded" event; agent.enroll.consume is supplementary and only present
 // when the host went through the "Add Agent" enrollment flow.
+//
+//nolint:cyclop,funlen // single-transaction enrollment ceremony: token lookup -> upsert hosts row -> insert agent_keys -> apply tags/groups -> append audit-log row -> commit. Each step needs the same tx handle and the same rollback-on-error path; splitting would require passing the tx and partial-state collectors through helpers and would split the audit-log composition away from the actions it describes.
 func (s *Store) RegisterAgent(ctx context.Context, token string, req apitypes.AgentRegisterRequest, remoteAddr string) (apitypes.AgentRegisterResponse, error) {
 	var resp apitypes.AgentRegisterResponse
 

@@ -192,6 +192,8 @@ type Options struct {
 // Linux-specific: see the package godoc — the rename-over-running-exe
 // strategy is a Linux property; do not port this file without auditing the
 // swap path for the target OS.
+//
+//nolint:cyclop,funlen // linear state machine: manifest fetch -> downgrade gate -> download -> sha-mismatch refresh retry -> minisig verify -> atomic swap -> restart. Each branch is sequential, not a switch; splitting would obscure the audit-trail required by AUDIT-401/402.
 func Run(ctx context.Context, o Options) (Result, error) {
 	res := Result{From: o.CurrentVersion, BinaryPath: o.BinaryPath}
 

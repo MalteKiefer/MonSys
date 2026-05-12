@@ -53,26 +53,8 @@ func (s *Store) GetHostDetail(ctx context.Context, id uuid.UUID) (apitypes.HostD
 		d.Host.StatusSince = *statusSince
 	}
 
-	if d.Disks, err = s.hostDisks(ctx, id); err != nil {
-		return d, fmt.Errorf("disks: %w", err)
-	}
-	if d.Nics, err = s.hostNics(ctx, id); err != nil {
-		return d, fmt.Errorf("nics: %w", err)
-	}
-	if d.Workloads, err = s.hostWorkloads(ctx, id); err != nil {
-		return d, fmt.Errorf("workloads: %w", err)
-	}
-	if d.VMs, err = s.hostVMs(ctx, id); err != nil {
-		return d, fmt.Errorf("vms: %w", err)
-	}
-	if d.Users, err = s.hostUsers(ctx, id); err != nil {
-		return d, fmt.Errorf("users: %w", err)
-	}
-	if d.PackagesSummary, err = s.hostPackageSummary(ctx, id); err != nil {
-		return d, fmt.Errorf("package summary: %w", err)
-	}
-	if d.RepoStates, err = s.hostRepoStates(ctx, id); err != nil {
-		return d, fmt.Errorf("repo states: %w", err)
+	if err := s.loadHostBundles(ctx, id, &d); err != nil {
+		return d, err
 	}
 
 	// Tags + groups + derived fields populate the embedded Host.
@@ -89,6 +71,32 @@ func (s *Store) GetHostDetail(ctx context.Context, id uuid.UUID) (apitypes.HostD
 		d.Host.Services = svc[id.String()]
 	}
 	return d, nil
+}
+
+// loadHostBundles fetches each inventory bundle (disks/nics/workloads/vms/
+// users/package-summary/repo-states) into d in the same order GetHostDetail
+// used to. Extracted to keep GetHostDetail under cyclop. The first error wins
+// and is wrapped with the bundle name so callers can pinpoint the failing
+// query.
+func (s *Store) loadHostBundles(ctx context.Context, id uuid.UUID, d *apitypes.HostDetail) error {
+	loaders := []struct {
+		name string
+		load func() error
+	}{
+		{"disks", func() (err error) { d.Disks, err = s.hostDisks(ctx, id); return }},
+		{"nics", func() (err error) { d.Nics, err = s.hostNics(ctx, id); return }},
+		{"workloads", func() (err error) { d.Workloads, err = s.hostWorkloads(ctx, id); return }},
+		{"vms", func() (err error) { d.VMs, err = s.hostVMs(ctx, id); return }},
+		{"users", func() (err error) { d.Users, err = s.hostUsers(ctx, id); return }},
+		{"package summary", func() (err error) { d.PackagesSummary, err = s.hostPackageSummary(ctx, id); return }},
+		{"repo states", func() (err error) { d.RepoStates, err = s.hostRepoStates(ctx, id); return }},
+	}
+	for _, l := range loaders {
+		if err := l.load(); err != nil {
+			return fmt.Errorf("%s: %w", l.name, err)
+		}
+	}
+	return nil
 }
 
 func (s *Store) hostTags(ctx context.Context, hostID uuid.UUID) ([]string, error) {

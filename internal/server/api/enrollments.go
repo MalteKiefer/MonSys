@@ -258,6 +258,8 @@ func (s *Server) handleInstallQR(w http.ResponseWriter, r *http.Request) {
 // Verifies the token has not been used and is still within its expiry
 // window. Anything else returns 404 with a shell-safe failure body so a
 // curl|bash pipeline aborts early.
+//
+//nolint:cyclop // sequential request-validation pipeline (token presence -> lookup -> expiry check -> server URL resolution -> shell rendering). Each branch returns to the client with a different status/body; extracting helpers would force passing the ResponseWriter through and obscure the curl|bash failure-mode contract.
 func (s *Server) handleInstallScript(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/x-shellscript; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")

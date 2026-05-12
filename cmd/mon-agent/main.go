@@ -70,7 +70,7 @@ func main() {
 		if err != nil {
 			slog.Error("self-update failed", "err", err, "from", res.From, "to", res.To)
 			stop()
-			os.Exit(1)
+			os.Exit(1) //nolint:gocritic // stop() invoked manually above; defer stop() is a no-op fallback for the success path
 		}
 		if !res.Replaced {
 			slog.Info("self-update: already current", "version", res.From)

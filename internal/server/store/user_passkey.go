@@ -311,6 +311,8 @@ func (s *Store) BeginPasskeyRegistration(ctx context.Context, u User) (apitypes.
 
 // FinishPasskeyRegistration verifies the browser's PublicKeyCredential
 // against the stored SessionData and persists the new credential.
+//
+//nolint:cyclop,funlen // WebAuthn ceremony: each step (config check, action-token consume, JSON decode, library verify, owner-match, attestation parse, credential persist) has its own bespoke error path with its own audit-log signal. Extracting helpers would split the ceremony's correctness invariants across files.
 func (s *Store) FinishPasskeyRegistration(ctx context.Context, userID uuid.UUID, challengeToken string, credentialJSON []byte, name string) (apitypes.Passkey, error) {
 	if s.Webauthn == nil {
 		return apitypes.Passkey{}, ErrPasskeyNotConfigured
@@ -483,6 +485,8 @@ func (s *Store) BeginPasskeyLogin(ctx context.Context) (apitypes.WebAuthnLoginBe
 // FinishPasskeyLogin verifies the assertion, identifies the user from
 // the authenticator's userHandle, updates the sign counter, and returns
 // the User so the API layer can issue a session.
+//
+//nolint:cyclop,funlen // mirror of FinishPasskeyRegistration but for the login ceremony: session-data lookup, JSON decode, discover-by-userHandle, library verify (with sign-counter clone-detection), credential update, audit-log append. Each branch's error path is ceremony-specific.
 func (s *Store) FinishPasskeyLogin(ctx context.Context, challengeToken string, credentialJSON []byte) (User, error) {
 	if s.Webauthn == nil {
 		return User{}, ErrPasskeyNotConfigured

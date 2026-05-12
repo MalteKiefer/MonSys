@@ -375,6 +375,8 @@ func parseChannelIDs(in []string) ([]uuid.UUID, error) {
 // the created rules. UNIQUE(name) on notification_rules forces us to suffix
 // per-row names with the condition_type when N > 1; the shared group_id is
 // what the UI uses to roll them back into a single logical rule.
+//
+//nolint:cyclop,funlen // validation gate -> per-condition row construction (with UNIQUE(name) suffixing) -> single-tx insert loop -> audit-log append. Splitting helpers would force passing the tx + the partial response struct through, which buries the rollback contract.
 func (s *Store) CreateRuleGroup(ctx context.Context, in apitypes.NotificationRuleGroupInput, createdBy string) (apitypes.NotificationRuleGroupResponse, error) {
 	if len(in.Conditions) == 0 {
 		return apitypes.NotificationRuleGroupResponse{}, errors.New("at least one condition required")
