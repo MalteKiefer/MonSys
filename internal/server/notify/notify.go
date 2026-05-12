@@ -99,7 +99,7 @@ func (SMTP) Send(ctx context.Context, ch Channel, m Message) error {
 
 	tlsCfg := &tls.Config{
 		ServerName:         host,
-		InsecureSkipVerify: insecure, //nolint:gosec — opt-in for self-signed dev environments
+		InsecureSkipVerify: insecure, //nolint:gosec // opt-in for self-signed dev environments
 		MinVersion:         tls.VersionTLS12,
 	}
 

@@ -75,8 +75,8 @@ func normalizeTags(in []string) ([]string, error) {
 	return out, nil
 }
 
-// ListAllTags returns every distinct tag in use, with the count of hosts
-// carrying it. Useful for tag pickers.
+// TagUsage pairs a tag with the number of hosts carrying it. Returned by
+// ListAllTags for tag pickers and admin views.
 type TagUsage struct {
 	Tag   string
 	Count int

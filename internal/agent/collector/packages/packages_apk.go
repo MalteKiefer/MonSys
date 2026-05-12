@@ -74,7 +74,7 @@ func splitAPKNameVersion(s string) (name, version string) {
 		return s, ""
 	}
 	for i := 1; i < len(parts); i++ {
-		if len(parts[i]) > 0 && parts[i][0] >= '0' && parts[i][0] <= '9' {
+		if parts[i] != "" && parts[i][0] >= '0' && parts[i][0] <= '9' {
 			name = strings.Join(parts[:i], "-")
 			version = strings.Join(parts[i:], "-")
 			return

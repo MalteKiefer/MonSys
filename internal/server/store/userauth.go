@@ -80,8 +80,8 @@ func (s *Store) IsLockedOut(_ context.Context, email string) (bool, time.Time) {
 	return s.failedLogins().IsLockedOut(email)
 }
 
-// FailedLogins is the public accessor for the tracker. Tests can use this
-// to inspect or reset state.
+// FailedLoginsTracker is the public accessor for the failed-login tracker.
+// Tests can use this to inspect or reset state.
 func (s *Store) FailedLoginsTracker() *FailedLoginAttempts { return s.failedLogins() }
 
 func emailKey(email string) string { return strings.ToLower(strings.TrimSpace(email)) }

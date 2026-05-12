@@ -440,9 +440,7 @@ func buildMongoHello() ([]byte, error) {
 	// $db: string "admin" (type 0x02)
 	doc := []byte{}
 	// hello: 1
-	doc = append(doc, 0x10)
-	doc = append(doc, []byte("hello")...)
-	doc = append(doc, 0x00)
+	doc = append(doc, 0x10, 'h', 'e', 'l', 'l', 'o', 0x00)
 	doc = append(doc, byte(1), 0, 0, 0)
 	// $db: "admin"
 	doc = append(doc, 0x02)
@@ -502,7 +500,7 @@ func indexOfBytes(haystack, needle []byte) int {
 	}
 	for i := 0; i+len(needle) <= len(haystack); i++ {
 		ok := true
-		for j := range len(needle) {
+		for j := range needle {
 			if haystack[i+j] != needle[j] {
 				ok = false
 				break

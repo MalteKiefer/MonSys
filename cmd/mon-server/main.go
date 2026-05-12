@@ -143,6 +143,7 @@ func main() {
 	st, err := store.Open(openCtx, dsn)
 	if err != nil {
 		slog.Error("db open", "err", err)
+		cancel()
 		os.Exit(1)
 	}
 	defer st.Close()

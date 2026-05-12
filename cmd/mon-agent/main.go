@@ -69,6 +69,7 @@ func main() {
 		})
 		if err != nil {
 			slog.Error("self-update failed", "err", err, "from", res.From, "to", res.To)
+			stop()
 			os.Exit(1)
 		}
 		if !res.Replaced {

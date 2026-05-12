@@ -135,7 +135,7 @@ func (s *Store) SaveIngest(ctx context.Context, hostID uuid.UUID, req apitypes.I
 
 	if batch.Len() > 0 {
 		br := tx.SendBatch(ctx, batch)
-		for i := 0; i < batch.Len(); i++ {
+		for i := range batch.Len() {
 			if _, err := br.Exec(); err != nil {
 				_ = br.Close()
 				return fmt.Errorf("batch exec[%d]: %w", i, err)

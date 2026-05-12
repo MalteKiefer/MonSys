@@ -66,7 +66,7 @@ func (Net) Inventory(ctx context.Context, snap *apitypes.InventorySnap) error {
 // (BridgeMaster). Errors are swallowed: missing entries are normal for plain
 // NICs and on non-Linux platforms.
 func bridgeBondTopology(name string) (members []string, master string) {
-	base := filepath.Join("/sys/class/net", name)
+	base := "/sys/class/net/" + name
 
 	// Bridge: members live as symlinks under brif/.
 	if entries, err := os.ReadDir(filepath.Join(base, "brif")); err == nil {

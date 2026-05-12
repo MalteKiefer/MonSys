@@ -138,7 +138,7 @@ func (r *Resolver) staticManifest() *Manifest {
 // are surfaced; the caller may keep returning a stale cache.
 func (r *Resolver) githubManifest(ctx context.Context) (*Manifest, error) {
 	relURL := fmt.Sprintf("https://api.github.com/repos/%s/releases/tags/%s", r.repo, r.tag)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, relURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, relURL, http.NoBody)
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +187,7 @@ func (r *Resolver) githubManifest(ctx context.Context) (*Manifest, error) {
 		return nil, errors.New("github releases: SHA256SUMS asset missing")
 	}
 
-	sumReq, _ := http.NewRequestWithContext(ctx, http.MethodGet, sumsURL, nil)
+	sumReq, _ := http.NewRequestWithContext(ctx, http.MethodGet, sumsURL, http.NoBody)
 	sumResp, err := r.cli.Do(sumReq)
 	if err != nil {
 		return nil, fmt.Errorf("SHA256SUMS fetch: %w", err)

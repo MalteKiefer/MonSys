@@ -96,8 +96,21 @@ linters:
 
     gocritic:
       disabled-checks:
+        # Stylistic; codebase intentionally chains if/else for clarity.
         - ifElseChain
+        # Stylistic; we keep parameter types explicit per param.
         - paramTypeCombine
+        # Many value-typed structs (config, channel rows, alert rows) are
+        # passed by value deliberately for snapshot/immutability semantics.
+        # The 80-224 byte size triggers this everywhere; not worth churn.
+        - hugeParam
+        # Same logic as hugeParam: ranging over value-typed slices is the
+        # idiomatic style here. Loop bodies are small; copy cost is paid
+        # once per evaluator tick, not in hot paths.
+        - rangeValCopy
+        # Project style: we prefer anonymous results when the type is
+        # self-evident (e.g. helper returning `(string, error)`).
+        - unnamedResult
       enabled-tags:
         - diagnostic
         - performance

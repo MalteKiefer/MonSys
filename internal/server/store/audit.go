@@ -54,8 +54,7 @@ func (s *Store) ListAuditLog(ctx context.Context, limit, offset int, actor, acti
 	if len(conds) > 0 {
 		q += " WHERE " + strings.Join(conds, " AND ")
 	}
-	args = append(args, limit)
-	args = append(args, offset)
+	args = append(args, limit, offset)
 	q += fmt.Sprintf(" ORDER BY at DESC, id DESC LIMIT $%d OFFSET $%d", len(args)-1, len(args))
 
 	rows, err := s.Pool.Query(ctx, q, args...)

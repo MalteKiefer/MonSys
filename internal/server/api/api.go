@@ -2021,12 +2021,12 @@ func (s *Server) handleAlertHistory(ctx context.Context, in *alertHistoryInput) 
 			restrict = append(restrict, id)
 		}
 	}
-	alerts, err := s.Store.ListAlertHistory(ctx, since, in.Limit, restrict)
+	history, err := s.Store.ListAlertHistory(ctx, since, in.Limit, restrict)
 	if err != nil {
 		return nil, internalErr(ctx, "query failed", err)
 	}
 	out := &alertHistoryOutput{}
-	out.Body.Alerts = alerts
+	out.Body.Alerts = history
 	return out, nil
 }
 

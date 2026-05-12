@@ -321,9 +321,9 @@ func orEmptyAny(m map[string]any) map[string]any {
 	return m
 }
 
-func truncate(s string, max int) string {
-	if len(s) <= max {
+func truncate(s string, n int) string {
+	if len(s) <= n {
 		return s
 	}
-	return s[:max]
+	return s[:n]
 }

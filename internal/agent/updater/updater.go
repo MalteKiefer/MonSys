@@ -416,7 +416,7 @@ func fetchManifest(ctx context.Context, cli *http.Client, base string, force boo
 	if force {
 		url += "?fresh=1"
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 	if err != nil {
 		return nil, err
 	}
@@ -442,7 +442,7 @@ func fetchManifest(ctx context.Context, cli *http.Client, base string, force boo
 // wantHex. The on-disk file is fsynced before close so the subsequent
 // rename is durable.
 func downloadAndVerify(ctx context.Context, cli *http.Client, url, wantHex, dst string) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 	if err != nil {
 		return err
 	}
@@ -489,7 +489,7 @@ func downloadAndVerify(ctx context.Context, cli *http.Client, url, wantHex, dst 
 // is purely a safety measure against an attacker-controlled redirect
 // handing back a huge payload that might exhaust staging-dir space.
 func downloadFile(ctx context.Context, cli *http.Client, url, dst string) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 	if err != nil {
 		return err
 	}

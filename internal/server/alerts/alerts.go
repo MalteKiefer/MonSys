@@ -517,21 +517,21 @@ func (e *Engine) fire(ctx context.Context, r ruleRow, subject, body, dedup strin
 	m := notify.Message{Subject: subject, Body: body, Severity: severity}
 
 	delivered := []string{}
-	errors := map[string]string{}
+	deliverErrs := map[string]string{}
 	for _, ch := range r.ChannelIDs {
 		chID, err := uuid.Parse(ch)
 		if err != nil {
-			errors[ch] = "invalid channel id"
+			deliverErrs[ch] = "invalid channel id"
 			continue
 		}
 		if err := e.sendChannel(ctx, chID, m); err != nil {
-			errors[chID.String()] = err.Error()
+			deliverErrs[chID.String()] = err.Error()
 			continue
 		}
 		delivered = append(delivered, chID.String())
 	}
 
-	errJSON, _ := json.Marshal(errors)
+	errJSON, _ := json.Marshal(deliverErrs)
 	_, err = e.Pool.Exec(ctx, `
 		INSERT INTO alert_history (rule_id, rule_name, severity, subject, body,
 		                           dedup_key, delivered_to, delivery_errors)
@@ -1244,11 +1244,11 @@ func contains(s []string, needle string) bool {
 	return false
 }
 
-func truncate(s string, max int) string {
-	if len(s) <= max {
+func truncate(s string, n int) string {
+	if len(s) <= n {
 		return s
 	}
-	return s[:max]
+	return s[:n]
 }
 
 // --- metric_threshold evaluator -------------------------------------------
