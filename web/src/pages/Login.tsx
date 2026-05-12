@@ -27,13 +27,21 @@ export function Login() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Conditional-mediation autofill: if the browser supports WebAuthn, kick off
-  // a passive `get()` call tied to the email field's `autocomplete="username
+  // Conditional-mediation autofill: if the browser supports WebAuthn, arm a
+  // passive `get()` call tied to the email field's `autocomplete="username
   // webauthn"`. The browser will surface saved passkeys alongside username
-  // suggestions; the abort controller cancels the call when the component
+  // suggestions. We arm it lazily — only after the email input receives focus,
+  // i.e. when the user is actually about to authenticate. That removes the
+  // /v1/auth/webauthn/login/begin network round-trip from the critical render
+  // path (it used to fire from a mount-time effect, so it blocked LCP behind
+  // a POST that doesn't even matter unless the user wants to authenticate).
+  // Once armed, the abort controller cancels the call when the component
   // unmounts (or when the explicit passkey button is clicked).
   const abortRef = useRef<AbortController | null>(null);
-  useEffect(() => {
+  const armedRef = useRef(false);
+  const armConditional = () => {
+    if (armedRef.current) return;
+    armedRef.current = true;
     if (!webauthnSupported()) return;
     const ctrl = new AbortController();
     abortRef.current = ctrl;
@@ -43,8 +51,11 @@ export function Login() {
       setSession(resp.token, resp.user);
       void navigate("/", { replace: true });
     })();
-    return () => { ctrl.abort(); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  };
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
   }, []);
 
   async function handlePassword(e: SyntheticEvent) {
@@ -114,7 +125,7 @@ export function Login() {
           {stage.kind === "password" ? (
             <form onSubmit={(e) => { void handlePassword(e); }} className="space-y-4">
               <Field label={t("login.email")}>
-                <TextInput type="email" autoComplete="username webauthn" required value={email} onChange={(e) => { setEmail(e.target.value); }} />
+                <TextInput type="email" autoComplete="username webauthn" required value={email} onChange={(e) => { setEmail(e.target.value); }} onFocus={armConditional} />
               </Field>
               <Field label={t("login.password")}>
                 <TextInput type="password" autoComplete="current-password" required value={password} onChange={(e) => { setPassword(e.target.value); }} />

@@ -1,39 +1,89 @@
-import { lazy, useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Navigate, Route, Routes } from "react-router-dom";
 
-import { AppShell } from "./components/layout/AppShell";
-import { CommandPalette } from "./components/CommandPalette";
-import { EnforcementGuard } from "./components/EnforcementGuard";
-import { RequireAdmin } from "./components/RequireAdmin";
-import { AdminMonitors } from "./pages/AdminMonitors";
-import { AlertsPage, ChannelsPage, RulesPage } from "./pages/notifications";
-import {
-  Charts,
-  HostLayout,
-  Network as HostNetwork,
-  Overview,
-  Packages as HostPackages,
-  Security as HostSecurity,
-  Storage,
-  Users as HostUsers,
-  VMs,
-  Workloads,
-} from "./pages/host-detail";
-import { Dashboard } from "./pages/Dashboard";
-import { Hosts } from "./pages/Hosts";
+// The login flow is the only entry point a logged-out user can reach, so
+// only Login / Reset / ConfirmEmail are imported eagerly. Every
+// authenticated route (Dashboard, host-detail, AdminMonitors,
+// notifications, Profile, Packages, the AppShell chrome, etc.) is
+// code-split into its own chunk via `lazy()`. This was previously a hot
+// drag on LCP on /login: ~400 kB of authed-only JS was parsed before the
+// passkey button could paint, even though none of it would run until the
+// user signed in. The auth gate below renders only Login routes when
+// `token` is null, so the lazy chunks for the authed shell are never
+// fetched until the user has a session.
 import { Login } from "./pages/Login";
-import { Packages } from "./pages/Packages";
 import { ConfirmEmail } from "./pages/ConfirmEmail";
-import { Profile } from "./pages/Profile";
 import { Reset } from "./pages/Reset";
 import { DensityProvider } from "./lib/density-store";
 
-// Admin-only pages are lazy-loaded so non-admin users don't pay for them
-// on first paint. Each becomes its own chunk and only fetches when the
-// route is hit. The user-facing /notifications and /monitors routes still
-// import AdminNotifications and AdminMonitors eagerly above because they
-// are linked from the main nav.
+const AppShell = lazy(() =>
+  import("./components/layout/AppShell").then((m) => ({ default: m.AppShell })),
+);
+const CommandPalette = lazy(() =>
+  import("./components/CommandPalette").then((m) => ({ default: m.CommandPalette })),
+);
+const EnforcementGuard = lazy(() =>
+  import("./components/EnforcementGuard").then((m) => ({ default: m.EnforcementGuard })),
+);
+const RequireAdmin = lazy(() =>
+  import("./components/RequireAdmin").then((m) => ({ default: m.RequireAdmin })),
+);
+const AdminMonitors = lazy(() =>
+  import("./pages/AdminMonitors").then((m) => ({ default: m.AdminMonitors })),
+);
+const AlertsPage = lazy(() =>
+  import("./pages/notifications").then((m) => ({ default: m.AlertsPage })),
+);
+const ChannelsPage = lazy(() =>
+  import("./pages/notifications").then((m) => ({ default: m.ChannelsPage })),
+);
+const RulesPage = lazy(() =>
+  import("./pages/notifications").then((m) => ({ default: m.RulesPage })),
+);
+const Charts = lazy(() =>
+  import("./pages/host-detail").then((m) => ({ default: m.Charts })),
+);
+const HostLayout = lazy(() =>
+  import("./pages/host-detail").then((m) => ({ default: m.HostLayout })),
+);
+const HostNetwork = lazy(() =>
+  import("./pages/host-detail").then((m) => ({ default: m.Network })),
+);
+const Overview = lazy(() =>
+  import("./pages/host-detail").then((m) => ({ default: m.Overview })),
+);
+const HostPackages = lazy(() =>
+  import("./pages/host-detail").then((m) => ({ default: m.Packages })),
+);
+const HostSecurity = lazy(() =>
+  import("./pages/host-detail").then((m) => ({ default: m.Security })),
+);
+const Storage = lazy(() =>
+  import("./pages/host-detail").then((m) => ({ default: m.Storage })),
+);
+const HostUsers = lazy(() =>
+  import("./pages/host-detail").then((m) => ({ default: m.Users })),
+);
+const VMs = lazy(() =>
+  import("./pages/host-detail").then((m) => ({ default: m.VMs })),
+);
+const Workloads = lazy(() =>
+  import("./pages/host-detail").then((m) => ({ default: m.Workloads })),
+);
+const Dashboard = lazy(() =>
+  import("./pages/Dashboard").then((m) => ({ default: m.Dashboard })),
+);
+const Hosts = lazy(() =>
+  import("./pages/Hosts").then((m) => ({ default: m.Hosts })),
+);
+const Packages = lazy(() =>
+  import("./pages/Packages").then((m) => ({ default: m.Packages })),
+);
+const Profile = lazy(() =>
+  import("./pages/Profile").then((m) => ({ default: m.Profile })),
+);
+
 const AdminAgentConfig = lazy(() =>
   import("./pages/AdminAgentConfig").then((m) => ({ default: m.AdminAgentConfig })),
 );
@@ -126,6 +176,7 @@ export function App() {
   }
 
   return (
+    <Suspense fallback={<div className="h-full" />}>
     <AppShell>
       <DensityProvider />
       <CommandPalette />
@@ -191,5 +242,6 @@ export function App() {
       </Routes>
       </EnforcementGuard>
     </AppShell>
+    </Suspense>
   );
 }

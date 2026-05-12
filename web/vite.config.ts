@@ -1,6 +1,90 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
+
+// Tiny transform to make the entry stylesheet non-render-blocking.
+// 1. Emits a `<link rel="preload" as="style">` so the browser fetches the
+//    CSS at high priority alongside the JS entry, instead of waiting for it
+//    to be discovered after the head parses.
+// 2. Switches the original `<link rel="stylesheet">` to
+//    `media="not all"` so it does NOT block the renderer; a small inline
+//    bootstrap script promotes it to `all` on DOMContentLoaded (or
+//    immediately if the document is already interactive).
+// 3. A `<noscript>` fallback restores the original blocking stylesheet
+//    when JS is disabled so progressive-enhancement still paints the right
+//    palette.
+//
+// The SPA's mount point (`<div id="root">`) is empty until React mounts,
+// so the typical FOUC concern with async CSS does not apply — the
+// unstyled empty container is invisible regardless. By the time React's
+// first paint happens, the bootstrap script has already promoted the
+// stylesheet's media list, so the page paints fully styled.
+//
+// The bootstrap script is emitted as an external module asset
+// (`/assets/css-bootstrap-*.js`) so it satisfies the production
+// `script-src 'self'` Content-Security-Policy with no `'unsafe-inline'`
+// concession. (The CSP also allows `style-src 'self' 'unsafe-inline'`,
+// which is unrelated; we don't ship inline scripts.)
+function nonBlockingStylesheet(): Plugin {
+  // The bootstrap source is short enough to inline as a string here. Vite
+  // emits it as a hashed asset that the index.html references via a
+  // module-typed script tag. Because the tag itself loads asynchronously
+  // (type=module is deferred by default), it can't itself become render-
+  // blocking either.
+  const BOOTSTRAP_SRC = [
+    "// Promote any media='not all' stylesheets to media='all'. This is the",
+    "// counterpart of the non-blocking-stylesheet vite plugin — keeping the",
+    "// promotion in an external file lets us comply with a strict",
+    "// script-src 'self' CSP (no inline onload handlers required).",
+    "function promote(){",
+    "  for (const link of document.querySelectorAll('link[rel=stylesheet][media=\"not all\"]')) {",
+    "    link.media = 'all';",
+    "  }",
+    "}",
+    "if (document.readyState === 'loading') {",
+    "  document.addEventListener('DOMContentLoaded', promote, { once: true });",
+    "} else {",
+    "  promote();",
+    "}",
+  ].join("\n");
+
+  let bootstrapHref: string | null = null;
+  return {
+    name: "non-blocking-stylesheet",
+    // Emit the bootstrap as a hashed asset so it cache-busts independently
+    // of the main entry.
+    generateBundle(_options, bundle) {
+      const ref = this.emitFile({
+        type: "asset",
+        name: "css-bootstrap.js",
+        source: BOOTSTRAP_SRC,
+      });
+      // Locate the emitted asset's final filename so we can reference it
+      // from the HTML. rollup's `getFileName` is the canonical lookup.
+      bootstrapHref = "/" + this.getFileName(ref);
+      // Touch `bundle` so TS doesn't complain about unused — the emit
+      // already mutated it.
+      void bundle;
+    },
+    transformIndexHtml(html) {
+      return html.replace(
+        /<link\s+rel="stylesheet"([^>]*?)>/g,
+        (_match, attrs: string) => {
+          const cleaned = attrs.trim();
+          const bootstrap = bootstrapHref
+            ? `<script type="module" src="${bootstrapHref}"></script>`
+            : "";
+          return [
+            `<link rel="preload" as="style" ${cleaned}>`,
+            `<link rel="stylesheet" ${cleaned} media="not all">`,
+            `<noscript><link rel="stylesheet" ${cleaned}></noscript>`,
+            bootstrap,
+          ].join("\n    ");
+        },
+      );
+    },
+  };
+}
 
 // In dev we proxy /v1, /healthz, /readyz to the local mon-server so the SPA
 // can run on Vite's default port without CORS hacks. In prod the SPA is
@@ -9,6 +93,7 @@ import { VitePWA } from "vite-plugin-pwa";
 export default defineConfig({
   plugins: [
     react(),
+    nonBlockingStylesheet(),
     // PWA: emits dist/sw.js + dist/manifest.webmanifest so the SPA is
     // installable on mobile and Chrome desktop, and the shell loads
     // instantly from cache on repeat visits. API surfaces are

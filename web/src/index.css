@@ -1,7 +1,10 @@
 /* Self-hosted variable fonts — bundled, never fetched from a CDN. */
 @import "@fontsource-variable/inter/wght.css";
 @import "@fontsource-variable/jetbrains-mono/wght.css";
-@import "uplot/dist/uPlot.min.css";
+/* NOTE: uPlot's stylesheet used to live here, but that forced the
+   render-blocking app stylesheet to carry it on every page (including
+   /login, where no chart ever renders). It now lives in
+   `components/Chart.tsx` so it ships in the lazy `vendor-charts` chunk. */
 
 @tailwind base;
 @tailwind components;

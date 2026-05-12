@@ -10,7 +10,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
-import { formatBytes } from "../../components/Chart";
+import { formatBytes } from "../../components/chart-utils";
 import { DistroIcon } from "../../components/icons/DistroIcon";
 import { ServiceBadges } from "../../components/icons/ServiceIcon";
 import { Panel, StatusPill } from "../../components/ui";

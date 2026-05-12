@@ -2,25 +2,39 @@
 // matrix [timestamps, ...series] and `series` describing each line. uPlot is
 // fast even for thousands of points, has zero dependencies, and respects
 // responsive sizing via ResizeObserver.
+//
+// The pure helper functions (formatBytes, colorFor, etc.) and the type-only
+// declarations (ChartSeries, ChartData) live in `chart-utils.ts`. Importing
+// just those from Chart.tsx used to drag uPlot's runtime + CSS into every
+// caller — including transitive callers like the login bundle. They're
+// re-exported here so existing consumers keep working, but the bundler is
+// now free to tree-shake: callers that only need `formatBytes` end up with
+// the uplot-free `chart-utils` chunk, while only direct `ChartLine` users
+// pull `vendor-charts`.
 
 import { useEffect, useRef } from "react";
 import type { Options } from "uplot";
 import uPlot from "uplot";
+// uPlot's stylesheet is colocated with the runtime — keep it scoped to this
+// module so the main `index.css` doesn't bake it in. When `ChartLine` is
+// lazy-rendered the CSS now ships in the chart vendor chunk instead of the
+// render-blocking app stylesheet.
+import "uplot/dist/uPlot.min.css";
 
-export interface ChartSeries {
-  label: string;
-  // Stroke color. Tailwind tokens aren't available here, so we use raw hex
-  // matching theme colors in tailwind.config.js.
-  color: string;
-  // Optional: filled area below the line, e.g. "rgba(16,185,129,0.10)".
-  fill?: string;
-}
+import type { ChartData, ChartSeries } from "./chart-utils";
 
-export interface ChartData {
-  // First entry is unix-second timestamps; subsequent are y-values per series.
-  // Length: 1 + series.length.
-  matrix: number[][];
-}
+// Re-export the helpers so existing `import { formatBytes } from
+// "../components/Chart"` callers stay valid without code churn. Once all
+// callers are migrated to `./chart-utils` these can be removed.
+export type { ChartSeries, ChartData } from "./chart-utils";
+export {
+  formatBytesPerSec,
+  formatBytes,
+  formatPercent,
+  SERIES_COLORS,
+  colorFor,
+  rateOfChange,
+} from "./chart-utils";
 
 export function ChartLine({
   data,
@@ -105,65 +119,4 @@ export function ChartLine({
   }, [data]);
 
   return <div ref={containerRef} className="w-full" />;
-}
-
-// ---- Helpers --------------------------------------------------------------
-
-export function formatBytesPerSec(v: number): string {
-  if (!Number.isFinite(v) || v <= 0) return "0 B/s";
-  const units = ["B/s", "KiB/s", "MiB/s", "GiB/s"];
-  let n = v;
-  let i = 0;
-  while (n >= 1024 && i < units.length - 1) {
-    n /= 1024;
-    i++;
-  }
-  return `${n.toFixed(n < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
-}
-
-export function formatBytes(v: number): string {
-  if (!Number.isFinite(v) || v <= 0) return "0";
-  const units = ["B", "KiB", "MiB", "GiB", "TiB"];
-  let n = v;
-  let i = 0;
-  while (n >= 1024 && i < units.length - 1) {
-    n /= 1024;
-    i++;
-  }
-  return `${n.toFixed(n < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
-}
-
-export function formatPercent(v: number): string {
-  return `${v.toFixed(1)} %`;
-}
-
-// Stable-ish color cycle for series. Hand-picked for dark backgrounds.
-export const SERIES_COLORS = [
-  "#10b981", // emerald (accent)
-  "#60a5fa", // blue
-  "#a78bfa", // violet
-  "#f59e0b", // amber
-  "#f472b6", // pink
-  "#34d399", // lighter emerald
-  "#fbbf24", // bright amber
-  "#22d3ee", // cyan
-  "#fb7185", // rose
-];
-
-export function colorFor(idx: number): string {
-  return SERIES_COLORS[idx % SERIES_COLORS.length];
-}
-
-// rateOfChange converts cumulative counters (e.g. cumulative rx_bytes) into
-// a per-second rate aligned to `times`. The first sample becomes 0 since we
-// can't infer a delta. Negative values (counter wraparound) clamp to 0.
-export function rateOfChange(times: number[], values: number[]): number[] {
-  const out: number[] = new Array<number>(times.length).fill(0);
-  for (let i = 1; i < times.length; i++) {
-    const dt = times[i] - times[i - 1];
-    if (dt <= 0) continue;
-    const dv = values[i] - values[i - 1];
-    out[i] = dv > 0 ? dv / dt : 0;
-  }
-  return out;
 }

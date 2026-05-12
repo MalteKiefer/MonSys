@@ -1,6 +1,6 @@
 import { Boxes } from "lucide-react";
 
-import { formatBytes } from "../../components/Chart";
+import { formatBytes } from "../../components/chart-utils";
 import {
   Empty,
   Panel,
