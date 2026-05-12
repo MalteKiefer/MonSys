@@ -105,7 +105,7 @@ export function App() {
   // generating the actual fetch traffic that flips status back to "ok".
   useEffect(() => {
     function onOnline() {
-      qc.refetchQueries({ type: "active" });
+      void qc.refetchQueries({ type: "active" });
     }
     window.addEventListener("online", onOnline);
     return () => window.removeEventListener("online", onOnline);
@@ -156,9 +156,25 @@ export function App() {
         <Route path="/admin/logs" element={<RequireAdmin><LogsPage /></RequireAdmin>} />
         {/* Legacy /admin/ingests and /admin/audit deep-links continue to
             work by redirecting to the consolidated /admin/logs page with
-            the appropriate tab pre-selected. */}
-        <Route path="/admin/ingests" element={<Navigate to="/admin/logs?tab=ingest" replace />} />
-        <Route path="/admin/audit" element={<Navigate to="/admin/logs?tab=audit" replace />} />
+            the appropriate tab pre-selected. Wrapped in RequireAdmin so a
+            non-admin URL probe is blocked *before* the URL bar changes —
+            otherwise the redirect itself reveals the destination tab. */}
+        <Route
+          path="/admin/ingests"
+          element={
+            <RequireAdmin>
+              <Navigate to="/admin/logs?tab=ingest" replace />
+            </RequireAdmin>
+          }
+        />
+        <Route
+          path="/admin/audit"
+          element={
+            <RequireAdmin>
+              <Navigate to="/admin/logs?tab=audit" replace />
+            </RequireAdmin>
+          }
+        />
         <Route path="/admin/agent-config" element={<RequireAdmin><AdminAgentConfig /></RequireAdmin>} />
         <Route path="/admin/enrollments" element={<RequireAdmin><AdminEnrollments /></RequireAdmin>} />
         <Route path="/admin/mail" element={<RequireAdmin><AdminMail /></RequireAdmin>} />

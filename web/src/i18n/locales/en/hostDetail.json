@@ -48,8 +48,12 @@
   },
   "storage": {
     "ioOverTime": "I/O over time",
+    "mountsTitle_one": "Mounts ({{count}})",
+    "mountsTitle_other": "Mounts ({{count}})",
     "mountsTitle": "Mounts ({{count}})",
     "diskIoTitle": "Disk I/O",
+    "diskIoSubtitle_one": "{{count}} disk · per-second rate",
+    "diskIoSubtitle_other": "{{count}} disks · per-second rate",
     "diskIoSubtitle": "{{count}} disks · per-second rate",
     "noSamples": "No disk samples in this range.",
     "noDisks": "No disks.",
@@ -65,8 +69,12 @@
   },
   "network": {
     "throughputOverTime": "Throughput over time",
+    "interfacesTitle_one": "Interfaces ({{count}})",
+    "interfacesTitle_other": "Interfaces ({{count}})",
     "interfacesTitle": "Interfaces ({{count}})",
     "networkIoTitle": "Network I/O",
+    "networkIoSubtitle_one": "{{count}} nic · per-second rate",
+    "networkIoSubtitle_other": "{{count}} nics · per-second rate",
     "networkIoSubtitle": "{{count}} nics · per-second rate",
     "noSamples": "No network samples in this range.",
     "noNics": "No NICs.",
@@ -87,6 +95,8 @@
     "seriesTx": "{{name}} tx"
   },
   "workloads": {
+    "title_one": "Container ({{count}})",
+    "title_other": "Containers ({{count}})",
     "title": "Containers ({{count}})",
     "updatesBadge_one": "{{count}} update",
     "updatesBadge_other": "{{count}} updates",
@@ -110,6 +120,8 @@
     "upToDateTooltip": "Up-to-date with upstream registry"
   },
   "vms": {
+    "title_one": "Virtual machine / system LXC ({{count}})",
+    "title_other": "Virtual machines / system LXC ({{count}})",
     "title": "Virtual machines / system LXC ({{count}})",
     "noVMs": "No VMs detected.",
     "colKind": "Kind",
@@ -122,6 +134,8 @@
     "no": "no"
   },
   "users": {
+    "title_one": "Local account ({{count}})",
+    "title_other": "Local accounts ({{count}})",
     "title": "Local accounts ({{count}})",
     "noUsers": "No observed users.",
     "colUser": "User",
@@ -137,6 +151,8 @@
     "posture": "Posture",
     "firewalls": "Firewalls",
     "noFirewalls": "None detected.",
+    "rulesCount_one": "{{count}} rule",
+    "rulesCount_other": "{{count}} rules",
     "rulesCount": "{{count}} rules",
     "policyInLabel": "in:",
     "policyFwdLabel": "fwd:",
@@ -151,6 +167,8 @@
     "ips_one": "{{count}} IP",
     "ips_other": "{{count}} IPs",
     "crowdsec": "CrowdSec",
+    "activeCount_one": "{{count}} active",
+    "activeCount_other": "{{count}} active",
     "activeCount": "{{count}} active",
     "noDecisions": "No decisions.",
     "colScope": "Scope",

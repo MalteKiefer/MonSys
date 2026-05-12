@@ -24,7 +24,9 @@
       "repeat_value": "{{seconds}}s",
       "edit": "Bearbeiten",
       "enable": "Aktivieren",
-      "disable": "Deaktivieren"
+      "disable": "Deaktivieren",
+      "conditions_count_one": "{{count}} Bedingung",
+      "conditions_count_other": "{{count}} Bedingungen"
     },
     "confirm_delete_group": "Gruppe „{{name}}“ ({{count}} Regeln) löschen?",
     "confirm_delete_rule": "Regel „{{name}}“ löschen?",
@@ -192,7 +194,9 @@
       "back_to_categories": "← Zurück zu den Kategorien",
       "cancel": "Abbrechen",
       "save_condition": "Bedingung speichern",
-      "update_condition": "Bedingung aktualisieren"
+      "update_condition": "Bedingung aktualisieren",
+      "configured_count_one": "{{count}} konfiguriert",
+      "configured_count_other": "{{count}} konfiguriert"
     },
     "scope": {
       "legend": "Wen überwacht diese Regel?",
@@ -222,7 +226,13 @@
       "hosts_empty_none": "Noch keine Hosts bekannt.",
       "hosts_empty_match": "Keine passenden Hosts.",
       "hosts_search_placeholder": "Hosts suchen…",
-      "host_no_tags": "keine Tags"
+      "host_no_tags": "keine Tags",
+      "tags_header_one": "Tags ({{count}} ausgewählt)",
+      "tags_header_other": "Tags ({{count}} ausgewählt)",
+      "groups_header_one": "Gruppen ({{count}} ausgewählt)",
+      "groups_header_other": "Gruppen ({{count}} ausgewählt)",
+      "hosts_header_one": "Hosts ({{count}} ausgewählt)",
+      "hosts_header_other": "Hosts ({{count}} ausgewählt)"
     },
     "notify": {
       "name_label": "Name",
@@ -266,7 +276,9 @@
       "name_label": "Name",
       "rows_will_be_created_prefix": "{{count}} Zeilen werden erstellt — jeweils benannt ",
       "rows_will_be_created_suffix": " — <condition_type>",
-      "view_json": "JSON anzeigen"
+      "view_json": "JSON anzeigen",
+      "rows_will_be_created_prefix_one": "{{count}} Zeile wird erstellt – jeweils benannt ",
+      "rows_will_be_created_prefix_other": "{{count}} Zeilen werden erstellt – jeweils benannt "
     },
     "panes": {
       "no_params": "Keine zusätzlichen Parameter — Geltungsbereich und Zustellung in den nächsten Schritten konfigurieren.",

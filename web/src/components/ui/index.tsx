@@ -455,9 +455,19 @@ export function Stepper({
     if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
     e.preventDefault();
     const delta = e.key === "ArrowRight" ? 1 : -1;
-    const next = (current + delta + items.length) % items.length;
-    if (canJumpTo(next) || next === current) {
-      if (next !== current) onJump(next);
+    // Clamp at the boundaries instead of wrapping. Wrapping was silently
+    // swallowed if the wrap-target wasn't clickable, leaving the user with
+    // no feedback — clamping makes the boundary a no-op the user can feel.
+    if (delta === -1 && current === 0) return;
+    if (delta === 1 && current === items.length - 1) return;
+    const next = current + delta;
+    if (canJumpTo(next)) {
+      onJump(next);
+      focusStep(next);
+    } else {
+      // Even when we can't jump (next step is disabled), still move focus
+      // so AT announces "step X, disabled" and the user understands why
+      // their arrow press didn't navigate.
       focusStep(next);
     }
   }
@@ -488,14 +498,17 @@ export function Stepper({
             <button
               type="button"
               data-step-idx={idx}
-              disabled={!clickable && !isCurrent}
+              // Use aria-disabled so the button stays focusable for keyboard
+              // arrow navigation — AT announces "disabled" while we still
+              // suppress activation in the onClick handler.
+              aria-disabled={!clickable && !isCurrent ? true : undefined}
               tabIndex={isCurrent ? 0 : -1}
               onClick={() => {
                 if (clickable && onJump) onJump(idx);
               }}
               className={`group flex flex-col items-start gap-1 rounded-md px-1 py-0.5 text-left transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-accent/40 ${
                 clickable ? "cursor-pointer" : "cursor-default"
-              }`}
+              } ${!clickable && !isCurrent ? "opacity-60" : ""}`}
               aria-current={isCurrent ? "step" : undefined}
             >
               <span className="flex items-center gap-2">
@@ -566,6 +579,20 @@ export function DropdownMenu({
   // focus indices stay aligned across renders.
   itemRefs.current = itemRefs.current.slice(0, items.length);
 
+  // Track the previous open state so we can detect the true→false transition
+  // and restore focus to the trigger on close — regardless of whether the
+  // close was triggered by Escape, outside-click, or item activation.
+  const prevOpenRef = useRef(open);
+  useEffect(() => {
+    if (prevOpenRef.current && !open) {
+      const trig = wrapRef.current?.querySelector<HTMLElement>(
+        "[data-dropdown-trigger]",
+      );
+      trig?.focus();
+    }
+    prevOpenRef.current = open;
+  }, [open]);
+
   useEffect(() => {
     if (!open) return;
     function onDocPointer(e: MouseEvent | TouchEvent) {
@@ -578,11 +605,6 @@ export function DropdownMenu({
       if (e.key === "Escape") {
         e.preventDefault();
         setOpen(false);
-        // Return focus to the trigger so keyboard nav keeps a sane anchor.
-        const t = wrapRef.current?.querySelector<HTMLElement>(
-          "[data-dropdown-trigger]",
-        );
-        t?.focus();
       }
     }
     document.addEventListener("mousedown", onDocPointer);
@@ -690,6 +712,14 @@ export function DropdownMenu({
               ? "text-fail hover:bg-fail/10 focus-visible:bg-fail/10"
               : "text-fg hover:bg-panel-2 focus-visible:bg-panel-2";
             const disabledCls = "cursor-not-allowed text-fg-subtle opacity-60";
+            // When the item is disabled with a reason, render a visually
+            // hidden description that AT can pick up via aria-describedby —
+            // touch users and SR users get the same information that sighted
+            // pointer users get from the native `title=` tooltip.
+            const reasonId =
+              it.disabled && it.disabledReason
+                ? `${menuId}-reason-${it.key}`
+                : undefined;
             return (
               <button
                 key={it.key}
@@ -698,6 +728,7 @@ export function DropdownMenu({
                 }}
                 role="menuitem"
                 aria-disabled={it.disabled || undefined}
+                aria-describedby={reasonId}
                 title={it.disabled ? it.disabledReason : undefined}
                 tabIndex={i === activeIdx ? 0 : -1}
                 onClick={() => {
@@ -709,6 +740,11 @@ export function DropdownMenu({
               >
                 {Icon && <Icon className="h-3.5 w-3.5 shrink-0" />}
                 <span className="flex-1 truncate">{it.label}</span>
+                {reasonId && (
+                  <span id={reasonId} className="sr-only">
+                    {it.disabledReason}
+                  </span>
+                )}
               </button>
             );
           })}

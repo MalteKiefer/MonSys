@@ -24,7 +24,9 @@
       "repeat_value": "{{seconds}}s",
       "edit": "Edit",
       "enable": "Enable",
-      "disable": "Disable"
+      "disable": "Disable",
+      "conditions_count_one": "{{count}} condition",
+      "conditions_count_other": "{{count}} conditions"
     },
     "confirm_delete_group": "Delete group \"{{name}}\" ({{count}} rules)?",
     "confirm_delete_rule": "Delete rule \"{{name}}\"?",
@@ -192,7 +194,9 @@
       "back_to_categories": "← Back to categories",
       "cancel": "Cancel",
       "save_condition": "Save condition",
-      "update_condition": "Update condition"
+      "update_condition": "Update condition",
+      "configured_count_one": "{{count}} configured",
+      "configured_count_other": "{{count}} configured"
     },
     "scope": {
       "legend": "Who does this rule watch?",
@@ -222,7 +226,13 @@
       "hosts_empty_none": "No hosts known yet.",
       "hosts_empty_match": "No matching hosts.",
       "hosts_search_placeholder": "Search hosts…",
-      "host_no_tags": "no tags"
+      "host_no_tags": "no tags",
+      "tags_header_one": "Tags ({{count}} selected)",
+      "tags_header_other": "Tags ({{count}} selected)",
+      "groups_header_one": "Groups ({{count}} selected)",
+      "groups_header_other": "Groups ({{count}} selected)",
+      "hosts_header_one": "Hosts ({{count}} selected)",
+      "hosts_header_other": "Hosts ({{count}} selected)"
     },
     "notify": {
       "name_label": "Name",
@@ -266,7 +276,9 @@
       "name_label": "Name",
       "rows_will_be_created_prefix": "{{count}} rows will be created — each named ",
       "rows_will_be_created_suffix": " — <condition_type>",
-      "view_json": "View JSON"
+      "view_json": "View JSON",
+      "rows_will_be_created_prefix_one": "{{count}} row will be created — each named ",
+      "rows_will_be_created_prefix_other": "{{count}} rows will be created — each named "
     },
     "panes": {
       "no_params": "No additional parameters — configure scope and delivery in the next steps.",

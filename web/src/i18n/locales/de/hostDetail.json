@@ -48,8 +48,12 @@
   },
   "storage": {
     "ioOverTime": "I/O über Zeit",
+    "mountsTitle_one": "Einhängepunkt ({{count}})",
+    "mountsTitle_other": "Einhängepunkte ({{count}})",
     "mountsTitle": "Einhängepunkte ({{count}})",
     "diskIoTitle": "Festplatten-I/O",
+    "diskIoSubtitle_one": "{{count}} Festplatte · Rate pro Sekunde",
+    "diskIoSubtitle_other": "{{count}} Festplatten · Rate pro Sekunde",
     "diskIoSubtitle": "{{count}} Festplatten · Rate pro Sekunde",
     "noSamples": "Keine Festplattendaten in diesem Zeitraum.",
     "noDisks": "Keine Festplatten.",
@@ -65,8 +69,12 @@
   },
   "network": {
     "throughputOverTime": "Durchsatz über Zeit",
+    "interfacesTitle_one": "Schnittstelle ({{count}})",
+    "interfacesTitle_other": "Schnittstellen ({{count}})",
     "interfacesTitle": "Schnittstellen ({{count}})",
     "networkIoTitle": "Netzwerk-I/O",
+    "networkIoSubtitle_one": "{{count}} NIC · Rate pro Sekunde",
+    "networkIoSubtitle_other": "{{count}} NICs · Rate pro Sekunde",
     "networkIoSubtitle": "{{count}} NICs · Rate pro Sekunde",
     "noSamples": "Keine Netzwerkdaten in diesem Zeitraum.",
     "noNics": "Keine NICs.",
@@ -87,6 +95,8 @@
     "seriesTx": "{{name}} TX"
   },
   "workloads": {
+    "title_one": "Container ({{count}})",
+    "title_other": "Container ({{count}})",
     "title": "Container ({{count}})",
     "updatesBadge_one": "{{count}} Update",
     "updatesBadge_other": "{{count}} Updates",
@@ -110,6 +120,8 @@
     "upToDateTooltip": "Aktuell mit Upstream-Registry"
   },
   "vms": {
+    "title_one": "Virtuelle Maschine / System-LXC ({{count}})",
+    "title_other": "Virtuelle Maschinen / System-LXC ({{count}})",
     "title": "Virtuelle Maschinen / System-LXC ({{count}})",
     "noVMs": "Keine VMs erkannt.",
     "colKind": "Art",
@@ -122,6 +134,8 @@
     "no": "nein"
   },
   "users": {
+    "title_one": "Lokales Konto ({{count}})",
+    "title_other": "Lokale Konten ({{count}})",
     "title": "Lokale Konten ({{count}})",
     "noUsers": "Keine beobachteten Benutzer.",
     "colUser": "Benutzer",
@@ -137,6 +151,8 @@
     "posture": "Sicherheitslage",
     "firewalls": "Firewalls",
     "noFirewalls": "Keine erkannt.",
+    "rulesCount_one": "{{count}} Regel",
+    "rulesCount_other": "{{count}} Regeln",
     "rulesCount": "{{count}} Regeln",
     "policyInLabel": "ein:",
     "policyFwdLabel": "weit:",
@@ -151,6 +167,8 @@
     "ips_one": "{{count}} IP",
     "ips_other": "{{count}} IPs",
     "crowdsec": "CrowdSec",
+    "activeCount_one": "{{count}} aktiv",
+    "activeCount_other": "{{count}} aktiv",
     "activeCount": "{{count}} aktiv",
     "noDecisions": "Keine Entscheidungen.",
     "colScope": "Bereich",

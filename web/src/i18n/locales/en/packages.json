@@ -1,6 +1,10 @@
 {
   "title": "Packages",
+  "subtitleSecurity_one": "{{count}} security update · ",
+  "subtitleSecurity_other": "{{count}} security updates · ",
   "subtitleSecurity": "{{count}} security · ",
+  "subtitleTotal_one": "{{count}} total match",
+  "subtitleTotal_other": "{{count}} total matches",
   "subtitleTotal": "{{count}} total matches",
   "managers": {
     "all": "All managers",
@@ -20,6 +24,8 @@
   "group": {
     "packageOne": "package",
     "packageOther": "packages",
+    "viewAll_one": "View {{count}} package →",
+    "viewAll_other": "View all {{count}} packages →",
     "viewAll": "View all {{count}} packages →"
   },
   "table": {

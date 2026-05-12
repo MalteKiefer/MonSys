@@ -11,7 +11,8 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import { Page } from "../components/page";
 import {
@@ -51,6 +52,10 @@ type StatusFilter = "all" | "active" | "disabled";
 // user-audit logic to surface.
 type TabKey = "list" | "invites";
 
+function isTabKey(v: string | null): v is TabKey {
+  return v === "list" || v === "invites";
+}
+
 // ---- Page-level toast banner ---------------------------------------------
 
 // No global toast primitive exists in the design system yet, so this page
@@ -85,7 +90,20 @@ function ToastBanner({
 export function AdminUsers() {
   const { t } = useT(["admin", "common"]);
   const qc = useQueryClient();
-  const [tab, setTab] = useState<TabKey>("list");
+  // Persist tab selection to ?tab=… so deep links and reloads keep the
+  // active tab. Unknown values fall back to "list" (the default).
+  const [search, setSearch] = useSearchParams();
+  const raw = search.get("tab");
+  const tab: TabKey = isTabKey(raw) ? raw : "list";
+  const setTab = useCallback(
+    (next: TabKey) => {
+      const params = new URLSearchParams(search);
+      if (next === "list") params.delete("tab");
+      else params.set("tab", next);
+      setSearch(params, { replace: true });
+    },
+    [search, setSearch],
+  );
   const [toast, setToast] = useState<Toast | null>(null);
 
   const TABS: ReadonlyArray<TabItem<TabKey>> = [
@@ -98,7 +116,7 @@ export function AdminUsers() {
     queryFn: () => api<ListResponse>("/v1/admin/users"),
   });
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ["admin-users"] });
+  const invalidate = () => { void qc.invalidateQueries({ queryKey: ["admin-users"] }); };
 
   return (
     <Page
@@ -227,7 +245,7 @@ function CreateUserCard({ onCreated }: { onCreated: () => void }) {
         <h3 className="text-sm font-semibold text-fg">{t("users.create.panel_title")}</h3>
       </PanelHeader>
       <PanelBody>
-        <form onSubmit={submit} className="space-y-3">
+        <form onSubmit={(e) => { void submit(e); }} className="space-y-3">
           <Field label={t("users.create.email_label")}>
             <TextInput
               type="email"
@@ -449,13 +467,13 @@ function UserTable({
             {t("users.list.selected", { count: selectedVisible.length })}
           </span>
           <div className="ml-auto flex gap-2">
-            <Button size="sm" onClick={() => runBulk("unlock")} disabled={bulkBusy}>
+            <Button size="sm" onClick={() => { void runBulk("unlock"); }} disabled={bulkBusy}>
               {t("users.list.enable_selected")}
             </Button>
             <Button
               size="sm"
               variant="danger"
-              onClick={() => runBulk("lock")}
+              onClick={() => { void runBulk("lock"); }}
               disabled={bulkBusy}
             >
               {t("users.list.disable_selected")}
@@ -829,7 +847,7 @@ function ResetURLDialog({
         <code className="flex-1 break-all rounded border border-border bg-panel-2 px-2 py-1 font-mono text-xs text-fg">
           {fullURL}
         </code>
-        <Button size="sm" onClick={copy}>
+        <Button size="sm" onClick={() => { void copy(); }}>
           {copied ? t("users.reset_dialog.copied") : t("users.reset_dialog.copy")}
         </Button>
         <Button size="sm" variant="ghost" onClick={onClose}>

@@ -10,7 +10,9 @@
     "staleHostsHint": "{{stale}} veraltet, {{offline}} offline",
     "pendingUpdates": "Ausstehende Updates",
     "pendingUpdatesHint": "Details pro Host",
-    "viewPackages": "Pakete ansehen"
+    "viewPackages": "Pakete ansehen",
+    "onlineHostsHint_one": "von {{count}} insgesamt",
+    "onlineHostsHint_other": "von {{count}} insgesamt"
   },
   "attention": {
     "title": "Hosts, die Aufmerksamkeit benötigen",

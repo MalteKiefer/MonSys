@@ -10,6 +10,7 @@ import { useCommandPalette } from "../../lib/palette-store";
 import { useAuth } from "../../lib/auth";
 import { getConnectionStatus, subscribe as subscribeConnection } from "../../lib/connection";
 import { setLocale, SUPPORTED_LOCALES, type SupportedLocale } from "../../i18n";
+import { useT } from "../../i18n/useT";
 import { api } from "../../lib/api";
 
 // Compact connection-status pill rendered inline on the topbar. The full
@@ -17,13 +18,14 @@ import { api } from "../../lib/api";
 // pill gives us a permanent indicator for the "ok" path so users always
 // have a source of truth without having to wait for a failure to appear.
 function ConnectionPill() {
+  const { t } = useT(["nav", "common"]);
   const status = useSyncExternalStore(subscribeConnection, getConnectionStatus, getConnectionStatus);
   const ok = status === "ok";
   return (
     <span
       role="status"
       aria-live="polite"
-      title={ok ? "Connected to mon-server" : "Connection lost — retrying"}
+      title={ok ? t("nav:topbar.connected") : t("nav:topbar.connection_lost")}
       className={[
         "hidden items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium ring-1 ring-inset md:inline-flex",
         ok
@@ -35,7 +37,7 @@ function ConnectionPill() {
         aria-hidden
         className={["h-1.5 w-1.5 rounded-full", ok ? "bg-ok animate-pulse-soft" : "bg-fail"].join(" ")}
       />
-      {ok ? "Online" : "Offline"}
+      {ok ? t("common:status.online") : t("common:status.offline")}
     </span>
   );
 }
@@ -43,16 +45,17 @@ function ConnectionPill() {
 // Cmd+K search trigger. The CommandPalette owns the global Cmd+K / Ctrl+K
 // listener; this button is just an alternate entry point for pointer users.
 function SearchTrigger() {
+  const { t } = useT(["nav"]);
   const toggle = useCommandPalette((s) => s.toggle);
   return (
     <button
       type="button"
       onClick={toggle}
-      aria-label="Open command palette (Cmd+K)"
+      aria-label={t("nav:topbar.open_palette")}
       className="hidden w-72 items-center gap-2 rounded-md border border-border bg-panel/60 px-2.5 py-1 text-xs text-fg-subtle transition-colors hover:bg-panel-2 hover:text-fg-muted md:inline-flex lg:w-80"
     >
       <Search className="h-3.5 w-3.5" aria-hidden />
-      <span className="flex-1 text-left">Search…</span>
+      <span className="flex-1 text-left">{t("nav:topbar.search_placeholder")}</span>
       <kbd className="rounded border border-border bg-bg/60 px-1.5 py-0.5 font-mono text-[10px] text-fg-subtle">
         ⌘K
       </kbd>
@@ -68,6 +71,7 @@ function SearchTrigger() {
 // the new value once it lands.
 function LanguageSwitcher() {
   const { i18n } = useTranslation();
+  const { t } = useT(["nav"]);
   const user = useAuth((s) => s.user);
   const qc = useQueryClient();
 
@@ -134,19 +138,19 @@ function LanguageSwitcher() {
   const items: DropdownItem[] = [
     {
       key: "auto",
-      label: "Auto",
+      label: t("nav:topbar.lang_auto"),
       icon: isAuto ? Check : Globe,
       onClick: () => choose("auto"),
     },
     {
       key: "en",
-      label: "English",
+      label: t("nav:topbar.lang_en"),
       icon: !isAuto && current === "en" ? Check : Globe,
       onClick: () => choose("en"),
     },
     {
       key: "de",
-      label: "Deutsch",
+      label: t("nav:topbar.lang_de"),
       icon: !isAuto && current === "de" ? Check : Globe,
       onClick: () => choose("de"),
     },
@@ -158,7 +162,7 @@ function LanguageSwitcher() {
       trigger={
         <button
           type="button"
-          aria-label="Change language"
+          aria-label={t("nav:topbar.change_language")}
           className="inline-flex h-8 min-w-8 items-center justify-center rounded-md border border-border bg-panel px-2 text-[11px] font-semibold uppercase tracking-wide text-fg-muted transition-colors hover:bg-panel-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
         >
           {current}

@@ -1,6 +1,10 @@
 {
   "title": "Pakete",
+  "subtitleSecurity_one": "{{count}} Sicherheitsupdate · ",
+  "subtitleSecurity_other": "{{count}} Sicherheitsupdates · ",
   "subtitleSecurity": "{{count}} Sicherheit · ",
+  "subtitleTotal_one": "{{count}} Treffer insgesamt",
+  "subtitleTotal_other": "{{count}} Treffer insgesamt",
   "subtitleTotal": "{{count}} Treffer insgesamt",
   "managers": {
     "all": "Alle Manager",
@@ -20,6 +24,8 @@
   "group": {
     "packageOne": "Paket",
     "packageOther": "Pakete",
+    "viewAll_one": "{{count}} Paket anzeigen →",
+    "viewAll_other": "Alle {{count}} Pakete anzeigen →",
     "viewAll": "Alle {{count}} Pakete anzeigen →"
   },
   "table": {

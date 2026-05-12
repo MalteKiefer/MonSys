@@ -9,8 +9,8 @@ import {
   Ticket,
   Trash2,
 } from "lucide-react";
-import { FormEvent, useState } from "react";
-import { Link } from "react-router-dom";
+import { FormEvent, useCallback, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 
 import { EmptyState, ErrorState, Page } from "../components/page";
 import {
@@ -59,6 +59,10 @@ type Lifecycle = "consumed" | "expired" | "pending";
 
 type TabKey = "active" | "consumed" | "create";
 
+function isTabKey(v: string | null): v is TabKey {
+  return v === "active" || v === "consumed" || v === "create";
+}
+
 function lifecycle(e: AgentEnrollment): Lifecycle {
   if (e.used_at) return "consumed";
   if (e.expires_at && new Date(e.expires_at).getTime() < Date.now()) return "expired";
@@ -68,7 +72,20 @@ function lifecycle(e: AgentEnrollment): Lifecycle {
 export default function AdminEnrollments() {
   const { t } = useT(["admin", "common"]);
   const qc = useQueryClient();
-  const [tab, setTab] = useState<TabKey>("active");
+  // Persist tab selection to ?tab=… so deep links and reloads keep the
+  // active tab. Unknown values fall back to "active" (the default).
+  const [search, setSearch] = useSearchParams();
+  const raw = search.get("tab");
+  const tab: TabKey = isTabKey(raw) ? raw : "active";
+  const setTab = useCallback(
+    (next: TabKey) => {
+      const params = new URLSearchParams(search);
+      if (next === "active") params.delete("tab");
+      else params.set("tab", next);
+      setSearch(params, { replace: true });
+    },
+    [search, setSearch],
+  );
 
   const list = useQuery({
     queryKey: ["admin-enrollments"],
@@ -141,7 +158,7 @@ export default function AdminEnrollments() {
           enrollments={activeEnrollments}
           loading={list.isLoading}
           error={list.error as Error | null}
-          onRetry={() => list.refetch()}
+          onRetry={() => { void list.refetch(); }}
           groupNameById={groupNameById}
           onRevoke={onRevoke}
           revokingId={revoke.isPending ? (revoke.variables as string | undefined) : undefined}
@@ -153,7 +170,7 @@ export default function AdminEnrollments() {
           enrollments={consumedEnrollments}
           loading={list.isLoading}
           error={list.error as Error | null}
-          onRetry={() => list.refetch()}
+          onRetry={() => { void list.refetch(); }}
           groupNameById={groupNameById}
         />
       )}
@@ -161,7 +178,7 @@ export default function AdminEnrollments() {
       {tab === "create" && (
         <CreateTokenPanel
           onCreated={() => {
-            qc.invalidateQueries({ queryKey: ["admin-enrollments"] });
+            void qc.invalidateQueries({ queryKey: ["admin-enrollments"] });
           }}
           onSwitchToActive={() => setTab("active")}
         />
@@ -306,7 +323,7 @@ function ActiveRow({
         <div className="inline-flex items-center justify-end gap-1.5">
           <Button
             size="sm"
-            onClick={copyId}
+            onClick={() => { void copyId(); }}
             aria-label={t("admin:enrollments.active.copyIdAria")}
             title={t("admin:enrollments.active.copyIdAria")}
           >
@@ -559,7 +576,7 @@ function CreateTokenPanel({
                   <Button
                     variant="primary"
                     size="sm"
-                    onClick={() => copyText(created.install_command, setCopiedCmd)}
+                    onClick={() => { void copyText(created.install_command, setCopiedCmd); }}
                     aria-label={t("admin:enrollments.create.copyCommandAria")}
                   >
                     {copiedCmd ? (
@@ -574,7 +591,7 @@ function CreateTokenPanel({
                   </Button>
                   <Button
                     size="sm"
-                    onClick={() => copyText(created.install_url, setCopiedURL)}
+                    onClick={() => { void copyText(created.install_url, setCopiedURL); }}
                     aria-label={t("admin:enrollments.create.copyUrlAria")}
                   >
                     {copiedURL ? (

@@ -1,5 +1,7 @@
 {
   "title": "Hosts",
+  "subtitleKnown_one": "{{count}} host known",
+  "subtitleKnown_other": "{{count}} hosts known",
   "subtitleKnown": "{{count}} known",
   "subtitleFiltered": "{{shown}} of {{total}}",
   "addAgent": "Add agent",
@@ -38,6 +40,8 @@
     "sortPendingDesc": "sorted by pending desc",
     "sortSecurityDesc": "sorted by security desc",
     "sortUnsorted": "unsorted",
+    "securityTitle_one": "{{count}} security update",
+    "securityTitle_other": "{{count}} security updates",
     "securityTitle": "{{count}} security",
     "cpuRamValue": "{{cores}}c · {{ram}}"
   },

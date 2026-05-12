@@ -54,5 +54,16 @@
     "brand": "MonSys palette",
     "hint_navigate": "navigate",
     "hint_open": "open"
+  },
+  "topbar": {
+    "connected": "Connected to mon-server",
+    "connection_lost": "Connection lost — retrying",
+    "search_placeholder": "Search…",
+    "open_palette": "Open command palette (Cmd+K)",
+    "change_language": "Change language",
+    "totp_active": "2FA",
+    "lang_auto": "Auto",
+    "lang_en": "English",
+    "lang_de": "Deutsch"
   }
 }

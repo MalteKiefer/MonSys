@@ -54,5 +54,16 @@
     "brand": "MonSys-Palette",
     "hint_navigate": "navigieren",
     "hint_open": "öffnen"
+  },
+  "topbar": {
+    "connected": "Mit mon-Server verbunden",
+    "connection_lost": "Verbindung verloren – erneuter Versuch",
+    "search_placeholder": "Suchen…",
+    "open_palette": "Befehlspalette öffnen (Cmd+K)",
+    "change_language": "Sprache ändern",
+    "totp_active": "2FA",
+    "lang_auto": "Automatisch",
+    "lang_en": "English",
+    "lang_de": "Deutsch"
   }
 }
