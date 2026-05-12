@@ -1,0 +1,105 @@
+name: fuzz
+
+on:
+  schedule:
+    # Nightly at 03:00 UTC. Don't conflict with the daily backups window.
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      fuzztime:
+        description: 'Seconds per fuzzer (default 300)'
+        default: '300'
+        required: false
+
+permissions:
+  contents: read
+  issues: write   # to file crash reports
+
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - { pkg: ./internal/agent/collector/packages, name: FuzzAPTLine }
+          - { pkg: ./internal/agent/collector/packages, name: FuzzAPTRepoIsSecurity }
+          - { pkg: ./internal/agent/collector/packages, name: FuzzDNFLine }
+          - { pkg: ./internal/server/api,                name: FuzzBearer }
+          - { pkg: ./internal/server/api,                name: FuzzIngestRequestDecode }
+          - { pkg: ./internal/server/store,              name: FuzzHashSecret }
+          - { pkg: ./internal/agent/collector/identity,  name: FuzzParseJournalctl }
+          - { pkg: ./internal/server/alerts,             name: FuzzSQLComparator }
+          - { pkg: ./internal/server/alerts,             name: FuzzParamHelpers }
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
+        with:
+          go-version: '1.26.2'
+          cache: true
+      - name: run fuzz target
+        id: fuzz
+        # FUZZTIME is the only externally-controlled input here (workflow_dispatch
+        # only — actor must already have write access). Routed via env to avoid
+        # shell-injection patterns even though the surface is trivial.
+        # FUZZ_NAME / FUZZ_PKG come from the static matrix above; safe to expand.
+        env:
+          FUZZTIME: ${{ github.event.inputs.fuzztime || '300' }}
+          FUZZ_NAME: ${{ matrix.target.name }}
+          FUZZ_PKG: ${{ matrix.target.pkg }}
+        run: |
+          set -euo pipefail
+          go test -run='^$' -fuzz="^${FUZZ_NAME}\$" \
+            -fuzztime="${FUZZTIME}s" "${FUZZ_PKG}"
+      - name: upload corpus on failure
+        if: failure()
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: fuzz-corpus-${{ matrix.target.name }}
+          path: ${{ matrix.target.pkg }}/testdata/fuzz/${{ matrix.target.name }}/
+          retention-days: 14
+      - name: file crash issue
+        if: failure()
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        env:
+          TARGET: ${{ matrix.target.name }}
+          PKG: ${{ matrix.target.pkg }}
+        with:
+          script: |
+            const target = process.env.TARGET;
+            const pkg    = process.env.PKG;
+            const run    = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const title  = `fuzz: ${target} crashed on nightly run`;
+            // Check for existing open issue with the same title to avoid spam.
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: 'open', labels: 'fuzz-crash',
+            });
+            if (existing.data.some(i => i.title === title)) {
+              console.log('Existing open issue for this target — skipping new file.');
+              return;
+            }
+            await github.rest.issues.create({
+              owner: context.repo.owner, repo: context.repo.repo,
+              title,
+              body: [
+                `\`${target}\` in \`${pkg}\` crashed during the nightly fuzz run.`,
+                '',
+                `**Run:** ${run}`,
+                '',
+                'The crashing input has been uploaded as the `fuzz-corpus-*` artifact attached to the failed run. To reproduce locally:',
+                '',
+                '```bash',
+                `go test -run=^$ -fuzz=^${target}$ -fuzztime=10s ${pkg}`,
+                '```',
+                '',
+                'Inspect `testdata/fuzz/' + target + '/` for the new corpus entry.',
+              ].join('\n'),
+              labels: ['fuzz-crash', 'security'],
+            });
