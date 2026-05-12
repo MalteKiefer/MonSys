@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Copy, FileJson, RefreshCcw } from "lucide-react";
-import { useMemo, useState } from "react";
+import { ReactNode, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { Page } from "../components/page";
@@ -40,7 +40,11 @@ const LARGE_ARRAY_THRESHOLD = 50;
 const LARGE_STRING_THRESHOLD = 512;
 const ARRAY_PAGE = 5;
 
-export function AdminIngests() {
+// AdminIngestsContent renders the recent-list + payload viewer panels
+// without the outer `<Page>`. The consolidated /admin/logs view mounts it
+// inside a tab panel and surfaces the toolbar (range + host filter) via
+// `onMeta`.
+export function AdminIngestsContent({ onMeta }: { onMeta?: (node: ReactNode) => void } = {}) {
   const [hostID, setHostID] = useState("");
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
   const [rangeSec, setRangeSec] = useState<number>(0);
@@ -84,31 +88,36 @@ export function AdminIngests() {
     });
   }, [list.data, rangeSec]);
 
+  // Bubble the inline toolbar (range + host filter) up so the consolidated
+  // page can host it in its header beside the tab strip. The dependency
+  // list is intentionally narrow — the toolbar only depends on the values
+  // it reads/writes and the hosts list.
+  const hostList = hosts.data?.hosts;
+  useEffect(() => {
+    if (!onMeta) return;
+    onMeta(
+      <div className="flex items-center gap-2">
+        <TimeRangeSelector value={rangeSec} onChange={setRangeSec} options={RANGE_OPTIONS} />
+        <select
+          value={hostID}
+          onChange={(e) => {
+            setHostID(e.target.value);
+            setSelectedIdx(null);
+          }}
+          className="rounded-md border border-border bg-panel px-3 py-2 text-sm focus:border-accent focus:outline-none"
+        >
+          <option value="">All hosts</option>
+          {(hostList ?? []).map((h) => (
+            <option key={h.id} value={h.id}>{hostDisplay(h)}</option>
+          ))}
+        </select>
+      </div>,
+    );
+    return () => onMeta(null);
+  }, [onMeta, rangeSec, hostID, hostList]);
+
   return (
-    <Page
-      title="Agent ingests"
-      subtitle={`Last ${list.data?.entries.length ?? 0} captured payloads. Re-marshalled JSON; semantically identical to what the agent sent.`}
-      breadcrumb={[{ label: "Admin" }, { label: "Agent ingests" }]}
-      actions={
-        <div className="flex items-center gap-2">
-          <TimeRangeSelector value={rangeSec} onChange={setRangeSec} options={RANGE_OPTIONS} />
-          <select
-            value={hostID}
-            onChange={(e) => {
-              setHostID(e.target.value);
-              setSelectedIdx(null);
-            }}
-            className="rounded-md border border-border bg-panel px-3 py-2 text-sm focus:border-accent focus:outline-none"
-          >
-            <option value="">All hosts</option>
-            {(hosts.data?.hosts ?? []).map((h) => (
-              <option key={h.id} value={h.id}>{hostDisplay(h)}</option>
-            ))}
-          </select>
-        </div>
-      }
-    >
-      <div className="grid gap-4 lg:grid-cols-[420px_1fr]">
+    <div className="grid gap-4 lg:grid-cols-[420px_1fr]">
         <Panel>
           <PanelHeader>
             <h3 className="text-sm font-semibold">Recent</h3>
@@ -205,6 +214,19 @@ export function AdminIngests() {
           </PanelBody>
         </Panel>
       </div>
+  );
+}
+
+// Standalone page wrapper, retained for backwards-compat. The consolidated
+// /admin/logs route mounts AdminIngestsContent directly inside its tab.
+export function AdminIngests() {
+  return (
+    <Page
+      title="Agent ingests"
+      subtitle="Captured payloads from the agent. Re-marshalled JSON; semantically identical to what the agent sent."
+      breadcrumb={[{ label: "Admin" }, { label: "Agent ingests" }]}
+    >
+      <AdminIngestsContent />
     </Page>
   );
 }

@@ -1,6 +1,6 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { ClipboardList } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { ReactNode, useEffect, useMemo, useState } from "react";
 
 import { EmptyState, ErrorState, Page } from "../components/page";
 import {
@@ -25,7 +25,10 @@ type Resp = {
   total: number;
 };
 
-export function AdminAudit() {
+// AdminAuditContent renders the filter + table panel without the outer
+// `<Page>` wrapper. The consolidated /admin/logs view mounts it inside a
+// tab panel and surfaces the entry count via `onMeta`.
+export function AdminAuditContent({ onMeta }: { onMeta?: (node: ReactNode) => void } = {}) {
   const [actor, setActor] = useState("");
   const [action, setAction] = useState("");
   const [debouncedActor, setDebouncedActor] = useState("");
@@ -61,14 +64,16 @@ export function AdminAudit() {
   const total = audit.data?.total ?? 0;
   const entries = audit.data?.entries ?? [];
 
+  // Publish the entry-count badge to the parent so the consolidated page
+  // header can host it beside the tab strip.
+  useEffect(() => {
+    if (!onMeta) return;
+    onMeta(<span className="text-xs text-fg-subtle tabular-nums">{total} entries</span>);
+    return () => onMeta(null);
+  }, [onMeta, total]);
+
   return (
-    <Page
-      title="Audit log"
-      subtitle="Server-side record of admin-only actions: who changed what, when. Filter by exact actor email or action key."
-      breadcrumb={[{ label: "Admin" }, { label: "Audit log" }]}
-      actions={<span className="text-xs text-fg-subtle tabular-nums">{total} entries</span>}
-    >
-      <Panel>
+    <Panel>
         <PanelHeader>
           <div className="flex w-full flex-wrap items-end gap-3">
             <div className="min-w-[220px] flex-1">
@@ -172,6 +177,19 @@ export function AdminAudit() {
           </div>
         )}
       </Panel>
+  );
+}
+
+// Standalone page wrapper, retained for backwards-compat. The consolidated
+// /admin/logs route mounts AdminAuditContent directly inside its tab.
+export function AdminAudit() {
+  return (
+    <Page
+      title="Audit log"
+      subtitle="Server-side record of admin-only actions: who changed what, when. Filter by exact actor email or action key."
+      breadcrumb={[{ label: "Admin" }, { label: "Audit log" }]}
+    >
+      <AdminAuditContent />
     </Page>
   );
 }

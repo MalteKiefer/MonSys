@@ -2,6 +2,7 @@
 // the single source of truth for colors/spacing/typography. No third-party
 // component library is used — these compose directly on top of Tailwind.
 
+import { Check } from "lucide-react";
 import { ComponentPropsWithoutRef, KeyboardEvent, ReactNode, useRef } from "react";
 
 // ---- Layout primitives -----------------------------------------------------
@@ -377,5 +378,127 @@ export function Kbd({ children }: { children: ReactNode }) {
     <kbd className="rounded border border-border bg-panel-2 px-1.5 py-0.5 font-mono text-[10px] text-fg-muted">
       {children}
     </kbd>
+  );
+}
+
+// ---- Stepper -------------------------------------------------------------
+
+// Generic horizontal stepper. Each step is a button with a circle (number,
+// check for completed, accent fill for current) and a label. An optional
+// description shows under the label of the active step only. When `onJump`
+// is supplied, completed steps can be clicked and Arrow Left/Right cycles
+// focus; future steps are disabled. Without `onJump` the row is purely
+// presentational — the buttons render disabled but no click handler runs.
+export type StepperItem = { key: string; label: string; description?: string };
+
+export function Stepper({
+  items,
+  current,
+  completed,
+  onJump,
+  className = "",
+}: {
+  items: ReadonlyArray<StepperItem>;
+  current: number;
+  completed?: ReadonlyArray<number>;
+  onJump?: (idx: number) => void;
+  className?: string;
+}) {
+  const listRef = useRef<HTMLOListElement | null>(null);
+  const completedSet = new Set(completed ?? []);
+
+  function isCompleted(idx: number): boolean {
+    return completedSet.has(idx);
+  }
+
+  function canJumpTo(idx: number): boolean {
+    if (!onJump) return false;
+    if (idx === current) return false;
+    // Always allow jumping to a past or completed step. Future steps are
+    // only reachable if they are explicitly marked completed (e.g. when the
+    // caller has validated them ahead of time).
+    return idx < current || isCompleted(idx);
+  }
+
+  function focusStep(idx: number) {
+    const root = listRef.current;
+    if (!root) return;
+    const btn = root.querySelector<HTMLButtonElement>(`[data-step-idx="${idx}"]`);
+    btn?.focus();
+  }
+
+  function onKeyDown(e: KeyboardEvent<HTMLOListElement>) {
+    if (!onJump) return;
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    const delta = e.key === "ArrowRight" ? 1 : -1;
+    const next = (current + delta + items.length) % items.length;
+    if (canJumpTo(next) || next === current) {
+      if (next !== current) onJump(next);
+      focusStep(next);
+    }
+  }
+
+  return (
+    <ol
+      ref={listRef}
+      onKeyDown={onKeyDown}
+      className={`flex w-full items-start gap-2 ${className}`}
+      aria-label="Progress"
+    >
+      {items.map((item, idx) => {
+        const isCurrent = idx === current;
+        const isDone = isCompleted(idx) || idx < current;
+        const clickable = canJumpTo(idx);
+        const circleCls = isDone
+          ? "bg-ok/20 text-ok ring-ok/40"
+          : isCurrent
+            ? "bg-accent/20 text-accent ring-accent/50"
+            : "bg-panel-2 text-fg-subtle ring-border";
+        const labelCls = isCurrent
+          ? "text-fg"
+          : isDone
+            ? "text-fg-muted"
+            : "text-fg-subtle";
+        return (
+          <li key={item.key} className="flex flex-1 items-start gap-2">
+            <button
+              type="button"
+              data-step-idx={idx}
+              disabled={!clickable && !isCurrent}
+              tabIndex={isCurrent ? 0 : -1}
+              onClick={() => {
+                if (clickable && onJump) onJump(idx);
+              }}
+              className={`group flex flex-col items-start gap-1 rounded-md px-1 py-0.5 text-left transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-accent/40 ${
+                clickable ? "cursor-pointer" : "cursor-default"
+              }`}
+              aria-current={isCurrent ? "step" : undefined}
+            >
+              <span className="flex items-center gap-2">
+                <span
+                  aria-hidden
+                  className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ring-1 ring-inset transition-colors duration-150 ${circleCls}`}
+                >
+                  {isDone ? <Check className="h-3.5 w-3.5" /> : idx + 1}
+                </span>
+                <span className={`text-xs font-medium ${labelCls}`}>{item.label}</span>
+              </span>
+              {isCurrent && item.description && (
+                <span className="pl-8 text-[11px] leading-snug text-fg-subtle">
+                  {item.description}
+                </span>
+              )}
+            </button>
+            {idx < items.length - 1 && (
+              <span
+                aria-hidden
+                className={`mt-3 h-px flex-1 ${isDone ? "bg-ok/50" : "bg-border"}`}
+              />
+            )}
+          </li>
+        );
+      })}
+    </ol>
   );
 }

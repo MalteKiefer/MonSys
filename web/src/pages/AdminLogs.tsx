@@ -1,6 +1,6 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Pause, Play, Search } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { Page } from "../components/page";
@@ -51,7 +51,10 @@ type Resp = {
   seq: number;
 };
 
-export function AdminLogs() {
+// AdminLogsContent renders the toolbar + table body without the outer
+// `<Page>` wrapper. The consolidated /admin/logs view mounts it inside a
+// tab panel and forwards the header counter via `onMeta`.
+export function AdminLogsContent({ onMeta }: { onMeta?: (node: ReactNode) => void } = {}) {
   const [q, setQ] = useState("");
   const [debounced, setDebounced] = useState("");
   const [level, setLevel] = useState<(typeof LEVELS)[number]>("");
@@ -156,17 +159,22 @@ export function AdminLogs() {
     });
   }
 
+  // Surface header meta (count + seq) to the parent. We re-publish whenever
+  // the underlying numbers change so the tab container can host it in the
+  // page header beside the tab strip.
+  const seq = logs.data?.seq ?? 0;
+  useEffect(() => {
+    if (!onMeta) return;
+    onMeta(
+      <span className="text-xs text-fg-subtle tabular-nums">
+        {total} matching · seq {seq}
+      </span>,
+    );
+    return () => onMeta(null);
+  }, [onMeta, total, seq]);
+
   return (
-    <Page
-      title="Server logs"
-      subtitle="In-memory ring buffer. Older entries roll off — ship the JSON stream off-host for retention."
-      breadcrumb={[{ label: "Admin" }, { label: "Server logs" }]}
-      actions={
-        <span className="text-xs text-fg-subtle tabular-nums">
-          {total} matching · seq {logs.data?.seq ?? 0}
-        </span>
-      }
-    >
+    <>
       <Panel>
         <PanelHeader>
           <div className="flex w-full flex-wrap items-center gap-2">
@@ -322,6 +330,21 @@ export function AdminLogs() {
           </div>
         )}
       </Panel>
+    </>
+  );
+}
+
+// Standalone page wrapper, retained for backwards-compat / direct imports.
+// The consolidated /admin/logs route uses LogsPage instead; this is still
+// useful if anything embeds the page elsewhere.
+export function AdminLogs() {
+  return (
+    <Page
+      title="Server logs"
+      subtitle="In-memory ring buffer. Older entries roll off — ship the JSON stream off-host for retention."
+      breadcrumb={[{ label: "Admin" }, { label: "Server logs" }]}
+    >
+      <AdminLogsContent />
     </Page>
   );
 }

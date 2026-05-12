@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, PencilLine, Plus, Trash2, X } from "lucide-react";
+import { Activity, Clock, PencilLine, Plus, Trash2, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import { ChartLine, ChartSeries, colorFor } from "../components/Chart";
@@ -18,11 +18,15 @@ import {
   TH,
   THead,
   Table,
+  TabItem,
+  Tabs,
   TextInput,
   TimeRangeSelector,
 } from "../components/ui";
 import { api, ApiError } from "../lib/api";
 import { HostGroup, Monitor, MonitorInput, MonitorResult } from "../lib/types";
+
+type TabKey = "active" | "create" | "history";
 
 const TYPES: Monitor["type"][] = ["cert", "postgres", "mysql", "mongodb", "http", "tcp"];
 
@@ -63,6 +67,7 @@ export function AdminMonitors() {
   });
 
   const [panel, setPanel] = useState<SidePanelMode>({ kind: "closed" });
+  const [tab, setTab] = useState<TabKey>("active");
 
   // Keep the side-panel monitor in sync with the latest list data so live
   // status/latency updates while the panel is open. Lookup by id.
@@ -85,98 +90,54 @@ export function AdminMonitors() {
     return () => window.removeEventListener("keydown", onKey);
   }, [panel.kind]);
 
-  const addBtn = (
-    <Button variant="primary" onClick={() => setPanel({ kind: "create" })}>
-      <Plus className="h-3.5 w-3.5" /> Add monitor
-    </Button>
-  );
-
+  const monitors = list.data?.monitors ?? [];
   const subtitle = "Server-side periodic probes: cert expiry, DB reachability, HTTP, raw TCP.";
 
+  const tabs: ReadonlyArray<TabItem<TabKey>> = [
+    { key: "active", label: "Active monitors", icon: Activity, badge: monitors.length || undefined },
+    { key: "create", label: "Create monitor", icon: Plus },
+    { key: "history", label: "Recent results", icon: Clock },
+  ];
+
   return (
-    <Page title="Monitors" subtitle={subtitle} actions={addBtn}>
-      <Panel>
-        <PanelHeader>
-          <h3 className="text-sm font-semibold">All monitors</h3>
-          <span className="text-xs tabular-nums text-fg-subtle">
-            {(list.data?.monitors ?? []).length} total
-          </span>
-        </PanelHeader>
-        <PanelBody className="p-0 overflow-x-auto">
-          {list.isLoading ? (
-            <p className="px-5 py-4 text-sm text-fg-subtle">Loading…</p>
-          ) : (list.data?.monitors ?? []).length === 0 ? (
-            <p className="px-5 py-8 text-center text-sm text-fg-subtle">No monitors yet.</p>
-          ) : (
-            <Table>
-              <THead>
-                <tr>
-                  <TH>Type</TH>
-                  <TH>Name</TH>
-                  <TH>Target</TH>
-                  <TH>Interval</TH>
-                  <TH>Status</TH>
-                  <TH>Latency</TH>
-                  <TH>Last detail</TH>
-                  <TH className="text-right">Actions</TH>
-                </tr>
-              </THead>
-              <TBody>
-                {(list.data?.monitors ?? []).map((m) => (
-                  <tr
-                    key={m.id}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => setPanel({ kind: "detail", monitor: m })}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        setPanel({ kind: "detail", monitor: m });
-                      }
-                    }}
-                    className="cursor-pointer hover:bg-panel-2 focus:outline-none focus-visible:bg-panel-2 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/50"
-                  >
-                    <TD className="text-fg-muted">{m.type}</TD>
-                    <TD className="font-medium">{m.name}</TD>
-                    <TD className="font-mono text-xs text-fg-muted truncate max-w-xs">{m.target}</TD>
-                    <TD className="tabular-nums text-fg-muted">{m.interval_sec}s</TD>
-                    <TD>
-                      <StatusPill status={m.last_status ?? "unknown"}>{m.last_status ?? "?"}</StatusPill>
-                    </TD>
-                    <TD className="tabular-nums text-fg-muted">
-                      {m.last_latency_ms ? `${m.last_latency_ms} ms` : "—"}
-                    </TD>
-                    <TD className="font-mono text-xs text-fg-subtle truncate max-w-xs">{m.last_detail ?? "—"}</TD>
-                    <TD className="text-right">
-                      {/* Stop row-click propagation here so action buttons
-                          don't double-fire the row's open-detail handler. */}
-                      <div
-                        className="inline-flex items-center gap-1"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <Button onClick={() => setPanel({ kind: "detail", monitor: m })}>
-                          <PencilLine className="h-3.5 w-3.5" /> Edit
-                        </Button>
-                        <Button
-                          variant="danger"
-                          onClick={() => {
-                            if (confirm(`Delete monitor "${m.name}"?`))
-                              api(`/v1/monitors/${m.id}`, { method: "DELETE" }).then(() =>
-                                qc.invalidateQueries({ queryKey: ["monitors"] }),
-                              );
-                          }}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </TD>
-                  </tr>
-                ))}
-              </TBody>
-            </Table>
-          )}
-        </PanelBody>
-      </Panel>
+    <Page title="Monitors" subtitle={subtitle}>
+      <Tabs items={tabs} value={tab} onChange={setTab} />
+
+      <div
+        role="tabpanel"
+        id={`panel-${tab}`}
+        aria-labelledby={`tab-${tab}`}
+        className="mt-3"
+      >
+        {tab === "active" && (
+          <ActiveMonitorsTab
+            monitors={monitors}
+            isLoading={list.isLoading}
+            onOpenDetail={(m) => setPanel({ kind: "detail", monitor: m })}
+            onCreate={() => setTab("create")}
+            onDelete={(m) => {
+              if (confirm(`Delete monitor "${m.name}"?`))
+                api(`/v1/monitors/${m.id}`, { method: "DELETE" }).then(() =>
+                  qc.invalidateQueries({ queryKey: ["monitors"] }),
+                );
+            }}
+          />
+        )}
+
+        {tab === "create" && (
+          <CreateMonitorTab
+            onCreated={() => {
+              qc.invalidateQueries({ queryKey: ["monitors"] });
+              setTab("active");
+            }}
+            onCancel={() => setTab("active")}
+          />
+        )}
+
+        {tab === "history" && (
+          <RecentResultsTab monitors={monitors} isLoading={list.isLoading} />
+        )}
+      </div>
 
       {panel.kind !== "closed" && (
         <SlideOver onClose={close} title={panel.kind === "create" ? "New monitor" : liveSelected?.name ?? ""}>
@@ -199,6 +160,230 @@ export function AdminMonitors() {
         </SlideOver>
       )}
     </Page>
+  );
+}
+
+// ---- Tab: Active monitors ------------------------------------------------
+
+// Lists every running probe in a dense table. Row click opens the slide-over
+// detail/edit pane (preserves the modal flow the original page used). The
+// "+ Create monitor" button is in-tab — the page-level action slot is now
+// owned by the Tabs strip, so the create CTA lives next to the data it adds.
+function ActiveMonitorsTab({
+  monitors,
+  isLoading,
+  onOpenDetail,
+  onCreate,
+  onDelete,
+}: {
+  monitors: Monitor[];
+  isLoading: boolean;
+  onOpenDetail: (m: Monitor) => void;
+  onCreate: () => void;
+  onDelete: (m: Monitor) => void;
+}) {
+  return (
+    <Panel>
+      <PanelHeader>
+        <div className="flex items-center gap-3">
+          <h3 className="text-sm font-semibold">All monitors</h3>
+          <span className="text-xs tabular-nums text-fg-subtle">{monitors.length} total</span>
+        </div>
+        <Button variant="primary" size="sm" onClick={onCreate}>
+          <Plus className="h-3.5 w-3.5" /> Create monitor
+        </Button>
+      </PanelHeader>
+      <PanelBody className="p-0 overflow-x-auto">
+        {isLoading ? (
+          <p className="px-5 py-4 text-sm text-fg-subtle">Loading…</p>
+        ) : monitors.length === 0 ? (
+          <p className="px-5 py-8 text-center text-sm text-fg-subtle">No monitors yet.</p>
+        ) : (
+          <Table>
+            <THead>
+              <tr>
+                <TH>Type</TH>
+                <TH>Name</TH>
+                <TH>Target</TH>
+                <TH>Interval</TH>
+                <TH>Status</TH>
+                <TH>Latency</TH>
+                <TH>Last detail</TH>
+                <TH className="text-right">Actions</TH>
+              </tr>
+            </THead>
+            <TBody>
+              {monitors.map((m) => (
+                <tr
+                  key={m.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onOpenDetail(m)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onOpenDetail(m);
+                    }
+                  }}
+                  className="cursor-pointer hover:bg-panel-2 focus:outline-none focus-visible:bg-panel-2 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/50"
+                >
+                  <TD className="text-fg-muted">{m.type}</TD>
+                  <TD className="font-medium">{m.name}</TD>
+                  <TD className="font-mono text-xs text-fg-muted truncate max-w-xs">{m.target}</TD>
+                  <TD className="tabular-nums text-fg-muted">{m.interval_sec}s</TD>
+                  <TD>
+                    <StatusPill status={m.last_status ?? "unknown"}>{m.last_status ?? "?"}</StatusPill>
+                  </TD>
+                  <TD className="tabular-nums text-fg-muted">
+                    {m.last_latency_ms ? `${m.last_latency_ms} ms` : "—"}
+                  </TD>
+                  <TD className="font-mono text-xs text-fg-subtle truncate max-w-xs">{m.last_detail ?? "—"}</TD>
+                  <TD className="text-right">
+                    {/* Stop row-click propagation here so action buttons
+                        don't double-fire the row's open-detail handler. */}
+                    <div
+                      className="inline-flex items-center gap-1"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Button onClick={() => onOpenDetail(m)}>
+                        <PencilLine className="h-3.5 w-3.5" /> Edit
+                      </Button>
+                      <Button variant="danger" onClick={() => onDelete(m)}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </TD>
+                </tr>
+              ))}
+            </TBody>
+          </Table>
+        )}
+      </PanelBody>
+    </Panel>
+  );
+}
+
+// ---- Tab: Create monitor -------------------------------------------------
+
+// Hosts the same MonitorForm used inside the slide-over, but rendered inline
+// in its own tab for a more focused entry experience. Saving switches back to
+// the "active" tab so the freshly created monitor is visible immediately.
+function CreateMonitorTab({
+  onCreated,
+  onCancel,
+}: {
+  onCreated: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <Panel>
+      <PanelHeader>
+        <h3 className="text-sm font-semibold">New monitor</h3>
+        <span className="text-xs text-fg-subtle">
+          Pick a probe type — target syntax updates inline.
+        </span>
+      </PanelHeader>
+      <PanelBody>
+        <MonitorForm initial={null} onCancel={onCancel} onSaved={onCreated} />
+      </PanelBody>
+    </Panel>
+  );
+}
+
+// ---- Tab: Recent results -------------------------------------------------
+
+// Aggregated, read-only snapshot of the latest probe outcome per monitor. We
+// use the data already loaded for the "active" tab (each Monitor row carries
+// its most recent status/latency/detail) so no extra request is needed.
+// Rows are sorted with failures first, then warnings, then unknown, then OK,
+// giving the operator an at-a-glance triage view.
+const STATUS_RANK: Record<string, number> = {
+  fail: 0,
+  warn: 1,
+  unknown: 2,
+  ok: 3,
+};
+
+function RecentResultsTab({
+  monitors,
+  isLoading,
+}: {
+  monitors: Monitor[];
+  isLoading: boolean;
+}) {
+  const sorted = useMemo(() => {
+    const copy = monitors.slice();
+    copy.sort((a, b) => {
+      const ra = STATUS_RANK[a.last_status ?? "unknown"] ?? 2;
+      const rb = STATUS_RANK[b.last_status ?? "unknown"] ?? 2;
+      if (ra !== rb) return ra - rb;
+      return a.name.localeCompare(b.name);
+    });
+    return copy;
+  }, [monitors]);
+
+  const okCount = monitors.filter((m) => m.last_status === "ok").length;
+  const warnCount = monitors.filter((m) => m.last_status === "warn").length;
+  const failCount = monitors.filter((m) => m.last_status === "fail").length;
+  const unknownCount = monitors.length - okCount - warnCount - failCount;
+
+  return (
+    <Panel>
+      <PanelHeader>
+        <div className="flex items-center gap-3">
+          <h3 className="text-sm font-semibold">Recent results</h3>
+          <span className="text-xs tabular-nums text-fg-subtle">
+            latest probe outcome per monitor
+          </span>
+        </div>
+        <div className="flex items-center gap-2 text-[11px] tabular-nums">
+          <StatusPill status="fail">{failCount} fail</StatusPill>
+          <StatusPill status="warn">{warnCount} warn</StatusPill>
+          <StatusPill status="unknown">{unknownCount} unknown</StatusPill>
+          <StatusPill status="ok">{okCount} ok</StatusPill>
+        </div>
+      </PanelHeader>
+      <PanelBody className="p-0 overflow-x-auto">
+        {isLoading ? (
+          <p className="px-5 py-4 text-sm text-fg-subtle">Loading…</p>
+        ) : sorted.length === 0 ? (
+          <p className="px-5 py-8 text-center text-sm text-fg-subtle">No monitor results yet.</p>
+        ) : (
+          <Table>
+            <THead>
+              <tr>
+                <TH>Status</TH>
+                <TH>Name</TH>
+                <TH>Type</TH>
+                <TH>Target</TH>
+                <TH>Latency</TH>
+                <TH>Detail</TH>
+              </tr>
+            </THead>
+            <TBody>
+              {sorted.map((m) => (
+                <tr key={m.id}>
+                  <TD>
+                    <StatusPill status={m.last_status ?? "unknown"}>
+                      {m.last_status ?? "?"}
+                    </StatusPill>
+                  </TD>
+                  <TD className="font-medium">{m.name}</TD>
+                  <TD className="text-fg-muted">{m.type}</TD>
+                  <TD className="font-mono text-xs text-fg-muted truncate max-w-xs">{m.target}</TD>
+                  <TD className="tabular-nums text-fg-muted">
+                    {m.last_latency_ms ? `${m.last_latency_ms} ms` : "—"}
+                  </TD>
+                  <TD className="font-mono text-xs text-fg-subtle truncate max-w-md">
+                    {m.last_detail ?? "—"}
+                  </TD>
+                </tr>
+              ))}
+            </TBody>
+          </Table>
+        )}
+      </PanelBody>
+    </Panel>
   );
 }
 

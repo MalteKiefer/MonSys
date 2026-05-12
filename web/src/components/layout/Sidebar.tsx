@@ -100,9 +100,9 @@ export const ADMIN_SUBGROUPS: AdminSubGroup[] = [
     label: "Diagnostics",
     icon: Stethoscope,
     items: [
-      { to: "/admin/logs", label: "Server logs", icon: FileSearch },
-      { to: "/admin/ingests", label: "Agent ingests", icon: FileSearch },
-      { to: "/admin/audit", label: "Audit log", icon: AlertTriangle },
+      // Server logs, agent ingests, and audit log are consolidated under
+      // /admin/logs as tabs — the page reads `?tab=` to pre-select one.
+      { to: "/admin/logs", label: "Logs", icon: FileSearch },
     ],
   },
 ];

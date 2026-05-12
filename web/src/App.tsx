@@ -36,18 +36,15 @@ import { DensityProvider } from "./lib/density-store";
 const AdminAgentConfig = lazy(() =>
   import("./pages/AdminAgentConfig").then((m) => ({ default: m.AdminAgentConfig })),
 );
-const AdminAudit = lazy(() =>
-  import("./pages/AdminAudit").then((m) => ({ default: m.AdminAudit })),
-);
 const AdminEnrollments = lazy(() => import("./pages/AdminEnrollments"));
 const AdminGroups = lazy(() =>
   import("./pages/AdminGroups").then((m) => ({ default: m.AdminGroups })),
 );
-const AdminIngests = lazy(() =>
-  import("./pages/AdminIngests").then((m) => ({ default: m.AdminIngests })),
-);
-const AdminLogs = lazy(() =>
-  import("./pages/AdminLogs").then((m) => ({ default: m.AdminLogs })),
+// LogsPage consolidates the former /admin/logs, /admin/ingests, and
+// /admin/audit views into a single tabbed page. The old paths still resolve
+// via Navigate redirects below.
+const LogsPage = lazy(() =>
+  import("./pages/LogsPage").then((m) => ({ default: m.LogsPage })),
 );
 const AdminMail = lazy(() =>
   import("./pages/AdminMail").then((m) => ({ default: m.AdminMail })),
@@ -137,15 +134,18 @@ export function App() {
         <Route path="/monitors" element={<AdminMonitors />} />
         <Route path="/admin/monitors" element={<Navigate to="/monitors" replace />} />
         <Route path="/admin/groups" element={<RequireAdmin><AdminGroups /></RequireAdmin>} />
-        <Route path="/admin/logs" element={<RequireAdmin><AdminLogs /></RequireAdmin>} />
-        <Route path="/admin/ingests" element={<RequireAdmin><AdminIngests /></RequireAdmin>} />
+        <Route path="/admin/logs" element={<RequireAdmin><LogsPage /></RequireAdmin>} />
+        {/* Legacy /admin/ingests and /admin/audit deep-links continue to
+            work by redirecting to the consolidated /admin/logs page with
+            the appropriate tab pre-selected. */}
+        <Route path="/admin/ingests" element={<Navigate to="/admin/logs?tab=ingest" replace />} />
+        <Route path="/admin/audit" element={<Navigate to="/admin/logs?tab=audit" replace />} />
         <Route path="/admin/agent-config" element={<RequireAdmin><AdminAgentConfig /></RequireAdmin>} />
         <Route path="/admin/enrollments" element={<RequireAdmin><AdminEnrollments /></RequireAdmin>} />
         <Route path="/admin/mail" element={<RequireAdmin><AdminMail /></RequireAdmin>} />
         <Route path="/admin/quiet-hours" element={<RequireAdmin><AdminQuietHours /></RequireAdmin>} />
         <Route path="/admin/users" element={<RequireAdmin><AdminUsers /></RequireAdmin>} />
         <Route path="/admin/security" element={<RequireAdmin><AdminSecurity /></RequireAdmin>} />
-        <Route path="/admin/audit" element={<RequireAdmin><AdminAudit /></RequireAdmin>} />
         <Route path="/login" element={<Navigate to="/" replace />} />
         <Route path="/reset" element={<Reset />} />
         <Route path="*" element={<Navigate to="/" replace />} />

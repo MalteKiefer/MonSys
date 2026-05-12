@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ShieldAlert } from "lucide-react";
+import { Activity, Lock, Shield, ShieldAlert } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import {
   Button,
@@ -10,6 +11,8 @@ import {
   PanelHeader,
   Skeleton,
   SuccessBox,
+  Tabs,
+  type TabItem,
   TextInput,
 } from "../components/ui";
 import { api, ApiError } from "../lib/api";
@@ -19,8 +22,33 @@ import { ForceMode, PasswordPolicy, RevokeAllSessionsResponse, SecurityPolicy } 
 // don't follow the dark/light palette. Migrate to semantic tokens
 // (text-fg-muted, bg-panel, border-border, …) in a follow-up.
 
+type TabKey = "password" | "auth" | "sessions";
+
+const TAB_ITEMS: ReadonlyArray<TabItem<TabKey>> = [
+  { key: "password", label: "Password policy", icon: Lock },
+  { key: "auth", label: "Authentication", icon: Shield },
+  { key: "sessions", label: "Active sessions", icon: Activity },
+];
+
+function isTabKey(v: string | null): v is TabKey {
+  return v === "password" || v === "auth" || v === "sessions";
+}
+
 export function AdminSecurity() {
   const qc = useQueryClient();
+
+  // Deep-link via ?tab=… — fall back to "password".
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialTab = searchParams.get("tab");
+  const [activeTab, setActiveTab] = useState<TabKey>(isTabKey(initialTab) ? initialTab : "password");
+
+  function onTabChange(next: TabKey) {
+    setActiveTab(next);
+    const params = new URLSearchParams(searchParams);
+    params.set("tab", next);
+    setSearchParams(params, { replace: true });
+  }
+
   const policy = useQuery({
     queryKey: ["password-policy"],
     queryFn: () => api<PasswordPolicy>("/v1/admin/security/password-policy"),
@@ -91,7 +119,7 @@ export function AdminSecurity() {
     return (
       <div className="mx-auto max-w-3xl space-y-4 p-6">
         <Skeleton className="h-7 w-56" />
-        <Skeleton className="h-64" />
+        <Skeleton className="h-10 w-full" />
         <Skeleton className="h-64" />
       </div>
     );
@@ -167,161 +195,222 @@ export function AdminSecurity() {
     <div className="mx-auto max-w-3xl space-y-6 p-6">
       <header>
         <h2 className="text-lg font-semibold">Security</h2>
-        <p className="text-sm text-fg-muted">Password requirements applied to all new and changed passwords.</p>
+        <p className="text-sm text-fg-muted">
+          Password requirements, authentication enforcement, and active session controls.
+        </p>
       </header>
 
-      <Panel>
-        <PanelHeader>
-          <h3 className="text-sm font-semibold text-fg">Password policy</h3>
-        </PanelHeader>
-        <PanelBody>
-          <form onSubmit={submit} className="space-y-4">
-            <label className="block">
-              <span className="mb-1 block text-xs font-medium text-fg-muted">Minimum length</span>
-              <TextInput
-                type="number"
-                min={4}
-                max={128}
-                value={draft.min_length}
-                onChange={(e) => set("min_length")(parseInt(e.target.value || "0", 10))}
-                className="w-32"
-              />
-            </label>
+      <Tabs items={TAB_ITEMS} value={activeTab} onChange={onTabChange} />
 
-            <fieldset className="grid grid-cols-2 gap-2 text-sm text-fg">
-              <Toggle label="Uppercase letter" value={draft.require_upper} onChange={set("require_upper")} />
-              <Toggle label="Lowercase letter" value={draft.require_lower} onChange={set("require_lower")} />
-              <Toggle label="Digit" value={draft.require_digit} onChange={set("require_digit")} />
-              <Toggle label="Symbol" value={draft.require_symbol} onChange={set("require_symbol")} />
-            </fieldset>
+      {activeTab === "password" && (
+        <div
+          role="tabpanel"
+          id="panel-password"
+          aria-labelledby="tab-password"
+        >
+          <Panel>
+            <PanelHeader>
+              <h3 className="text-sm font-semibold text-fg">Password policy</h3>
+            </PanelHeader>
+            <PanelBody>
+              <form onSubmit={submit} className="space-y-4">
+                <label className="block">
+                  <span className="mb-1 block text-xs font-medium text-fg-muted">Minimum length</span>
+                  <TextInput
+                    type="number"
+                    min={4}
+                    max={128}
+                    value={draft.min_length}
+                    onChange={(e) => set("min_length")(parseInt(e.target.value || "0", 10))}
+                    className="w-32"
+                  />
+                </label>
 
-            <label className="block">
-              <span className="mb-1 block text-xs font-medium text-fg-muted">
-                Max age (days, 0 = no expiry)
-              </span>
-              <TextInput
-                type="number"
-                min={0}
-                value={draft.max_age_days}
-                onChange={(e) => set("max_age_days")(parseInt(e.target.value || "0", 10))}
-                className="w-32"
-              />
-            </label>
+                <fieldset className="grid grid-cols-2 gap-2 text-sm text-fg">
+                  <Toggle label="Uppercase letter" value={draft.require_upper} onChange={set("require_upper")} />
+                  <Toggle label="Lowercase letter" value={draft.require_lower} onChange={set("require_lower")} />
+                  <Toggle label="Digit" value={draft.require_digit} onChange={set("require_digit")} />
+                  <Toggle label="Symbol" value={draft.require_symbol} onChange={set("require_symbol")} />
+                </fieldset>
 
-            <Button type="submit" variant="primary" disabled={save.isPending}>
-              {save.isPending ? "Saving…" : "Save policy"}
-            </Button>
-            {msg &&
-              (msg.kind === "ok" ? (
-                <SuccessBox>{msg.text}</SuccessBox>
-              ) : (
-                <ErrorBox>{msg.text}</ErrorBox>
-              ))}
-          </form>
-        </PanelBody>
-      </Panel>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-medium text-fg-muted">
+                    Max age (days, 0 = no expiry)
+                  </span>
+                  <TextInput
+                    type="number"
+                    min={0}
+                    value={draft.max_age_days}
+                    onChange={(e) => set("max_age_days")(parseInt(e.target.value || "0", 10))}
+                    className="w-32"
+                  />
+                </label>
 
-      <Panel>
-        <PanelHeader>
-          <h3 className="text-sm font-semibold text-fg">Force-Modus &amp; Session-Limits</h3>
-        </PanelHeader>
-        <PanelBody>
-          <form onSubmit={submitSec} className="space-y-4">
-            <label className="block">
-              <span className="mb-1 block text-xs font-medium text-fg-muted">Force-Modus</span>
-              <select
-                value={secDraft.force_mode}
-                onChange={(e) => setSec("force_mode")(e.target.value as ForceMode)}
-                className={selectCls}
-              >
-                <option value="off">Aus (kein Zwang)</option>
-                <option value="2fa_any">Passkey ODER TOTP für alle</option>
-                <option value="passkey_required">Passkey verpflichtend für alle</option>
-              </select>
-            </label>
+                <Button type="submit" variant="primary" disabled={save.isPending}>
+                  {save.isPending ? "Saving…" : "Save policy"}
+                </Button>
+                {msg &&
+                  (msg.kind === "ok" ? (
+                    <SuccessBox>{msg.text}</SuccessBox>
+                  ) : (
+                    <ErrorBox>{msg.text}</ErrorBox>
+                  ))}
+              </form>
+            </PanelBody>
+          </Panel>
+        </div>
+      )}
 
-            <label className="block">
-              <span className="mb-1 block text-xs font-medium text-fg-muted">
-                Grace-Period (Tage)
-              </span>
-              <select
-                value={secDraft.grace_days}
-                onChange={(e) => setSec("grace_days")(parseInt(e.target.value, 10))}
-                className={selectCls}
-              >
-                <option value={0}>0 — sofort</option>
-                <option value={1}>1 Tag</option>
-                <option value={7}>7 Tage</option>
-                <option value={30}>30 Tage</option>
-              </select>
-            </label>
+      {activeTab === "auth" && (
+        <div
+          role="tabpanel"
+          id="panel-auth"
+          aria-labelledby="tab-auth"
+        >
+          <Panel>
+            <PanelHeader>
+              <h3 className="text-sm font-semibold text-fg">Force-Modus &amp; Session-Limits</h3>
+            </PanelHeader>
+            <PanelBody>
+              <form onSubmit={submitSec} className="space-y-4">
+                <label className="block">
+                  <span className="mb-1 block text-xs font-medium text-fg-muted">Force-Modus</span>
+                  <select
+                    value={secDraft.force_mode}
+                    onChange={(e) => setSec("force_mode")(e.target.value as ForceMode)}
+                    className={selectCls}
+                  >
+                    <option value="off">Aus (kein Zwang)</option>
+                    <option value="2fa_any">Passkey ODER TOTP für alle</option>
+                    <option value="passkey_required">Passkey verpflichtend für alle</option>
+                  </select>
+                </label>
 
-            <label className="block">
-              <span className="mb-1 block text-xs font-medium text-fg-muted">
-                Max Session (Stunden, 1–720)
-              </span>
-              <TextInput
-                type="number"
-                min={1}
-                max={720}
-                value={secDraft.max_session_hours}
-                onChange={(e) =>
-                  setSec("max_session_hours")(parseInt(e.target.value || "0", 10))
-                }
-                className="w-32"
-              />
-            </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-medium text-fg-muted">
+                    Grace-Period (Tage)
+                  </span>
+                  <select
+                    value={secDraft.grace_days}
+                    onChange={(e) => setSec("grace_days")(parseInt(e.target.value, 10))}
+                    className={selectCls}
+                  >
+                    <option value={0}>0 — sofort</option>
+                    <option value={1}>1 Tag</option>
+                    <option value={7}>7 Tage</option>
+                    <option value={30}>30 Tage</option>
+                  </select>
+                </label>
 
-            <label className="block">
-              <span className="mb-1 block text-xs font-medium text-fg-muted">
-                Idle-Timeout (Minuten, 0–10080)
-              </span>
-              <TextInput
-                type="number"
-                min={0}
-                max={10080}
-                value={secDraft.idle_timeout_minutes}
-                onChange={(e) =>
-                  setSec("idle_timeout_minutes")(parseInt(e.target.value || "0", 10))
-                }
-                className="w-32"
-              />
-              <span className="mt-1 block text-xs text-fg-muted">0 = aus</span>
-            </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-medium text-fg-muted">
+                    Max Session (Stunden, 1–720)
+                  </span>
+                  <TextInput
+                    type="number"
+                    min={1}
+                    max={720}
+                    value={secDraft.max_session_hours}
+                    onChange={(e) =>
+                      setSec("max_session_hours")(parseInt(e.target.value || "0", 10))
+                    }
+                    className="w-32"
+                  />
+                </label>
 
-            {escalatingToPasskey && (
-              <div className="flex items-start gap-2 rounded-md border border-yellow-500/40 bg-yellow-500/10 p-3 text-sm text-yellow-200">
-                <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-                <span>
-                  Achtung: alle Nutzer ohne Passkey werden nach Grace-Period gesperrt.
-                  Sicherstellen, dass mindestens du selbst einen Passkey eingerichtet hast.
-                </span>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-medium text-fg-muted">
+                    Idle-Timeout (Minuten, 0–10080)
+                  </span>
+                  <TextInput
+                    type="number"
+                    min={0}
+                    max={10080}
+                    value={secDraft.idle_timeout_minutes}
+                    onChange={(e) =>
+                      setSec("idle_timeout_minutes")(parseInt(e.target.value || "0", 10))
+                    }
+                    className="w-32"
+                  />
+                  <span className="mt-1 block text-xs text-fg-muted">0 = aus</span>
+                </label>
+
+                {escalatingToPasskey && (
+                  <div className="flex items-start gap-2 rounded-md border border-yellow-500/40 bg-yellow-500/10 p-3 text-sm text-yellow-200">
+                    <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                    <span>
+                      Achtung: alle Nutzer ohne Passkey werden nach Grace-Period gesperrt.
+                      Sicherstellen, dass mindestens du selbst einen Passkey eingerichtet hast.
+                    </span>
+                  </div>
+                )}
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button type="submit" variant="primary" disabled={saveSec.isPending}>
+                    {saveSec.isPending ? "Speichern…" : "Speichern"}
+                  </Button>
+                </div>
+
+                {secMsg &&
+                  (secMsg.kind === "ok" ? (
+                    <SuccessBox>{secMsg.text}</SuccessBox>
+                  ) : (
+                    <ErrorBox>{secMsg.text}</ErrorBox>
+                  ))}
+              </form>
+            </PanelBody>
+          </Panel>
+        </div>
+      )}
+
+      {activeTab === "sessions" && (
+        <div
+          role="tabpanel"
+          id="panel-sessions"
+          aria-labelledby="tab-sessions"
+        >
+          <Panel>
+            <PanelHeader>
+              <h3 className="text-sm font-semibold text-fg">Active sessions</h3>
+            </PanelHeader>
+            <PanelBody>
+              <div className="space-y-4">
+                <p className="text-sm text-fg-muted">
+                  Invalidiert alle aktiven Sessions aller Nutzer. Deine eigene Session bleibt
+                  erhalten, alle anderen werden sofort ausgeloggt und müssen sich neu anmelden.
+                  Nützlich nach einer Policy-Verschärfung oder einem vermuteten Token-Leak.
+                </p>
+
+                <div className="flex items-start gap-2 rounded-md border border-fail/30 bg-fail/10 p-3 text-sm text-fail">
+                  <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                  <span>
+                    Diese Aktion kann nicht rückgängig gemacht werden. Stelle sicher, dass du
+                    weißt, was du tust.
+                  </span>
+                </div>
+
+                <div>
+                  <Button
+                    type="button"
+                    variant="danger"
+                    onClick={onRevokeAll}
+                    disabled={revokeAll.isPending}
+                  >
+                    {revokeAll.isPending ? "Revoking…" : "Alle Sessions revoken"}
+                  </Button>
+                </div>
+
+                {secMsg &&
+                  (secMsg.kind === "ok" ? (
+                    <SuccessBox>{secMsg.text}</SuccessBox>
+                  ) : (
+                    <ErrorBox>{secMsg.text}</ErrorBox>
+                  ))}
               </div>
-            )}
-
-            <div className="flex flex-wrap items-center gap-3">
-              <Button type="submit" variant="primary" disabled={saveSec.isPending}>
-                {saveSec.isPending ? "Speichern…" : "Speichern"}
-              </Button>
-              <Button
-                type="button"
-                variant="danger"
-                onClick={onRevokeAll}
-                disabled={revokeAll.isPending}
-              >
-                {revokeAll.isPending ? "Revoking…" : "Alle Sessions revoken"}
-              </Button>
-            </div>
-
-            {secMsg &&
-              (secMsg.kind === "ok" ? (
-                <SuccessBox>{secMsg.text}</SuccessBox>
-              ) : (
-                <ErrorBox>{secMsg.text}</ErrorBox>
-              ))}
-          </form>
-        </PanelBody>
-      </Panel>
+            </PanelBody>
+          </Panel>
+        </div>
+      )}
     </div>
   );
 }

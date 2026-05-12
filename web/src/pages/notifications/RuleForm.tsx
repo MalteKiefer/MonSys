@@ -60,7 +60,7 @@ import { LivePreview } from "./RuleWizard/LivePreview";
 import { StepDetect } from "./RuleWizard/StepDetect";
 import { StepNotify } from "./RuleWizard/StepNotify";
 import { StepScope } from "./RuleWizard/StepScope";
-import { STEP_LABELS, Stepper } from "./RuleWizard/Stepper";
+import { STEP_LABELS, Stepper, type StepperItem } from "./RuleWizard/Stepper";
 
 export function RuleForm({
   initial,
@@ -266,6 +266,23 @@ export function RuleForm({
     setDraft((d) => ({ ...d, step: s }));
   }
 
+  // Map the wizard's 1-based Step state onto the generic Stepper's 0-based
+  // index API. `completed` lists future steps the user has already validated
+  // (so they remain jumpable forward); past steps are always reachable.
+  const stepperItems: StepperItem[] = [
+    { key: "detect", label: STEP_LABELS[1] },
+    { key: "scope", label: STEP_LABELS[2] },
+    { key: "notify", label: STEP_LABELS[3] },
+  ];
+  const currentIdx = draft.step - 1;
+  const completedIdx: number[] = [];
+  if (canForward) {
+    for (let i = currentIdx + 1; i < stepperItems.length; i++) completedIdx.push(i);
+  }
+  function onJumpIdx(idx: number) {
+    goTo((idx + 1) as Step);
+  }
+
   return (
     <Panel>
       <PanelHeader>
@@ -274,7 +291,12 @@ export function RuleForm({
             {initial ? `Edit ${initial.name}` : "New rule"}
           </h3>
           <div className="hidden flex-1 px-4 md:block">
-            <Stepper step={draft.step} canForward={canForward} onJump={goTo} />
+            <Stepper
+              items={stepperItems}
+              current={currentIdx}
+              completed={completedIdx}
+              onJump={onJumpIdx}
+            />
           </div>
           <button
             type="button"
@@ -313,7 +335,12 @@ export function RuleForm({
       <PanelBody>
         {/* Mobile stepper — header version is desktop-only */}
         <div className="mb-3 md:hidden">
-          <Stepper step={draft.step} canForward={canForward} onJump={goTo} />
+          <Stepper
+            items={stepperItems}
+            current={currentIdx}
+            completed={completedIdx}
+            onJump={onJumpIdx}
+          />
         </div>
 
         <form onSubmit={onSubmit} className="space-y-4">

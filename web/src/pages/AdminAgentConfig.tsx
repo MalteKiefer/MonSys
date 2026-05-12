@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, Layers, PencilLine, Plus, Settings, Trash2 } from "lucide-react";
+import { Eye, Layers, PencilLine, Plus, Server, Settings, Trash2, Users } from "lucide-react";
 import { FormEvent, useMemo, useState } from "react";
 
 import { Page } from "../components/page";
@@ -13,6 +13,8 @@ import {
   PanelHeader,
   Skeleton,
   StatusPill,
+  TabItem,
+  Tabs,
   TBody,
   TD,
   TH,
@@ -33,6 +35,16 @@ import { hostDisplay } from "../lib/utils";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+// Tabs split by scope axis. The original page mixed global/group/host rows in
+// a single table with a Scope column; that conflated the singleton "global
+// defaults" row with the N-of-each group/host overrides. Separating by tab:
+//   - makes the singleton nature of `global` explicit (one row, edited in
+//     place);
+//   - lets the group/host tables drop the redundant Scope column;
+//   - gives the merged-config preview its own surface instead of competing
+//     with the list for vertical space.
+type TabKey = "global" | "groups" | "hosts" | "preview";
+
 export function AdminAgentConfig() {
   const qc = useQueryClient();
   const list = useQuery({
@@ -48,146 +60,308 @@ export function AdminAgentConfig() {
     queryFn: () => api<{ groups: HostGroup[] }>("/v1/groups"),
   });
 
+  const [tab, setTab] = useState<TabKey>("global");
   const [editing, setEditing] = useState<AgentConfigEntry | null>(null);
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState<AgentConfigEntry["scope"] | null>(null);
   const [selectedHostID, setSelectedHostID] = useState<string>("");
   const [previewHost, setPreviewHost] = useState<Host | null>(null);
+
+  const configs = list.data?.configs ?? [];
+  const globalCfg = useMemo(() => configs.find((c) => c.scope === "global") ?? null, [configs]);
+  const groupCfgs = useMemo(() => configs.filter((c) => c.scope === "group"), [configs]);
+  const hostCfgs = useMemo(() => configs.filter((c) => c.scope === "host"), [configs]);
+
+  const tabs: ReadonlyArray<TabItem<TabKey>> = [
+    { key: "global", label: "Global defaults", icon: Settings, badge: globalCfg ? "1" : "0" },
+    { key: "groups", label: "Group overrides", icon: Users, badge: String(groupCfgs.length) },
+    { key: "hosts", label: "Host overrides", icon: Server, badge: String(hostCfgs.length) },
+    { key: "preview", label: "Preview", icon: Eye },
+  ];
+
+  const closeForm = () => {
+    setEditing(null);
+    setCreating(null);
+  };
+  const onSaved = () => {
+    qc.invalidateQueries({ queryKey: ["agent-configs"] });
+    closeForm();
+  };
+
+  // Show form when creating a new row or editing an existing one. The form's
+  // `scope` is locked when editing (server keys rows by (scope, target_id));
+  // when creating we seed it from the tab the user pressed "New" on so they
+  // don't have to reselect.
+  const formInitial: AgentConfigEntry | null = editing;
+  const formScope: AgentConfigEntry["scope"] = editing?.scope ?? creating ?? "global";
 
   return (
     <Page
       title="Agent configuration"
       subtitle="Server-managed knobs the agent applies after first start. Host overrides take precedence over group overrides, group overrides over global. Missing keys fall back to the agent's compiled defaults."
     >
-      {(creating || editing) && (
+      <Tabs items={tabs} value={tab} onChange={setTab} />
+
+      {(creating !== null || editing) && (
         <ConfigForm
-          initial={editing}
+          initial={formInitial}
+          scope={formScope}
+          lockScope={editing !== null || creating !== null}
           hosts={hosts.data?.hosts ?? []}
           groups={groups.data?.groups ?? []}
-          onCancel={() => {
-            setEditing(null);
-            setCreating(false);
-          }}
-          onSaved={() => {
-            qc.invalidateQueries({ queryKey: ["agent-configs"] });
-            setEditing(null);
-            setCreating(false);
+          onCancel={closeForm}
+          onSaved={onSaved}
+        />
+      )}
+
+      {tab === "global" && (
+        <GlobalTab
+          cfg={globalCfg}
+          loading={list.isLoading}
+          onEdit={() => globalCfg && setEditing(globalCfg)}
+          onCreate={() => setCreating("global")}
+          onDelete={() => {
+            if (!globalCfg) return;
+            if (confirm("Delete the global defaults row? Agent will fall back to compiled defaults until a new one is created."))
+              api(`/v1/admin/agent-config/${globalCfg.id}`, { method: "DELETE" }).then(() =>
+                qc.invalidateQueries({ queryKey: ["agent-configs"] }),
+              );
           }}
         />
       )}
 
-      {previewHost && (
-        <PreviewPanel
-          host={previewHost}
-          allConfigs={list.data?.configs ?? []}
-          onClose={() => setPreviewHost(null)}
+      {tab === "groups" && (
+        <ScopeTable
+          scope="group"
+          rows={groupCfgs}
+          loading={list.isLoading}
+          onNew={() => setCreating("group")}
+          onEdit={(c) => setEditing(c)}
+          onDelete={(c) => {
+            if (confirm(`Delete group override (${c.target_name ?? c.target_id?.slice(0, 8)})?`))
+              api(`/v1/admin/agent-config/${c.id}`, { method: "DELETE" }).then(() =>
+                qc.invalidateQueries({ queryKey: ["agent-configs"] }),
+              );
+          }}
         />
       )}
 
-      <Panel>
-        <PanelHeader>
-          <div className="flex items-center gap-2">
-            <Settings className="h-4 w-4 text-fg-muted" />
-            <h3 className="text-sm font-semibold">Configurations</h3>
-          </div>
-          <div className="flex items-center gap-2">
-            <select
-              value={selectedHostID}
-              onChange={(e) => setSelectedHostID(e.target.value)}
-              className="rounded-md border border-border bg-panel px-2 py-1 text-xs"
-            >
-              <option value="">Preview merged config…</option>
-              {(hosts.data?.hosts ?? []).map((h) => (
-                <option key={h.id} value={h.id}>{hostDisplay(h)}</option>
-              ))}
-            </select>
-            <Button
-              disabled={!selectedHostID}
-              onClick={() => {
-                const h = (hosts.data?.hosts ?? []).find((x) => x.id === selectedHostID);
-                if (h) setPreviewHost(h);
-              }}
-            >
-              <Eye className="h-3.5 w-3.5" /> Preview
-            </Button>
-            <Button variant="primary" onClick={() => setCreating(true)}>
-              <Plus className="h-3.5 w-3.5" /> New
-            </Button>
-          </div>
-        </PanelHeader>
-        <PanelBody className="p-0 overflow-x-auto">
-          {list.isLoading ? (
-            <div className="p-5">
-              <Skeleton className="h-32" />
-            </div>
-          ) : (list.data?.configs ?? []).length === 0 ? (
-            <Empty>No configs yet.</Empty>
-          ) : (
-            <Table>
-              <THead>
-                <tr>
-                  <TH>Scope</TH>
-                  <TH>Target</TH>
-                  <TH>Interval</TH>
-                  <TH>Quiet hours</TH>
-                  <TH>Description</TH>
-                  <TH>Enabled</TH>
-                  <TH className="text-right">Actions</TH>
-                </tr>
-              </THead>
-              <TBody>
-                {(list.data?.configs ?? []).map((c) => (
-                  <tr key={c.id} className="hover:bg-panel-2">
-                    <TD>
-                      <StatusPill status={scopeColor(c.scope)}>{c.scope}</StatusPill>
-                    </TD>
-                    <TD className="font-mono text-xs">
-                      {c.scope === "global" ? "—" : c.target_name || c.target_id?.slice(0, 8)}
-                    </TD>
-                    <TD className="tabular-nums text-fg-muted">
-                      {c.config.interval_seconds ? `${c.config.interval_seconds}s` : "—"}
-                    </TD>
-                    <TD className="font-mono text-xs text-fg-muted">
-                      {c.config.quiet_hours?.enabled
-                        ? `${c.config.quiet_hours.start}–${c.config.quiet_hours.end}`
-                        : "—"}
-                    </TD>
-                    <TD className="text-fg-muted truncate max-w-xs">{c.description || "—"}</TD>
-                    <TD>
-                      <StatusPill status={c.enabled ? "ok" : "offline"}>{c.enabled ? "on" : "off"}</StatusPill>
-                    </TD>
-                    <TD className="text-right">
-                      <div className="inline-flex items-center gap-1">
-                        <Button onClick={() => setEditing(c)}>
-                          <PencilLine className="h-3.5 w-3.5" /> Edit
-                        </Button>
-                        <Button
-                          variant="danger"
-                          onClick={() => {
-                            if (confirm(`Delete config (${c.scope}${c.target_name ? "/" + c.target_name : ""})?`))
-                              api(`/v1/admin/agent-config/${c.id}`, { method: "DELETE" }).then(() =>
-                                qc.invalidateQueries({ queryKey: ["agent-configs"] }),
-                              );
-                          }}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </TD>
-                  </tr>
-                ))}
-              </TBody>
-            </Table>
+      {tab === "hosts" && (
+        <ScopeTable
+          scope="host"
+          rows={hostCfgs}
+          loading={list.isLoading}
+          onNew={() => setCreating("host")}
+          onEdit={(c) => setEditing(c)}
+          onDelete={(c) => {
+            if (confirm(`Delete host override (${c.target_name ?? c.target_id?.slice(0, 8)})?`))
+              api(`/v1/admin/agent-config/${c.id}`, { method: "DELETE" }).then(() =>
+                qc.invalidateQueries({ queryKey: ["agent-configs"] }),
+              );
+          }}
+        />
+      )}
+
+      {tab === "preview" && (
+        <>
+          <Panel>
+            <PanelHeader>
+              <div className="flex items-center gap-2">
+                <Eye className="h-4 w-4 text-fg-muted" />
+                <h3 className="text-sm font-semibold">Resolve merged config</h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <select
+                  value={selectedHostID}
+                  onChange={(e) => setSelectedHostID(e.target.value)}
+                  className="rounded-md border border-border bg-panel px-2 py-1 text-xs"
+                >
+                  <option value="">Pick a host…</option>
+                  {(hosts.data?.hosts ?? []).map((h) => (
+                    <option key={h.id} value={h.id}>{hostDisplay(h)}</option>
+                  ))}
+                </select>
+                <Button
+                  variant="primary"
+                  disabled={!selectedHostID}
+                  onClick={() => {
+                    const h = (hosts.data?.hosts ?? []).find((x) => x.id === selectedHostID);
+                    if (h) setPreviewHost(h);
+                  }}
+                >
+                  <Eye className="h-3.5 w-3.5" /> Preview
+                </Button>
+              </div>
+            </PanelHeader>
+            <PanelBody>
+              <p className="text-xs text-fg-subtle">
+                Pick a host to see the exact config the agent will receive after merging the global defaults, any
+                matching group overrides, and the host-specific override (if any). Each leaf is tagged with the
+                layer that supplied it.
+              </p>
+            </PanelBody>
+          </Panel>
+          {previewHost && (
+            <PreviewPanel
+              host={previewHost}
+              allConfigs={configs}
+              onClose={() => setPreviewHost(null)}
+            />
           )}
-        </PanelBody>
-      </Panel>
+        </>
+      )}
     </Page>
   );
 }
 
-function scopeColor(scope: AgentConfigEntry["scope"]): "ok" | "warn" | "info" {
-  if (scope === "global") return "info";
-  if (scope === "group") return "warn";
-  return "ok";
+// ---- Per-tab views --------------------------------------------------------
+
+function GlobalTab({
+  cfg,
+  loading,
+  onEdit,
+  onCreate,
+  onDelete,
+}: {
+  cfg: AgentConfigEntry | null;
+  loading: boolean;
+  onEdit: () => void;
+  onCreate: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <Panel>
+      <PanelHeader>
+        <div className="flex items-center gap-2">
+          <Settings className="h-4 w-4 text-fg-muted" />
+          <h3 className="text-sm font-semibold">Global defaults</h3>
+          <span className="text-[11px] text-fg-subtle">— singleton row applied to every agent before group/host overrides</span>
+        </div>
+        <div className="flex items-center gap-2">
+          {cfg ? (
+            <>
+              <Button onClick={onEdit}>
+                <PencilLine className="h-3.5 w-3.5" /> Edit
+              </Button>
+              <Button variant="danger" onClick={onDelete}>
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </>
+          ) : (
+            <Button variant="primary" onClick={onCreate}>
+              <Plus className="h-3.5 w-3.5" /> Create
+            </Button>
+          )}
+        </div>
+      </PanelHeader>
+      <PanelBody>
+        {loading ? (
+          <Skeleton className="h-32" />
+        ) : !cfg ? (
+          <Empty>No global defaults set. The agent falls back to its compiled defaults.</Empty>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <StatusPill status={cfg.enabled ? "ok" : "offline"}>{cfg.enabled ? "enabled" : "disabled"}</StatusPill>
+              {cfg.description && <span className="text-fg-muted">{cfg.description}</span>}
+            </div>
+            <pre className="overflow-auto rounded-md border border-border bg-bg p-3 font-mono text-[11px] leading-relaxed text-fg">
+{JSON.stringify(cfg.config, null, 2)}
+            </pre>
+          </div>
+        )}
+      </PanelBody>
+    </Panel>
+  );
+}
+
+function ScopeTable({
+  scope,
+  rows,
+  loading,
+  onNew,
+  onEdit,
+  onDelete,
+}: {
+  scope: "group" | "host";
+  rows: AgentConfigEntry[];
+  loading: boolean;
+  onNew: () => void;
+  onEdit: (c: AgentConfigEntry) => void;
+  onDelete: (c: AgentConfigEntry) => void;
+}) {
+  const Icon = scope === "group" ? Users : Server;
+  const title = scope === "group" ? "Group overrides" : "Host overrides";
+  const subtitle =
+    scope === "group"
+      ? "Applied to every host in the group; merged after globals, before host overrides."
+      : "Applied to a single host; merged last, wins all collisions.";
+  return (
+    <Panel>
+      <PanelHeader>
+        <div className="flex items-center gap-2">
+          <Icon className="h-4 w-4 text-fg-muted" />
+          <h3 className="text-sm font-semibold">{title}</h3>
+          <span className="text-[11px] text-fg-subtle">— {subtitle}</span>
+        </div>
+        <Button variant="primary" onClick={onNew}>
+          <Plus className="h-3.5 w-3.5" /> New {scope}
+        </Button>
+      </PanelHeader>
+      <PanelBody className="p-0 overflow-x-auto">
+        {loading ? (
+          <div className="p-5">
+            <Skeleton className="h-32" />
+          </div>
+        ) : rows.length === 0 ? (
+          <Empty>No {scope} overrides yet.</Empty>
+        ) : (
+          <Table>
+            <THead>
+              <tr>
+                <TH>{scope === "group" ? "Group" : "Host"}</TH>
+                <TH>Interval</TH>
+                <TH>Quiet hours</TH>
+                <TH>Description</TH>
+                <TH>Enabled</TH>
+                <TH className="text-right">Actions</TH>
+              </tr>
+            </THead>
+            <TBody>
+              {rows.map((c) => (
+                <tr key={c.id} className="hover:bg-panel-2">
+                  <TD className="font-mono text-xs">
+                    {c.target_name || c.target_id?.slice(0, 8)}
+                  </TD>
+                  <TD className="tabular-nums text-fg-muted">
+                    {c.config.interval_seconds ? `${c.config.interval_seconds}s` : "—"}
+                  </TD>
+                  <TD className="font-mono text-xs text-fg-muted">
+                    {c.config.quiet_hours?.enabled
+                      ? `${c.config.quiet_hours.start}–${c.config.quiet_hours.end}`
+                      : "—"}
+                  </TD>
+                  <TD className="text-fg-muted truncate max-w-xs">{c.description || "—"}</TD>
+                  <TD>
+                    <StatusPill status={c.enabled ? "ok" : "offline"}>{c.enabled ? "on" : "off"}</StatusPill>
+                  </TD>
+                  <TD className="text-right">
+                    <div className="inline-flex items-center gap-1">
+                      <Button onClick={() => onEdit(c)}>
+                        <PencilLine className="h-3.5 w-3.5" /> Edit
+                      </Button>
+                      <Button variant="danger" onClick={() => onDelete(c)}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </TD>
+                </tr>
+              ))}
+            </TBody>
+          </Table>
+        )}
+      </PanelBody>
+    </Panel>
+  );
 }
 
 // ---- Resolved config preview / diff view ----------------------------------
@@ -479,18 +653,25 @@ function PreviewPanel({
 
 function ConfigForm({
   initial,
+  scope: initialScope,
+  lockScope,
   hosts,
   groups,
   onCancel,
   onSaved,
 }: {
   initial: AgentConfigEntry | null;
+  // Seeded from the active tab when creating; copied from `initial.scope` when
+  // editing. The form locks the field whenever `lockScope` is true so the user
+  // can't switch a row's scope mid-edit (server keys rows by (scope, target)).
+  scope: AgentConfigEntry["scope"];
+  lockScope: boolean;
   hosts: Host[];
   groups: HostGroup[];
   onCancel: () => void;
   onSaved: () => void;
 }) {
-  const [scope, setScope] = useState<AgentConfigEntry["scope"]>(initial?.scope ?? "global");
+  const [scope, setScope] = useState<AgentConfigEntry["scope"]>(initial?.scope ?? initialScope);
   const [targetID, setTargetID] = useState<string>(initial?.target_id ?? "");
   const [enabled, setEnabled] = useState(initial?.enabled ?? true);
   const [description, setDescription] = useState(initial?.description ?? "");
@@ -575,7 +756,7 @@ function ConfigForm({
             <Field label="Scope">
               <select
                 value={scope}
-                disabled={!!initial}
+                disabled={lockScope}
                 onChange={(e) => {
                   setScope(e.target.value as AgentConfigEntry["scope"]);
                   setTargetID("");

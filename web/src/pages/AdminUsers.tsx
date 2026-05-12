@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Search } from "lucide-react";
+import { Search, Send, Users } from "lucide-react";
 import { FormEvent, useMemo, useState } from "react";
 
 import { Page } from "../components/page";
 import {
   Button,
+  Empty,
   ErrorBox,
   Field,
   Panel,
@@ -14,6 +15,8 @@ import {
   StatusPill,
   SuccessBox,
   Table,
+  TabItem,
+  Tabs,
   TBody,
   TD,
   TH,
@@ -32,8 +35,19 @@ type ListResponse = { users: AdminUser[] };
 type RoleFilter = "all" | "admin" | "user";
 type StatusFilter = "all" | "active" | "disabled";
 
+// Tab keys are kept as a string union so the Tabs primitive's generic gives
+// us a typed `onChange`. Audit is intentionally absent — this page has no
+// user-audit logic to surface.
+type TabKey = "list" | "invites";
+
+const TABS: ReadonlyArray<TabItem<TabKey>> = [
+  { key: "list", label: "Users", icon: Users },
+  { key: "invites", label: "Invites", icon: Send },
+];
+
 export function AdminUsers() {
   const qc = useQueryClient();
+  const [tab, setTab] = useState<TabKey>("list");
   const list = useQuery({
     queryKey: ["admin-users"],
     queryFn: () => api<ListResponse>("/v1/admin/users"),
@@ -47,23 +61,67 @@ export function AdminUsers() {
       subtitle="Create, lock, reset password, reset 2FA."
       breadcrumb={[{ label: "Admin" }, { label: "Users" }]}
     >
-      <CreateUserCard onCreated={invalidate} />
+      <Tabs items={TABS} value={tab} onChange={setTab} />
 
-      <Panel>
-        <PanelHeader>
-          <h3 className="text-sm font-semibold text-fg">All users</h3>
-        </PanelHeader>
-        <PanelBody>
-          {list.isLoading ? (
-            <Skeleton className="h-48" />
-          ) : list.error ? (
-            <ErrorBox>{(list.error as Error).message}</ErrorBox>
-          ) : (
-            <UserTable users={list.data?.users ?? []} onChange={invalidate} />
-          )}
-        </PanelBody>
-      </Panel>
+      {tab === "list" && (
+        <div
+          role="tabpanel"
+          id="panel-list"
+          aria-labelledby="tab-list"
+          className="space-y-6"
+        >
+          <CreateUserCard onCreated={invalidate} />
+
+          <Panel>
+            <PanelHeader>
+              <h3 className="text-sm font-semibold text-fg">All users</h3>
+            </PanelHeader>
+            <PanelBody>
+              {list.isLoading ? (
+                <Skeleton className="h-48" />
+              ) : list.error ? (
+                <ErrorBox>{(list.error as Error).message}</ErrorBox>
+              ) : (
+                <UserTable users={list.data?.users ?? []} onChange={invalidate} />
+              )}
+            </PanelBody>
+          </Panel>
+        </div>
+      )}
+
+      {tab === "invites" && (
+        <div
+          role="tabpanel"
+          id="panel-invites"
+          aria-labelledby="tab-invites"
+        >
+          <InvitesPlaceholder />
+        </div>
+      )}
     </Page>
+  );
+}
+
+// Placeholder for the future Invites tab. The backend already issues
+// invite/reset tokens via `user_action_tokens`, but exposes no list endpoint
+// — once `GET /v1/admin/invites` (and a "Create invite" mutation) land,
+// replace this with a real table + create-invite form.
+function InvitesPlaceholder() {
+  return (
+    <Panel>
+      <PanelHeader>
+        <h3 className="text-sm font-semibold text-fg">Pending invites</h3>
+      </PanelHeader>
+      <PanelBody>
+        <Empty>
+          Invite-token listing is not yet exposed by the API. Invites are
+          currently issued inline when creating a user (Users tab) — the
+          one-time link is shown once and can be copied from the success
+          banner. A dedicated endpoint to list, re-send, and revoke pending
+          invites is planned.
+        </Empty>
+      </PanelBody>
+    </Panel>
   );
 }
 

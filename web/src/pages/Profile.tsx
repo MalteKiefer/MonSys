@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { KeyRound, Pencil, Trash2 } from "lucide-react";
+import { KeyRound, Pencil, Smartphone, Trash2, User } from "lucide-react";
 import { ChangeEvent, FormEvent, ReactNode, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import {
   Button,
@@ -11,6 +12,8 @@ import {
   PanelHeader,
   Skeleton,
   SuccessBox,
+  TabItem,
+  Tabs,
   TextInput,
 } from "../components/ui";
 import { api, ApiError } from "../lib/api";
@@ -20,8 +23,24 @@ import { registerPasskey, supported as webauthnSupported } from "../lib/webauthn
 
 type Msg = { kind: "ok" | "err"; text: string } | null;
 
+type ProfileTab = "account" | "two_factor" | "passkeys";
+
+const TAB_KEYS: ReadonlyArray<ProfileTab> = ["account", "two_factor", "passkeys"];
+
+function parseTab(raw: string | null): ProfileTab {
+  return (TAB_KEYS as readonly string[]).includes(raw ?? "") ? (raw as ProfileTab) : "account";
+}
+
 export function Profile() {
   const qc = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = parseTab(searchParams.get("tab"));
+  const setTab = (next: ProfileTab) => {
+    const sp = new URLSearchParams(searchParams);
+    sp.set("tab", next);
+    setSearchParams(sp, { replace: true });
+  };
+
   const me = useQuery({
     queryKey: ["me"],
     queryFn: () => api<CurrentUser>("/v1/auth/me"),
@@ -39,24 +58,47 @@ export function Profile() {
   if (me.error) return <p className="p-6 text-sm text-fail">{(me.error as Error).message}</p>;
   const user = me.data!;
 
+  const items: ReadonlyArray<TabItem<ProfileTab>> = [
+    { key: "account", label: "Account", icon: User },
+    { key: "two_factor", label: "Two-factor", icon: Smartphone },
+    { key: "passkeys", label: "Passkeys", icon: KeyRound },
+  ];
+
   return (
-    <div className="mx-auto max-w-3xl space-y-6 p-6">
+    <div className="mx-auto max-w-3xl p-6">
       {/* Mount the html[data-density] side effect from this page. The
           provider is a no-op render — it just mirrors the persisted store
           value onto <html>. Remove once App.tsx (Phase A) hosts it. */}
       <DensityProvider />
-      <header>
-        <h2 className="text-lg font-semibold text-fg">Profile</h2>
+      <header className="mb-4">
         <p className="text-sm text-fg-muted">
           Signed in as <span className="text-fg">{user.email}</span> ({user.role})
         </p>
       </header>
 
-      <ChangeEmailCard onSuccess={() => qc.invalidateQueries({ queryKey: ["me"] })} />
-      <ChangePasswordCard />
-      <TwoFactorCard active={user.totp_active} onSuccess={() => qc.invalidateQueries({ queryKey: ["me"] })} />
-      <PasskeysCard />
-      <DisplayCard />
+      <Tabs<ProfileTab> items={items} value={tab} onChange={setTab} />
+
+      <div
+        id={`panel-${tab}`}
+        role="tabpanel"
+        aria-labelledby={`tab-${tab}`}
+        className="mt-6 space-y-6"
+      >
+        {tab === "account" && (
+          <>
+            <ChangeEmailCard onSuccess={() => qc.invalidateQueries({ queryKey: ["me"] })} />
+            <ChangePasswordCard />
+            <DisplayCard />
+          </>
+        )}
+        {tab === "two_factor" && (
+          <TwoFactorCard
+            active={user.totp_active}
+            onSuccess={() => qc.invalidateQueries({ queryKey: ["me"] })}
+          />
+        )}
+        {tab === "passkeys" && <PasskeysCard />}
+      </div>
     </div>
   );
 }
