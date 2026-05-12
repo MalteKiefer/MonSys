@@ -82,7 +82,7 @@ func BenchmarkIngestPackages(b *testing.B) {
 		ups := makePendingUpdates(n)
 		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
 			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				// What savePackagesTx does on every batch before issuing
 				// SQL: build the deduped manager lists used in the
 				// DELETE WHERE manager = ANY(...) prune.
@@ -109,7 +109,7 @@ func BenchmarkIngestSystemSample(b *testing.B) {
 		samples := makeSystemSamples(n)
 		b.Run(fmt.Sprintf("encode-n=%d", n), func(b *testing.B) {
 			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				_, _ = json.Marshal(samples)
 			}
 		})
@@ -117,7 +117,7 @@ func BenchmarkIngestSystemSample(b *testing.B) {
 		b.Run(fmt.Sprintf("decode-n=%d", n), func(b *testing.B) {
 			b.ReportAllocs()
 			b.SetBytes(int64(len(data)))
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				var out []apitypes.SystemSample
 				if err := json.Unmarshal(data, &out); err != nil {
 					b.Fatal(err)
@@ -134,7 +134,7 @@ func BenchmarkIngestSystemSample(b *testing.B) {
 func BenchmarkOrEmpty(b *testing.B) {
 	in := map[string]string{"k1": "v1", "k2": "v2", "k3": "v3"}
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_ = orEmpty(in)
 	}
 }
@@ -142,7 +142,7 @@ func BenchmarkOrEmpty(b *testing.B) {
 func BenchmarkNilIfZero(b *testing.B) {
 	now := time.Now()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_ = nilIfZero(now)
 		_ = nilIfZero(time.Time{})
 	}

@@ -2299,6 +2299,15 @@ export interface components {
             readonly token?: string;
             user: components["schemas"]["CurrentUser"];
         };
+        LogoutOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://mon.kiefer-networks.de/schemas/LogoutOutputBody.json
+             */
+            readonly $schema?: string;
+            ok: boolean;
+        };
         Manifest: {
             /**
              * Format: uri
@@ -4274,6 +4283,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "Set-Cookie"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -4563,6 +4573,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "Set-Cookie"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -4592,10 +4603,11 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "Set-Cookie"?: string;
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["EmptyOutputBody"];
+                    "application/json": components["schemas"]["LogoutOutputBody"];
                 };
             };
             /** @description Error */
@@ -4906,6 +4918,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "Set-Cookie"?: string;
                     [name: string]: unknown;
                 };
                 content: {

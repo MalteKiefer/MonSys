@@ -105,9 +105,9 @@ func buildIngestRequest(systemSamples, packages int) IngestRequest {
 // case where a freshly-rebooted host pushes everything at once.
 func BenchmarkIngestRequestMarshal(b *testing.B) {
 	cases := []struct {
-		name      string
-		samples   int
-		packages  int
+		name     string
+		samples  int
+		packages int
 	}{
 		{"small-10s-0p", 10, 0},
 		{"medium-100s-100p", 100, 100},
@@ -118,7 +118,7 @@ func BenchmarkIngestRequestMarshal(b *testing.B) {
 		req := buildIngestRequest(c.samples, c.packages)
 		b.Run(c.name, func(b *testing.B) {
 			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				_, _ = json.Marshal(req)
 			}
 		})
@@ -131,9 +131,9 @@ func BenchmarkIngestRequestMarshal(b *testing.B) {
 // allocations + parse time.
 func BenchmarkIngestRequestUnmarshal(b *testing.B) {
 	cases := []struct {
-		name      string
-		samples   int
-		packages  int
+		name     string
+		samples  int
+		packages int
 	}{
 		{"small-10s-0p", 10, 0},
 		{"medium-100s-100p", 100, 100},
@@ -148,7 +148,7 @@ func BenchmarkIngestRequestUnmarshal(b *testing.B) {
 		b.Run(c.name, func(b *testing.B) {
 			b.ReportAllocs()
 			b.SetBytes(int64(len(data)))
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				var out IngestRequest
 				if err := json.Unmarshal(data, &out); err != nil {
 					b.Fatal(err)

@@ -1207,7 +1207,12 @@ func boolParam(m map[string]any, key string, def bool) bool {
 
 // mapParam extracts a nested string→string map from condition_params (e.g.
 // the "scope" object used by metric_threshold). Returns an empty map on miss
-// so callers can index without nil-checks.
+// so callers can index without nil-checks. Symmetric with intParam /
+// floatParam / stringParam even though today's only call site passes
+// "scope" — keeping the signature uniform makes new condition types easy
+// to add.
+//
+//nolint:unparam // see comment above; signature kept uniform on purpose.
 func mapParam(m map[string]any, key string) map[string]string {
 	out := map[string]string{}
 	raw, ok := m[key].(map[string]any)

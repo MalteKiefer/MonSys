@@ -246,9 +246,67 @@ func rateLimitByPath() func(http.Handler) http.Handler {
 	}
 }
 
+// docsCookieName is the HttpOnly cookie that mirrors the bearer session
+// token so the docs viewer is reachable via top-level browser navigation
+// (where Authorization headers cannot be set by the SPA). Scoped to "/"
+// because the browser must send it with /docs and /openapi.* requests
+// initiated by Scalar; the requireSessionForDocs middleware is the only
+// reader and ignores it for /v1/* so CSRF posture on the API stays
+// header-based.
+const docsCookieName = "mon_docs_session"
+
+// docsCookieSetHeader serializes a Set-Cookie value pinning the docs
+// session cookie to the given token and lifetime. Secure + HttpOnly +
+// SameSite=Strict match the threat model: cookie is for the same origin
+// only, never readable from JS, never sent on cross-site navigations.
+func docsCookieSetHeader(token string, ttl time.Duration) string {
+	c := &http.Cookie{
+		Name:     docsCookieName,
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   int(ttl.Seconds()),
+	}
+	return c.String()
+}
+
+// docsCookieClearHeader is the inverse: a Max-Age=-1 Set-Cookie used by
+// logout so the cookie is removed in lockstep with the bearer revocation.
+func docsCookieClearHeader() string {
+	c := &http.Cookie{
+		Name:     docsCookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   -1,
+	}
+	return c.String()
+}
+
+// docsCookieTTL is the remaining lifetime the cookie should advertise.
+// Mirrors sessionExpiresAt's policy lookup so cookie + bearer expire in
+// sync. Falls back to 12h on policy load failure (matches sessionExpiresAt).
+func (s *Server) docsCookieTTL(ctx context.Context) time.Duration {
+	p, err := s.Store.GetSecurityPolicy(ctx)
+	if err != nil || p.MaxSessionHours <= 0 {
+		return 12 * time.Hour
+	}
+	return time.Duration(p.MaxSessionHours) * time.Hour
+}
+
 // requireSessionForDocs hides /docs and /openapi.* behind a valid session
 // token. Without it any unauthenticated caller could enumerate the full API
 // surface from a public deployment. AUDIT-066.
+//
+// Accepts the session token via either the Authorization bearer header
+// (used by API tooling and the SPA's fetch() calls) or the docs session
+// cookie (used by top-level browser navigation, where the SPA cannot
+// attach headers). Both sources hit the same Store.ValidateSession path
+// so the cookie inherits all the same revocation + idle-timeout rules.
 func (s *Server) requireSessionForDocs(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
@@ -264,6 +322,11 @@ func (s *Server) requireSessionForDocs(next http.Handler) http.Handler {
 			return
 		}
 		tok, ok := bearer(r.Header.Get("Authorization"))
+		if !ok {
+			if c, err := r.Cookie(docsCookieName); err == nil && c.Value != "" {
+				tok, ok = c.Value, true
+			}
+		}
 		if !ok {
 			http.NotFound(w, r)
 			return
@@ -2527,7 +2590,11 @@ type loginInput struct {
 	Body apitypes.LoginRequest
 }
 type loginOutput struct {
-	Body apitypes.LoginResponse
+	// SetCookie pins the docs session cookie so /docs works via top-level
+	// browser navigation. Only populated when the response carries a real
+	// session token (i.e. not on the TOTP/passkey-needed intermediate).
+	SetCookie string `header:"Set-Cookie"`
+	Body      apitypes.LoginResponse
 }
 
 func (s *Server) handleLogin(ctx context.Context, in *loginInput) (*loginOutput, error) {
@@ -2572,6 +2639,7 @@ func (s *Server) handleLogin(ctx context.Context, in *loginInput) (*loginOutput,
 		return nil, internalErr(ctx, "session create failed", err)
 	}
 	out := &loginOutput{}
+	out.SetCookie = docsCookieSetHeader(token, s.docsCookieTTL(ctx))
 	out.Body.Token = token
 	out.Body.ExpiresAt = s.sessionExpiresAt(ctx)
 	out.Body.User = s.currentUserWithSecurity(ctx, u)
@@ -2584,7 +2652,8 @@ type totpChallengeInput struct {
 	Body apitypes.TOTPChallengeRequest
 }
 type totpChallengeOutput struct {
-	Body apitypes.LoginResponse
+	SetCookie string `header:"Set-Cookie"`
+	Body      apitypes.LoginResponse
 }
 
 func (s *Server) handleTOTPChallenge(ctx context.Context, in *totpChallengeInput) (*totpChallengeOutput, error) {
@@ -2610,6 +2679,7 @@ func (s *Server) handleTOTPChallenge(ctx context.Context, in *totpChallengeInput
 		return nil, internalErr(ctx, "session create failed", err)
 	}
 	out := &totpChallengeOutput{}
+	out.SetCookie = docsCookieSetHeader(token, s.docsCookieTTL(ctx))
 	out.Body.Token = token
 	out.Body.ExpiresAt = s.sessionExpiresAt(ctx)
 	out.Body.User = s.currentUserWithSecurity(ctx, u)
@@ -2761,12 +2831,20 @@ type (
 	}
 )
 
-func (s *Server) handleLogout(ctx context.Context, _ *emptyInput) (*emptyOutput, error) {
+type logoutOutput struct {
+	SetCookie string `header:"Set-Cookie"`
+	Body      struct {
+		OK bool `json:"ok"`
+	}
+}
+
+func (s *Server) handleLogout(ctx context.Context, _ *emptyInput) (*logoutOutput, error) {
 	tok, _ := tokenFromContext(ctx)
 	if tok != "" {
 		_ = s.Store.RevokeSession(ctx, tok)
 	}
-	out := &emptyOutput{}
+	out := &logoutOutput{}
+	out.SetCookie = docsCookieClearHeader()
 	out.Body.OK = true
 	return out, nil
 }
@@ -3832,7 +3910,8 @@ type webAuthnLoginFinishInput struct {
 	Body apitypes.WebAuthnLoginFinishRequest
 }
 type webAuthnLoginFinishOutput struct {
-	Body apitypes.LoginResponse
+	SetCookie string `header:"Set-Cookie"`
+	Body      apitypes.LoginResponse
 }
 
 func (s *Server) handleWebAuthnLoginFinish(ctx context.Context, in *webAuthnLoginFinishInput) (*webAuthnLoginFinishOutput, error) {
@@ -3864,6 +3943,7 @@ func (s *Server) handleWebAuthnLoginFinish(ctx context.Context, in *webAuthnLogi
 		return nil, internalErr(ctx, "session create failed", err)
 	}
 	out := &webAuthnLoginFinishOutput{}
+	out.SetCookie = docsCookieSetHeader(token, s.docsCookieTTL(ctx))
 	out.Body.Token = token
 	out.Body.ExpiresAt = s.sessionExpiresAt(ctx)
 	out.Body.User = s.currentUserWithSecurity(ctx, u)

@@ -2248,6 +2248,21 @@ components:
         - needs_totp
         - user
       type: object
+    LogoutOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://mon.kiefer-networks.de/schemas/LogoutOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        ok:
+          type: boolean
+      required:
+        - ok
+      type: object
     Manifest:
       additionalProperties: false
       properties:
@@ -5301,6 +5316,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/LoginResponse"
           description: OK
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
         default:
           content:
             application/problem+json:
@@ -5514,6 +5533,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/LoginResponse"
           description: OK
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
         default:
           content:
             application/problem+json:
@@ -5531,8 +5554,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/EmptyOutputBody"
+                $ref: "#/components/schemas/LogoutOutputBody"
           description: OK
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
         default:
           content:
             application/problem+json:
@@ -5765,6 +5792,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/LoginResponse"
           description: OK
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
         default:
           content:
             application/problem+json:

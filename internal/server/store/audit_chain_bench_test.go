@@ -34,7 +34,7 @@ func BenchmarkHashChain(b *testing.B) {
 		b.Run(c.name, func(b *testing.B) {
 			b.ReportAllocs()
 			b.SetBytes(int64(c.payloadSize + 32))
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				h := sha256.New()
 				h.Write(prev)
 				h.Write(payload)
@@ -60,7 +60,7 @@ func BenchmarkEqualBytes(b *testing.B) {
 		c[i] = byte(i)
 	}
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		if !equalBytes(a, c) {
 			b.Fatal("expected equal")
 		}

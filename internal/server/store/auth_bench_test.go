@@ -18,7 +18,7 @@ import (
 func BenchmarkBcryptHash(b *testing.B) {
 	pw := []byte("a-realistic-passphrase-with-enough-entropy-1234")
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		if _, err := bcrypt.GenerateFromPassword(pw, bcryptCost); err != nil {
 			b.Fatal(err)
 		}
@@ -38,7 +38,7 @@ func BenchmarkBcryptCompare(b *testing.B) {
 	}
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		if err := bcrypt.CompareHashAndPassword(hash, pw); err != nil {
 			b.Fatal(err)
 		}

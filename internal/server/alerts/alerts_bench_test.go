@@ -27,7 +27,7 @@ func BenchmarkSplitDedupKey(b *testing.B) {
 	for _, c := range cases {
 		b.Run(c.name, func(b *testing.B) {
 			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				_, _ = splitDedupKey(c.dedup)
 			}
 		})
@@ -47,7 +47,7 @@ func BenchmarkParseChannelUUIDs(b *testing.B) {
 		}
 		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
 			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				_ = parseChannelUUIDs(in)
 			}
 		})
@@ -96,7 +96,7 @@ func BenchmarkRuleMatchesHost(b *testing.B) {
 	for _, c := range cases {
 		b.Run(c.name, func(b *testing.B) {
 			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				_ = c.r.matchesHost(hostID, tags, groupIDs)
 			}
 		})
@@ -130,7 +130,7 @@ func BenchmarkRuleMatchesMonitor(b *testing.B) {
 		}
 		b.Run(c.name, func(b *testing.B) {
 			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				_ = ruleMatchesMonitor(r, ev)
 			}
 		})
@@ -154,31 +154,31 @@ func BenchmarkParamHelpers(b *testing.B) {
 	}
 	b.Run("intParam", func(b *testing.B) {
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			_ = intParam(m, "window_sec", 0)
 		}
 	})
 	b.Run("floatParam", func(b *testing.B) {
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			_ = floatParam(m, "value", 0)
 		}
 	})
 	b.Run("stringParam", func(b *testing.B) {
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			_ = stringParam(m, "metric", "")
 		}
 	})
 	b.Run("mapParam", func(b *testing.B) {
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			_ = mapParam(m, "scope")
 		}
 	})
 	b.Run("sqlComparator", func(b *testing.B) {
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			_ = sqlComparator(">=")
 		}
 	})
@@ -211,7 +211,7 @@ func BenchmarkDispatchMetricThreshold(b *testing.B) {
 		},
 	}
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_, _ = splitDedupKey(dedup)
 		_ = parseChannelUUIDs(r.ChannelIDs)
 		_ = sqlComparator(r.ConditionParams["comparator"].(string))
