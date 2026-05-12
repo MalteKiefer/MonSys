@@ -79,8 +79,14 @@ compose-down:
 compose-logs:
 	docker compose -f deploy/docker-compose.yaml logs -f
 
-# Regenerate api/openapi.yaml from the live API surface. Output is run
-# through yq for deterministic key ordering so the CI spec-drift gate
-# doesn't false-positive on map-iteration order. AUDIT-203 / AUDIT-210.
+# Regenerate api/openapi.yaml from the live API surface. huma emits keys
+# in alphabetical order and a stable quote style, so no yq normalisation
+# pass is needed — the previous pipe through mikefarah yq introduced
+# environment-dependent quote-style drift (Python kislyuk/yq on most
+# distros produced single-quoted $ref values, breaking the CI gate).
+# Write to a temp file first and mv on success so a failed regen doesn't
+# truncate the committed spec. AUDIT-203 / AUDIT-210.
 generate-spec:
-	go run $(GOFLAGS_BASE) ./cmd/mon-server --print-spec | yq -P 'sort_keys(..)' -o yaml > api/openapi.yaml
+	@tmp=$$(mktemp) && \
+		go run $(GOFLAGS_BASE) ./cmd/mon-server --print-spec > $$tmp && \
+		mv $$tmp api/openapi.yaml

@@ -84,15 +84,16 @@ jobs:
         with:
           go-version: '1.26.x'
           cache: true
-      - name: install yq
-        run: |
-          sudo wget -qO /usr/local/bin/yq \
-            https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64
-          sudo chmod +x /usr/local/bin/yq
       - name: regenerate spec
         run: |
-          go run ./cmd/mon-server --print-spec \
-            | yq -P 'sort_keys(..)' -o yaml > /tmp/openapi.yaml
+          # huma emits keys in alphabetical order and a stable quote style,
+          # so no normalisation pass is needed. We previously piped through
+          # mikefarah yq for "sort_keys(..)" but the Python kislyuk/yq that
+          # ships on many distros uses different flags AND a different
+          # quote style for $ref values — so the pipeline silently
+          # introduced a diff against direct --print-spec output. Drop the
+          # pipe; --print-spec is the single source of truth.
+          go run ./cmd/mon-server --print-spec > /tmp/openapi.yaml
       - name: diff against committed spec
         run: |
           if ! diff -u api/openapi.yaml /tmp/openapi.yaml; then
