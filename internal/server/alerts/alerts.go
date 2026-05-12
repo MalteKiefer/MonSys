@@ -48,6 +48,31 @@ type Engine struct {
 	quietMu     sync.Mutex
 	quietCache  *quietConfig
 	quietExpiry time.Time
+
+	// In-memory state cache used by state-change evaluators (container/vm/nic
+	// transitions, firewall regressions, fail2ban jail disappearance, audit
+	// tailing, inventory drift). Lost on restart by design — the first tick
+	// after boot simply rebuilds baseline state and the next change fires.
+	stateMu        sync.Mutex
+	containerState map[string]string             // host:external_id -> state
+	vmState        map[string]string             // host:external_id -> state
+	nicSpeed       map[string]int                // host:nic_name -> last speed_mbps
+	nicMembers     map[string]int                // host:nic_name -> last len(members)
+	fail2banSeen   map[string]map[string]bool    // host -> jail -> currently present
+	firewallActive map[string]bool               // host:engine -> active
+	firewallPolicy map[string]string             // host:engine -> default_input
+	firewallRules  map[string]int                // host:engine -> rule_count
+	hostUptime     map[uuid.UUID]int64           // host_id -> last uptime_sec
+	unexpReboot    map[uuid.UUID]time.Time       // host_id -> last fired_at (cooldown)
+	auditLastAt    map[uuid.UUID]time.Time       // rule_id -> last seen audit.at
+	invUsers       map[uuid.UUID]map[string]bool // host_id -> username set
+	invSudoers     map[uuid.UUID]map[string]bool // host_id -> sudoer username set
+	invDisks       map[uuid.UUID]map[string]bool // host_id -> mountpoint set
+	invNics        map[uuid.UUID]map[string]bool // host_id -> nic name set
+	invMacs        map[uuid.UUID]map[string]string // host_id -> nic name -> mac
+	invKernel      map[uuid.UUID]string          // host_id -> kernel
+	invDistro      map[uuid.UUID]string          // host_id -> distro
+	loginNewIPSeen map[string]bool               // host:username:source_ip -> previously seen
 }
 
 type quietConfig struct {
@@ -64,6 +89,26 @@ func New(pool *pgxpool.Pool, livenessOut <-chan liveness.Transition, monitorOut 
 		LivenessOut:      livenessOut,
 		MonitorOut:       monitorOut,
 		PeriodicInterval: 60 * time.Second,
+
+		containerState: map[string]string{},
+		vmState:        map[string]string{},
+		nicSpeed:       map[string]int{},
+		nicMembers:     map[string]int{},
+		fail2banSeen:   map[string]map[string]bool{},
+		firewallActive: map[string]bool{},
+		firewallPolicy: map[string]string{},
+		firewallRules:  map[string]int{},
+		hostUptime:     map[uuid.UUID]int64{},
+		unexpReboot:    map[uuid.UUID]time.Time{},
+		auditLastAt:    map[uuid.UUID]time.Time{},
+		invUsers:       map[uuid.UUID]map[string]bool{},
+		invSudoers:     map[uuid.UUID]map[string]bool{},
+		invDisks:       map[uuid.UUID]map[string]bool{},
+		invNics:        map[uuid.UUID]map[string]bool{},
+		invMacs:        map[uuid.UUID]map[string]string{},
+		invKernel:      map[uuid.UUID]string{},
+		invDistro:      map[uuid.UUID]string{},
+		loginNewIPSeen: map[string]bool{},
 	}
 }
 
@@ -189,6 +234,28 @@ func (e *Engine) runPeriodic(ctx context.Context) {
 			e.evalSecurityUpdates(ctx, r)
 		}
 	}
+
+	// New condition evaluators (R2). Each is internally guarded with slog.Warn
+	// on DB error so a missing table or column never crashes the engine.
+	e.evalMetricThreshold(ctx)
+	e.evalUnexpectedReboot(ctx)
+	e.evalHostFlap(ctx)
+	e.evalContainerStateChange(ctx)
+	e.evalVMStateChange(ctx)
+	e.evalNICLinkDown(ctx)
+	e.evalNICBondDegraded(ctx)
+	e.evalAgentOutdated(ctx)
+	e.evalImageUpdatePending(ctx)
+	e.evalPackageUpdateAvailable(ctx)
+	e.evalPendingReboot(ctx)
+	e.evalRepoMetadataStale(ctx)
+	e.evalInventoryDrift(ctx)
+	e.evalLoginAnomaly(ctx)
+	e.evalAuditAction(ctx)
+	e.evalFirewallStateChange(ctx)
+	e.evalFail2banJailDisappeared(ctx)
+	e.evalCrowdSecDecisionThreshold(ctx)
+
 	e.runRepeatReminders(ctx)
 }
 
@@ -579,12 +646,25 @@ func splitDedupKey(dedup string) (hostArg, monitorArg any) {
 		return nil, nil
 	}
 	kind, raw := dedup[:idx], dedup[idx+1:]
+	// Most new dedup keys take the form "<kind>:<host_uuid>[:<extra>]" where
+	// <extra> is a mountpoint, NIC name, workload id, etc. We only need the
+	// host UUID for the alert_state row — anything after a second ':' is
+	// scope/metadata and we ignore it here.
+	if i := strings.IndexByte(raw, ':'); i >= 0 {
+		raw = raw[:i]
+	}
 	id, err := uuid.Parse(raw)
 	if err != nil {
 		return nil, nil
 	}
 	switch kind {
-	case "host_offline", "login_failed", "security_updates":
+	case "host_offline", "login_failed", "security_updates",
+		"metric_threshold", "unexpected_reboot", "host_flap",
+		"container_state", "vm_state", "nic_link_down", "nic_bond_degraded",
+		"agent_outdated", "image_update_pending", "package_update_available",
+		"pending_reboot", "repo_metadata_stale", "inventory_drift",
+		"login_anomaly", "audit_action", "firewall_state_change",
+		"fail2ban_jail_disappeared", "crowdsec_decisions":
 		return id, nil
 	case "monitor_failed", "cert_expiring":
 		return nil, id
@@ -983,6 +1063,58 @@ func intParam(m map[string]any, key string, def int) int {
 	return def
 }
 
+func floatParam(m map[string]any, key string, def float64) float64 {
+	switch v := m[key].(type) {
+	case float64:
+		return v
+	case int:
+		return float64(v)
+	}
+	return def
+}
+
+func stringParam(m map[string]any, key, def string) string {
+	if v, ok := m[key].(string); ok && v != "" {
+		return v
+	}
+	return def
+}
+
+func boolParam(m map[string]any, key string, def bool) bool {
+	if v, ok := m[key].(bool); ok {
+		return v
+	}
+	return def
+}
+
+// mapParam extracts a nested string→string map from condition_params (e.g.
+// the "scope" object used by metric_threshold). Returns an empty map on miss
+// so callers can index without nil-checks.
+func mapParam(m map[string]any, key string) map[string]string {
+	out := map[string]string{}
+	raw, ok := m[key].(map[string]any)
+	if !ok {
+		return out
+	}
+	for k, v := range raw {
+		if s, ok := v.(string); ok {
+			out[k] = s
+		}
+	}
+	return out
+}
+
+// sqlComparator validates a comparator string from condition_params and
+// returns the SQL-safe operator. Anything else returns "" — callers should
+// skip the rule on empty.
+func sqlComparator(cmp string) string {
+	switch cmp {
+	case ">", ">=", "<", "<=":
+		return cmp
+	}
+	return ""
+}
+
 func stringSliceParam(m map[string]any, key string, def []string) []string {
 	switch v := m[key].(type) {
 	case []any:
@@ -1019,4 +1151,1888 @@ func truncate(s string, max int) string {
 		return s
 	}
 	return s[:max]
+}
+
+// --- metric_threshold evaluator -------------------------------------------
+//
+// metric_threshold is the generic "is the latest sample of <metric> on the
+// <comparator> side of <value> sustained for <for_sec>?" check. It dispatches
+// to a per-metric SQL query because each metric source has a different shape
+// (per-host vs. per-mountpoint vs. counter requiring rate derivation).
+//
+// All queries follow the same skeleton:
+//
+//   SELECT host_id [, partition_key, max(time)]
+//   FROM <hypertable>
+//   WHERE time > now() - make_interval(secs => $1)
+//   GROUP BY host_id [, partition_key]
+//   HAVING bool_and(<metric_expr> <op> $2)
+//      AND count(*) >= 2
+//
+// We bind windowSec (or forSec when sustained-for is shorter than window)
+// as $1 and the threshold as $2. bool_and() returns TRUE only when every
+// sample in the bucket satisfies the predicate — that's the "sustained"
+// semantics operators expect (one transient spike below threshold should
+// not silence the alert, and one transient spike above should not fire it).
+// count(*) >= 2 is a guard against firing on a single brand-new host where
+// the very first sample happens to exceed the threshold.
+func (e *Engine) evalMetricThreshold(ctx context.Context) {
+	rules, err := e.loadRules(ctx, "metric_threshold")
+	if err != nil {
+		slog.Warn("alerts: load metric_threshold rules", "err", err)
+		return
+	}
+	for _, r := range rules {
+		metric := stringParam(r.ConditionParams, "metric", "")
+		cmpStr := stringParam(r.ConditionParams, "comparator", ">")
+		val := floatParam(r.ConditionParams, "value", 0)
+		windowSec := intParam(r.ConditionParams, "window_sec", 120)
+		forSec := intParam(r.ConditionParams, "for_sec", windowSec)
+		if forSec <= 0 || forSec > windowSec {
+			forSec = windowSec
+		}
+		scope := mapParam(r.ConditionParams, "scope")
+
+		op := sqlComparator(cmpStr)
+		if op == "" {
+			slog.Warn("alerts: metric_threshold invalid comparator", "rule", r.Name, "cmp", cmpStr)
+			continue
+		}
+		if metric == "" {
+			slog.Warn("alerts: metric_threshold missing metric", "rule", r.Name)
+			continue
+		}
+		e.runMetricRule(ctx, r, metric, op, val, windowSec, forSec, scope)
+	}
+}
+
+// runMetricRule dispatches a single metric_threshold rule to the right
+// per-metric query builder. The split keeps each metric's SQL self-contained
+// (some need joins to disks/nics, some are cumulative counters that need a
+// window function to compute a rate, some are one-shot lookups).
+func (e *Engine) runMetricRule(ctx context.Context, r ruleRow, metric, op string, val float64, windowSec, forSec int, scope map[string]string) {
+	switch metric {
+	case "cpu_usage_pct":
+		e.metricSimpleHost(ctx, r, metric, "metrics_system", "cpu_usage_pct", op, val, forSec)
+	case "load_1":
+		e.metricSimpleHost(ctx, r, metric, "metrics_system", "load_1", op, val, forSec)
+	case "load_5":
+		e.metricSimpleHost(ctx, r, metric, "metrics_system", "load_5", op, val, forSec)
+	case "load_15":
+		e.metricSimpleHost(ctx, r, metric, "metrics_system", "load_15", op, val, forSec)
+	case "swap_used_bytes":
+		e.metricSimpleHost(ctx, r, metric, "metrics_system", "swap_used_bytes::float", op, val, forSec)
+	case "ram_used_pct":
+		e.metricSimpleHost(ctx, r, metric, "metrics_system",
+			"100.0 * ram_used_bytes::float / NULLIF(ram_used_bytes + ram_avail_bytes, 0)",
+			op, val, forSec)
+	case "swap_used_pct":
+		// We don't have swap_total directly, but swap_used_pct only makes
+		// sense relative to a known total. Approximation: swap_used_bytes
+		// vs. ram_total_bytes from hosts table. Falls back to comparing
+		// raw bytes if the host row is missing the total.
+		e.metricSwapPct(ctx, r, op, val, forSec)
+	case "cpu_per_core_pct":
+		e.metricCPUPerCore(ctx, r, op, val, forSec)
+	case "disk_used_pct":
+		e.metricDiskExpr(ctx, r,
+			"100.0 * used_bytes::float / NULLIF(used_bytes + free_bytes, 0)",
+			op, val, forSec, scope["mountpoint"])
+	case "disk_inode_used_pct":
+		e.metricDiskExpr(ctx, r,
+			"100.0 * inodes_used::float / NULLIF(inodes_used + inodes_free, 0)",
+			op, val, forSec, scope["mountpoint"])
+	case "disk_iops_total":
+		e.metricDiskRate(ctx, r, "read_ops + write_ops", op, val, forSec, scope["mountpoint"])
+	case "disk_io_util_pct":
+		// io_time_ms is cumulative ms; util% in a window is
+		// delta(io_time_ms) / delta(time_ms). bool_and across samples.
+		e.metricDiskUtil(ctx, r, op, val, forSec, scope["mountpoint"])
+	case "nic_rx_bytes_per_sec":
+		e.metricNICRate(ctx, r, "rx_bytes", op, val, forSec, scope["nic"])
+	case "nic_tx_bytes_per_sec":
+		e.metricNICRate(ctx, r, "tx_bytes", op, val, forSec, scope["nic"])
+	case "nic_err_per_sec":
+		e.metricNICRate(ctx, r, "rx_errs + tx_errs", op, val, forSec, scope["nic"])
+	case "nic_drop_per_sec":
+		e.metricNICRate(ctx, r, "rx_drops + tx_drops", op, val, forSec, scope["nic"])
+	case "workload_cpu_usage_pct":
+		e.metricWorkloadExpr(ctx, r, "cpu_usage_pct", op, val, forSec, scope["workload_id"])
+	case "workload_mem_used_pct":
+		e.metricWorkloadExpr(ctx, r,
+			"100.0 * mem_used_bytes::float / NULLIF(mem_limit_bytes, 0)",
+			op, val, forSec, scope["workload_id"])
+	case "fail2ban_currently_banned":
+		e.metricFail2banBanned(ctx, r, op, val)
+	case "crowdsec_active_decisions":
+		e.metricCrowdSecActive(ctx, r, op, val)
+	case "repo_metadata_age_sec":
+		e.metricRepoMetadataAge(ctx, r, op, val)
+	case "monitor_last_latency_ms":
+		e.metricMonitorLatency(ctx, r, op, val, scope["monitor_id"])
+	default:
+		slog.Warn("alerts: metric_threshold unknown metric", "rule", r.Name, "metric", metric)
+	}
+}
+
+// metricSimpleHost runs a HAVING bool_and(<expr> <op> $2) query over
+// metrics_system for the given host-grain expression. Used for cpu/load/ram.
+func (e *Engine) metricSimpleHost(ctx context.Context, r ruleRow, metric, table, expr, op string, val float64, forSec int) {
+	sql := fmt.Sprintf(`
+		SELECT host_id, max(time) AS last_t, count(*) AS samples
+		FROM %s
+		WHERE time > now() - make_interval(secs => $1)
+		GROUP BY host_id
+		HAVING bool_and(%s %s $2) AND count(*) >= 2`, table, expr, op)
+	rows, err := e.Pool.Query(ctx, sql, forSec, val)
+	if err != nil {
+		slog.Warn("alerts: metric_threshold query", "metric", metric, "err", err)
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var hostID uuid.UUID
+		var lastT time.Time
+		var n int
+		if err := rows.Scan(&hostID, &lastT, &n); err != nil {
+			continue
+		}
+		e.fireMetricRule(ctx, r, hostID, metric, "", op, val, lastT)
+	}
+}
+
+// metricSwapPct approximates swap_used_pct using hosts.ram_total_bytes as a
+// stand-in for the (absent) swap-total column. Operators with no swap will
+// never trip this rule because swap_used_bytes is 0 in that case.
+func (e *Engine) metricSwapPct(ctx context.Context, r ruleRow, op string, val float64, forSec int) {
+	sql := fmt.Sprintf(`
+		SELECT m.host_id, max(m.time), count(*)
+		FROM metrics_system m JOIN hosts h ON h.id = m.host_id
+		WHERE m.time > now() - make_interval(secs => $1)
+		  AND h.ram_total_bytes > 0
+		GROUP BY m.host_id
+		HAVING bool_and(100.0 * m.swap_used_bytes::float / h.ram_total_bytes %s $2)
+		   AND count(*) >= 2`, op)
+	rows, err := e.Pool.Query(ctx, sql, forSec, val)
+	if err != nil {
+		slog.Warn("alerts: metric_threshold swap_used_pct query", "err", err)
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var hostID uuid.UUID
+		var lastT time.Time
+		var n int
+		if err := rows.Scan(&hostID, &lastT, &n); err != nil {
+			continue
+		}
+		e.fireMetricRule(ctx, r, hostID, "swap_used_pct", "", op, val, lastT)
+	}
+}
+
+// metricCPUPerCore flags any sample whose cpu_per_core array contains a core
+// matching the predicate. unnest() runs in an inline subquery to expose each
+// core value as a row, and we then group back to host so the bool_and reads
+// "every recent sample had at least one offending core".
+func (e *Engine) metricCPUPerCore(ctx context.Context, r ruleRow, op string, val float64, forSec int) {
+	sql := fmt.Sprintf(`
+		SELECT host_id, max(time), count(*)
+		FROM (
+			SELECT host_id, time,
+			       bool_or(c %s $2) AS any_core_match
+			FROM metrics_system,
+			     unnest(cpu_per_core) AS c
+			WHERE time > now() - make_interval(secs => $1)
+			GROUP BY host_id, time
+		) s
+		WHERE any_core_match
+		GROUP BY host_id
+		HAVING count(*) >= 2`, op)
+	rows, err := e.Pool.Query(ctx, sql, forSec, val)
+	if err != nil {
+		slog.Warn("alerts: metric_threshold cpu_per_core query", "err", err)
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var hostID uuid.UUID
+		var lastT time.Time
+		var n int
+		if err := rows.Scan(&hostID, &lastT, &n); err != nil {
+			continue
+		}
+		e.fireMetricRule(ctx, r, hostID, "cpu_per_core_pct", "", op, val, lastT)
+	}
+}
+
+// metricDiskExpr evaluates a per-mountpoint expression over metrics_disk
+// joined with disks (so the alert subject can reference a human-readable
+// mountpoint). When mountpoint != "" the rule narrows to a specific mount.
+func (e *Engine) metricDiskExpr(ctx context.Context, r ruleRow, expr, op string, val float64, forSec int, mountpoint string) {
+	args := []any{forSec, val}
+	mpFilter := ""
+	if mountpoint != "" {
+		mpFilter = " AND d.mountpoint = $3"
+		args = append(args, mountpoint)
+	}
+	sql := fmt.Sprintf(`
+		SELECT m.host_id, d.mountpoint, max(m.time), count(*)
+		FROM metrics_disk m JOIN disks d ON d.id = m.disk_id
+		WHERE m.time > now() - make_interval(secs => $1)%s
+		GROUP BY m.host_id, d.mountpoint
+		HAVING bool_and(%s %s $2) AND count(*) >= 2`, mpFilter, expr, op)
+	rows, err := e.Pool.Query(ctx, sql, args...)
+	if err != nil {
+		slog.Warn("alerts: metric_threshold disk query", "err", err)
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var hostID uuid.UUID
+		var mp string
+		var lastT time.Time
+		var n int
+		if err := rows.Scan(&hostID, &mp, &lastT, &n); err != nil {
+			continue
+		}
+		e.fireMetricRule(ctx, r, hostID, "disk_used_pct", mp, op, val, lastT)
+	}
+}
+
+// metricDiskRate derives a per-disk rate from a cumulative counter (read_ops,
+// write_ops, …) using window-function lag(). Same bool_and pattern.
+func (e *Engine) metricDiskRate(ctx context.Context, r ruleRow, valueExpr, op string, val float64, forSec int, mountpoint string) {
+	args := []any{forSec, val}
+	mpFilter := ""
+	if mountpoint != "" {
+		mpFilter = " AND d.mountpoint = $3"
+		args = append(args, mountpoint)
+	}
+	sql := fmt.Sprintf(`
+		WITH samples AS (
+			SELECT m.host_id, d.mountpoint, m.time,
+			       (%s)::float AS v,
+			       lag((%s)::float) OVER (PARTITION BY m.host_id, m.disk_id ORDER BY m.time) AS prev_v,
+			       lag(m.time)       OVER (PARTITION BY m.host_id, m.disk_id ORDER BY m.time) AS prev_t
+			FROM metrics_disk m JOIN disks d ON d.id = m.disk_id
+			WHERE m.time > now() - make_interval(secs => $1)%s
+		)
+		SELECT host_id, mountpoint, max(time), count(*)
+		FROM samples
+		WHERE prev_v IS NOT NULL
+		  AND EXTRACT(EPOCH FROM (time - prev_t)) > 0
+		GROUP BY host_id, mountpoint
+		HAVING bool_and((v - prev_v) / EXTRACT(EPOCH FROM (time - prev_t)) %s $2)
+		   AND count(*) >= 2`, valueExpr, valueExpr, mpFilter, op)
+	rows, err := e.Pool.Query(ctx, sql, args...)
+	if err != nil {
+		slog.Warn("alerts: metric_threshold disk rate query", "err", err)
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var hostID uuid.UUID
+		var mp string
+		var lastT time.Time
+		var n int
+		if err := rows.Scan(&hostID, &mp, &lastT, &n); err != nil {
+			continue
+		}
+		e.fireMetricRule(ctx, r, hostID, "disk_iops_total", mp, op, val, lastT)
+	}
+}
+
+// metricDiskUtil computes io_time_ms delta / wall-clock-delta-ms across each
+// adjacent sample pair. >100 is possible on multi-queue disks; we trust the
+// operator-supplied threshold.
+func (e *Engine) metricDiskUtil(ctx context.Context, r ruleRow, op string, val float64, forSec int, mountpoint string) {
+	args := []any{forSec, val}
+	mpFilter := ""
+	if mountpoint != "" {
+		mpFilter = " AND d.mountpoint = $3"
+		args = append(args, mountpoint)
+	}
+	sql := fmt.Sprintf(`
+		WITH samples AS (
+			SELECT m.host_id, d.mountpoint, m.time,
+			       m.io_time_ms::float AS v,
+			       lag(m.io_time_ms::float) OVER (PARTITION BY m.host_id, m.disk_id ORDER BY m.time) AS prev_v,
+			       lag(m.time)              OVER (PARTITION BY m.host_id, m.disk_id ORDER BY m.time) AS prev_t
+			FROM metrics_disk m JOIN disks d ON d.id = m.disk_id
+			WHERE m.time > now() - make_interval(secs => $1)%s
+		)
+		SELECT host_id, mountpoint, max(time), count(*)
+		FROM samples
+		WHERE prev_v IS NOT NULL
+		  AND EXTRACT(EPOCH FROM (time - prev_t)) > 0
+		GROUP BY host_id, mountpoint
+		HAVING bool_and(100.0 * (v - prev_v) / (1000.0 * EXTRACT(EPOCH FROM (time - prev_t))) %s $2)
+		   AND count(*) >= 2`, mpFilter, op)
+	rows, err := e.Pool.Query(ctx, sql, args...)
+	if err != nil {
+		slog.Warn("alerts: metric_threshold disk_io_util query", "err", err)
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var hostID uuid.UUID
+		var mp string
+		var lastT time.Time
+		var n int
+		if err := rows.Scan(&hostID, &mp, &lastT, &n); err != nil {
+			continue
+		}
+		e.fireMetricRule(ctx, r, hostID, "disk_io_util_pct", mp, op, val, lastT)
+	}
+}
+
+// metricNICRate computes a per-NIC byte/pkt/err/drop rate from the matching
+// cumulative counter. Joins nics for a human-readable name.
+func (e *Engine) metricNICRate(ctx context.Context, r ruleRow, valueExpr, op string, val float64, forSec int, nicName string) {
+	args := []any{forSec, val}
+	nicFilter := ""
+	if nicName != "" {
+		nicFilter = " AND n.name = $3"
+		args = append(args, nicName)
+	}
+	sql := fmt.Sprintf(`
+		WITH samples AS (
+			SELECT m.host_id, n.name AS nic_name, m.time,
+			       (%s)::float AS v,
+			       lag((%s)::float) OVER (PARTITION BY m.host_id, m.nic_id ORDER BY m.time) AS prev_v,
+			       lag(m.time)       OVER (PARTITION BY m.host_id, m.nic_id ORDER BY m.time) AS prev_t
+			FROM metrics_net m JOIN nics n ON n.id = m.nic_id
+			WHERE m.time > now() - make_interval(secs => $1)%s
+		)
+		SELECT host_id, nic_name, max(time), count(*)
+		FROM samples
+		WHERE prev_v IS NOT NULL
+		  AND EXTRACT(EPOCH FROM (time - prev_t)) > 0
+		GROUP BY host_id, nic_name
+		HAVING bool_and((v - prev_v) / EXTRACT(EPOCH FROM (time - prev_t)) %s $2)
+		   AND count(*) >= 2`, valueExpr, valueExpr, nicFilter, op)
+	rows, err := e.Pool.Query(ctx, sql, args...)
+	if err != nil {
+		slog.Warn("alerts: metric_threshold nic rate query", "err", err)
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var hostID uuid.UUID
+		var nic string
+		var lastT time.Time
+		var n int
+		if err := rows.Scan(&hostID, &nic, &lastT, &n); err != nil {
+			continue
+		}
+		e.fireMetricRule(ctx, r, hostID, "nic_rate", nic, op, val, lastT)
+	}
+}
+
+// metricWorkloadExpr evaluates a per-workload expression. scope.workload_id
+// (the UUID) narrows the rule; without it every workload that breaches will
+// fire independently (one dedup key per workload).
+func (e *Engine) metricWorkloadExpr(ctx context.Context, r ruleRow, expr, op string, val float64, forSec int, workloadIDStr string) {
+	args := []any{forSec, val}
+	idFilter := ""
+	if workloadIDStr != "" {
+		if wid, err := uuid.Parse(workloadIDStr); err == nil {
+			idFilter = " AND m.workload_id = $3"
+			args = append(args, wid)
+		}
+	}
+	sql := fmt.Sprintf(`
+		SELECT m.host_id, m.workload_id, max(m.time), count(*)
+		FROM metrics_workload m
+		WHERE m.time > now() - make_interval(secs => $1)%s
+		GROUP BY m.host_id, m.workload_id
+		HAVING bool_and(%s %s $2) AND count(*) >= 2`, idFilter, expr, op)
+	rows, err := e.Pool.Query(ctx, sql, args...)
+	if err != nil {
+		slog.Warn("alerts: metric_threshold workload query", "err", err)
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var hostID, wlID uuid.UUID
+		var lastT time.Time
+		var n int
+		if err := rows.Scan(&hostID, &wlID, &lastT, &n); err != nil {
+			continue
+		}
+		e.fireMetricRule(ctx, r, hostID, "workload", wlID.String(), op, val, lastT)
+	}
+}
+
+// metricFail2banBanned compares the per-host sum(currently_banned) against
+// the threshold. No time window: fail2ban_jails is a current-state table.
+func (e *Engine) metricFail2banBanned(ctx context.Context, r ruleRow, op string, val float64) {
+	sql := fmt.Sprintf(`
+		SELECT host_id, sum(currently_banned)::float
+		FROM fail2ban_jails
+		GROUP BY host_id
+		HAVING sum(currently_banned)::float %s $1`, op)
+	rows, err := e.Pool.Query(ctx, sql, val)
+	if err != nil {
+		slog.Warn("alerts: metric_threshold fail2ban_banned query", "err", err)
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var hostID uuid.UUID
+		var v float64
+		if err := rows.Scan(&hostID, &v); err != nil {
+			continue
+		}
+		e.fireMetricRule(ctx, r, hostID, "fail2ban_currently_banned", "", op, val, time.Now())
+	}
+}
+
+func (e *Engine) metricCrowdSecActive(ctx context.Context, r ruleRow, op string, val float64) {
+	sql := fmt.Sprintf(`
+		SELECT host_id, count(*)::float
+		FROM crowdsec_decisions
+		WHERE until > now()
+		GROUP BY host_id
+		HAVING count(*)::float %s $1`, op)
+	rows, err := e.Pool.Query(ctx, sql, val)
+	if err != nil {
+		slog.Warn("alerts: metric_threshold crowdsec query", "err", err)
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var hostID uuid.UUID
+		var v float64
+		if err := rows.Scan(&hostID, &v); err != nil {
+			continue
+		}
+		e.fireMetricRule(ctx, r, hostID, "crowdsec_active_decisions", "", op, val, time.Now())
+	}
+}
+
+func (e *Engine) metricRepoMetadataAge(ctx context.Context, r ruleRow, op string, val float64) {
+	sql := fmt.Sprintf(`
+		SELECT host_id, manager, max(metadata_age_seconds)::float
+		FROM package_repo_state
+		GROUP BY host_id, manager
+		HAVING max(metadata_age_seconds)::float %s $1`, op)
+	rows, err := e.Pool.Query(ctx, sql, val)
+	if err != nil {
+		slog.Warn("alerts: metric_threshold repo_metadata_age query", "err", err)
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var hostID uuid.UUID
+		var mgr string
+		var v float64
+		if err := rows.Scan(&hostID, &mgr, &v); err != nil {
+			continue
+		}
+		e.fireMetricRule(ctx, r, hostID, "repo_metadata_age_sec", mgr, op, val, time.Now())
+	}
+}
+
+// metricMonitorLatency reads monitors.last_latency_ms (one-shot, not the
+// hypertable). monitor_id scope is mandatory in practice — without it the
+// alert fires once per monitor and the dedup key gets fuzzy.
+func (e *Engine) metricMonitorLatency(ctx context.Context, r ruleRow, op string, val float64, monitorIDStr string) {
+	args := []any{val}
+	idFilter := ""
+	if monitorIDStr != "" {
+		if mid, err := uuid.Parse(monitorIDStr); err == nil {
+			idFilter = " AND id = $2"
+			args = append(args, mid)
+		}
+	}
+	sql := fmt.Sprintf(`
+		SELECT id, name, last_latency_ms
+		FROM monitors
+		WHERE enabled = TRUE AND last_latency_ms IS NOT NULL
+		  AND last_latency_ms::float %s $1%s`, op, idFilter)
+	rows, err := e.Pool.Query(ctx, sql, args...)
+	if err != nil {
+		slog.Warn("alerts: metric_threshold monitor_latency query", "err", err)
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var mid uuid.UUID
+		var name string
+		var latency int
+		if err := rows.Scan(&mid, &name, &latency); err != nil {
+			continue
+		}
+		dedup := fmt.Sprintf("metric_threshold:%s:%s", mid, "monitor_latency")
+		subj := fmt.Sprintf("[MonSys] monitor %s latency %dms %s %.0f", name, latency, op, val)
+		body := fmt.Sprintf("Monitor %s last latency %dms %s threshold %.0fms.", name, latency, op, val)
+		e.fire(ctx, r, subj, body, dedup)
+	}
+}
+
+// fireMetricRule is the common fire path for the per-host metric_threshold
+// evaluators. host-scope matching uses fetchHostScope, and the dedup key
+// embeds metric + scope so distinct mountpoints/NICs/workloads on the same
+// host don't share an alert_state row.
+func (e *Engine) fireMetricRule(ctx context.Context, r ruleRow, hostID uuid.UUID, metric, scopeKey, op string, val float64, lastT time.Time) {
+	tags, groupIDs := e.fetchHostScope(ctx, hostID)
+	if !r.matchesHost(hostID, tags, groupIDs) {
+		return
+	}
+	scopeSuffix := ""
+	if scopeKey != "" {
+		scopeSuffix = ":" + scopeKey
+	}
+	dedup := fmt.Sprintf("metric_threshold:%s:%s%s", hostID, metric, scopeSuffix)
+	scopeStr := ""
+	if scopeKey != "" {
+		scopeStr = fmt.Sprintf(" (%s)", scopeKey)
+	}
+	subj := fmt.Sprintf("[MonSys] %s%s %s %.2f", metric, scopeStr, op, val)
+	body := fmt.Sprintf("Host %s sustained %s%s %s %.2f (last sample %s).",
+		hostID, metric, scopeStr, op, val, lastT.UTC().Format(time.RFC3339))
+	e.fire(ctx, r, subj, body, dedup)
+}
+
+// --- unexpected_reboot ----------------------------------------------------
+//
+// Compares each host's two most recent uptime_sec samples. A non-rolled-over
+// reset (newer < older - 30s grace) indicates the host rebooted between
+// reports. Cooldown of 1h prevents the same boot from firing repeatedly while
+// the older sample slides out of the ranking window.
+func (e *Engine) evalUnexpectedReboot(ctx context.Context) {
+	rules, err := e.loadRules(ctx, "unexpected_reboot")
+	if err != nil || len(rules) == 0 {
+		if err != nil {
+			slog.Warn("alerts: load unexpected_reboot rules", "err", err)
+		}
+		return
+	}
+	sql := `
+		WITH ranked AS (
+			SELECT host_id, uptime_sec, time,
+			       row_number() OVER (PARTITION BY host_id ORDER BY time DESC) AS rn
+			FROM metrics_system
+			WHERE time > now() - interval '2 hours'
+		)
+		SELECT a.host_id, a.uptime_sec AS new_uptime, b.uptime_sec AS old_uptime, a.time
+		FROM ranked a JOIN ranked b ON a.host_id = b.host_id
+		WHERE a.rn = 1 AND b.rn = 2
+		  AND a.uptime_sec IS NOT NULL AND b.uptime_sec IS NOT NULL
+		  AND a.uptime_sec < b.uptime_sec - 30`
+	rows, err := e.Pool.Query(ctx, sql)
+	if err != nil {
+		slog.Warn("alerts: unexpected_reboot query", "err", err)
+		return
+	}
+	defer rows.Close()
+	type hit struct {
+		hostID  uuid.UUID
+		newUp   int64
+		oldUp   int64
+		at      time.Time
+	}
+	var hits []hit
+	for rows.Next() {
+		var h hit
+		if err := rows.Scan(&h.hostID, &h.newUp, &h.oldUp, &h.at); err != nil {
+			continue
+		}
+		hits = append(hits, h)
+	}
+	now := time.Now()
+	for _, h := range hits {
+		e.stateMu.Lock()
+		last, ok := e.unexpReboot[h.hostID]
+		e.stateMu.Unlock()
+		if ok && now.Sub(last) < time.Hour {
+			continue
+		}
+		for _, r := range rules {
+			tags, groupIDs := e.fetchHostScope(ctx, h.hostID)
+			if !r.matchesHost(h.hostID, tags, groupIDs) {
+				continue
+			}
+			dedup := fmt.Sprintf("unexpected_reboot:%s", h.hostID)
+			subj := fmt.Sprintf("[MonSys] host %s rebooted unexpectedly", h.hostID)
+			body := fmt.Sprintf(
+				"Host %s uptime_sec dropped from %d to %d at %s.",
+				h.hostID, h.oldUp, h.newUp, h.at.UTC().Format(time.RFC3339))
+			e.fire(ctx, r, subj, body, dedup)
+		}
+		e.stateMu.Lock()
+		e.unexpReboot[h.hostID] = now
+		e.stateMu.Unlock()
+	}
+}
+
+// --- host_flap ------------------------------------------------------------
+func (e *Engine) evalHostFlap(ctx context.Context) {
+	rules, err := e.loadRules(ctx, "host_flap")
+	if err != nil || len(rules) == 0 {
+		if err != nil {
+			slog.Warn("alerts: load host_flap rules", "err", err)
+		}
+		return
+	}
+	for _, r := range rules {
+		windowSec := intParam(r.ConditionParams, "window_sec", 1800)
+		threshold := intParam(r.ConditionParams, "threshold", 6)
+		rows, err := e.Pool.Query(ctx, `
+			SELECT h.id, h.hostname, count(*)
+			FROM host_status_history hh JOIN hosts h ON h.id = hh.host_id
+			WHERE hh.at > now() - make_interval(secs => $1)
+			GROUP BY h.id, h.hostname
+			HAVING count(*) > $2`, windowSec, threshold)
+		if err != nil {
+			slog.Warn("alerts: host_flap query", "err", err)
+			continue
+		}
+		for rows.Next() {
+			var hostID uuid.UUID
+			var hostname string
+			var n int
+			if err := rows.Scan(&hostID, &hostname, &n); err != nil {
+				continue
+			}
+			tags, groupIDs := e.fetchHostScope(ctx, hostID)
+			if !r.matchesHost(hostID, tags, groupIDs) {
+				continue
+			}
+			dedup := fmt.Sprintf("host_flap:%s", hostID)
+			subj := fmt.Sprintf("[MonSys] host %s is flapping (%d transitions in %ds)", hostname, n, windowSec)
+			body := fmt.Sprintf("Host %s recorded %d liveness transitions in the last %ds (threshold %d).",
+				hostname, n, windowSec, threshold)
+			e.fire(ctx, r, subj, body, dedup)
+		}
+		rows.Close()
+	}
+}
+
+// --- container_state_change ----------------------------------------------
+//
+// State-change detection. We snapshot every workload's current state at each
+// tick, diff against the in-memory cache, and fire only on transitions INTO
+// the configured "bad" set. The first tick after engine boot seeds the cache
+// without firing (matches prior state) so a long-running already-exited
+// container doesn't alarm at restart.
+func (e *Engine) evalContainerStateChange(ctx context.Context) {
+	rules, err := e.loadRules(ctx, "container_state_change")
+	if err != nil || len(rules) == 0 {
+		if err != nil {
+			slog.Warn("alerts: load container_state_change rules", "err", err)
+		}
+		return
+	}
+	rows, err := e.Pool.Query(ctx, `
+		SELECT host_id, external_id, name, image, state
+		FROM workloads
+		WHERE state IS NOT NULL`)
+	if err != nil {
+		slog.Warn("alerts: container_state_change query", "err", err)
+		return
+	}
+	defer rows.Close()
+	type cs struct {
+		hostID            uuid.UUID
+		externalID, name  string
+		image, state      string
+	}
+	var snapshot []cs
+	for rows.Next() {
+		var c cs
+		if err := rows.Scan(&c.hostID, &c.externalID, &c.name, &c.image, &c.state); err != nil {
+			continue
+		}
+		snapshot = append(snapshot, c)
+	}
+	for _, c := range snapshot {
+		key := c.hostID.String() + ":" + c.externalID
+		e.stateMu.Lock()
+		prev, seen := e.containerState[key]
+		e.containerState[key] = c.state
+		e.stateMu.Unlock()
+		if !seen || prev == c.state {
+			continue
+		}
+		for _, r := range rules {
+			states := stringSliceParam(r.ConditionParams, "states", []string{"exited", "dead"})
+			exclude := stringParam(r.ConditionParams, "exclude_image_substring", "")
+			if !contains(states, c.state) {
+				continue
+			}
+			if exclude != "" && c.image != "" && strings.Contains(c.image, exclude) {
+				continue
+			}
+			tags, groupIDs := e.fetchHostScope(ctx, c.hostID)
+			if !r.matchesHost(c.hostID, tags, groupIDs) {
+				continue
+			}
+			dedup := fmt.Sprintf("container_state:%s:%s", c.hostID, c.externalID)
+			subj := fmt.Sprintf("[MonSys] container %s entered %s", c.name, c.state)
+			body := fmt.Sprintf("Container %q (%s) on host %s transitioned %s → %s.",
+				c.name, c.image, c.hostID, prev, c.state)
+			e.fire(ctx, r, subj, body, dedup)
+		}
+	}
+}
+
+// --- vm_state_change ------------------------------------------------------
+func (e *Engine) evalVMStateChange(ctx context.Context) {
+	rules, err := e.loadRules(ctx, "vm_state_change")
+	if err != nil || len(rules) == 0 {
+		if err != nil {
+			slog.Warn("alerts: load vm_state_change rules", "err", err)
+		}
+		return
+	}
+	rows, err := e.Pool.Query(ctx, `
+		SELECT host_id, external_id, name, kind, state, autostart
+		FROM vms`)
+	if err != nil {
+		slog.Warn("alerts: vm_state_change query", "err", err)
+		return
+	}
+	defer rows.Close()
+	type vs struct {
+		hostID                  uuid.UUID
+		externalID, name, kind  string
+		state                   string
+		autostart               bool
+	}
+	var snapshot []vs
+	for rows.Next() {
+		var v vs
+		var autoNull *bool
+		if err := rows.Scan(&v.hostID, &v.externalID, &v.name, &v.kind, &v.state, &autoNull); err != nil {
+			continue
+		}
+		if autoNull != nil {
+			v.autostart = *autoNull
+		}
+		snapshot = append(snapshot, v)
+	}
+	for _, v := range snapshot {
+		key := v.hostID.String() + ":" + v.externalID
+		e.stateMu.Lock()
+		prev, seen := e.vmState[key]
+		e.vmState[key] = v.state
+		e.stateMu.Unlock()
+		for _, r := range rules {
+			subkind := stringParam(r.ConditionParams, "subkind", "any_transition")
+			switch subkind {
+			case "stopped":
+				if !seen || prev == v.state {
+					continue
+				}
+				if v.state == "running" || v.state == prev {
+					continue
+				}
+				if v.state != "stopped" && v.state != "paused" && v.state != "shutdown" {
+					continue
+				}
+			case "autostart_violation":
+				if !v.autostart || v.state == "running" {
+					continue
+				}
+				// Fire on persistent violation, but dedup so it
+				// doesn't refire every tick.
+			default: // any_transition
+				if !seen || prev == v.state {
+					continue
+				}
+			}
+			tags, groupIDs := e.fetchHostScope(ctx, v.hostID)
+			if !r.matchesHost(v.hostID, tags, groupIDs) {
+				continue
+			}
+			dedup := fmt.Sprintf("vm_state:%s:%s:%s", v.hostID, v.externalID, subkind)
+			subj := fmt.Sprintf("[MonSys] VM %s (%s): %s", v.name, v.kind, v.state)
+			body := fmt.Sprintf("VM %s (%s/%s) on host %s state=%s (prev=%s, autostart=%t).",
+				v.name, v.kind, v.externalID, v.hostID, v.state, prev, v.autostart)
+			e.fire(ctx, r, subj, body, dedup)
+		}
+	}
+}
+
+// --- nic_link_down --------------------------------------------------------
+func (e *Engine) evalNICLinkDown(ctx context.Context) {
+	rules, err := e.loadRules(ctx, "nic_link_down")
+	if err != nil || len(rules) == 0 {
+		if err != nil {
+			slog.Warn("alerts: load nic_link_down rules", "err", err)
+		}
+		return
+	}
+	rows, err := e.Pool.Query(ctx, `
+		SELECT host_id, name, COALESCE(speed_mbps, 0)
+		FROM nics`)
+	if err != nil {
+		slog.Warn("alerts: nic_link_down query", "err", err)
+		return
+	}
+	defer rows.Close()
+	type ns struct {
+		hostID uuid.UUID
+		name   string
+		speed  int
+	}
+	var snapshot []ns
+	for rows.Next() {
+		var n ns
+		if err := rows.Scan(&n.hostID, &n.name, &n.speed); err != nil {
+			continue
+		}
+		snapshot = append(snapshot, n)
+	}
+	for _, n := range snapshot {
+		key := n.hostID.String() + ":" + n.name
+		e.stateMu.Lock()
+		prev, seen := e.nicSpeed[key]
+		e.nicSpeed[key] = n.speed
+		e.stateMu.Unlock()
+		for _, r := range rules {
+			excludeLo := boolParam(r.ConditionParams, "exclude_loopback", true)
+			excludeVirt := boolParam(r.ConditionParams, "exclude_virtual", true)
+			if excludeLo && n.name == "lo" {
+				continue
+			}
+			if excludeVirt && (strings.HasPrefix(n.name, "veth") ||
+				strings.HasPrefix(n.name, "docker") ||
+				strings.HasPrefix(n.name, "br-") ||
+				strings.HasPrefix(n.name, "virbr") ||
+				strings.HasPrefix(n.name, "tap")) {
+				continue
+			}
+			if !seen || prev == 0 || n.speed != 0 {
+				continue
+			}
+			tags, groupIDs := e.fetchHostScope(ctx, n.hostID)
+			if !r.matchesHost(n.hostID, tags, groupIDs) {
+				continue
+			}
+			dedup := fmt.Sprintf("nic_link_down:%s:%s", n.hostID, n.name)
+			subj := fmt.Sprintf("[MonSys] NIC %s is down on %s", n.name, n.hostID)
+			body := fmt.Sprintf("NIC %s on host %s reported speed %d Mbps (previous: %d).",
+				n.name, n.hostID, n.speed, prev)
+			e.fire(ctx, r, subj, body, dedup)
+		}
+	}
+}
+
+// --- nic_bond_degraded ----------------------------------------------------
+func (e *Engine) evalNICBondDegraded(ctx context.Context) {
+	rules, err := e.loadRules(ctx, "nic_bond_degraded")
+	if err != nil || len(rules) == 0 {
+		if err != nil {
+			slog.Warn("alerts: load nic_bond_degraded rules", "err", err)
+		}
+		return
+	}
+	rows, err := e.Pool.Query(ctx, `
+		SELECT host_id, name, COALESCE(array_length(members, 1), 0)
+		FROM nics
+		WHERE COALESCE(array_length(members, 1), 0) > 0`)
+	if err != nil {
+		slog.Warn("alerts: nic_bond_degraded query", "err", err)
+		return
+	}
+	defer rows.Close()
+	type bs struct {
+		hostID  uuid.UUID
+		name    string
+		members int
+	}
+	var snapshot []bs
+	for rows.Next() {
+		var b bs
+		if err := rows.Scan(&b.hostID, &b.name, &b.members); err != nil {
+			continue
+		}
+		snapshot = append(snapshot, b)
+	}
+	for _, b := range snapshot {
+		key := b.hostID.String() + ":" + b.name
+		e.stateMu.Lock()
+		prev, seen := e.nicMembers[key]
+		// Baseline is the max seen so far — bond growth shouldn't downgrade
+		// the alert threshold for future shrinks.
+		if !seen || b.members > prev {
+			e.nicMembers[key] = b.members
+		}
+		baseline := e.nicMembers[key]
+		e.stateMu.Unlock()
+		if !seen || b.members >= baseline {
+			continue
+		}
+		for _, r := range rules {
+			tags, groupIDs := e.fetchHostScope(ctx, b.hostID)
+			if !r.matchesHost(b.hostID, tags, groupIDs) {
+				continue
+			}
+			dedup := fmt.Sprintf("nic_bond_degraded:%s:%s", b.hostID, b.name)
+			subj := fmt.Sprintf("[MonSys] bond/bridge %s degraded on %s", b.name, b.hostID)
+			body := fmt.Sprintf("Bond %s on host %s has %d members (baseline %d).",
+				b.name, b.hostID, b.members, baseline)
+			e.fire(ctx, r, subj, body, dedup)
+		}
+	}
+}
+
+// --- agent_outdated -------------------------------------------------------
+//
+// When min_version is empty we derive a baseline from the freshest host's
+// agent_version. Simple lex compare — semver-aware ordering can come later.
+func (e *Engine) evalAgentOutdated(ctx context.Context) {
+	rules, err := e.loadRules(ctx, "agent_outdated")
+	if err != nil || len(rules) == 0 {
+		if err != nil {
+			slog.Warn("alerts: load agent_outdated rules", "err", err)
+		}
+		return
+	}
+	for _, r := range rules {
+		minVer := stringParam(r.ConditionParams, "min_version", "")
+		if minVer == "" {
+			if err := e.Pool.QueryRow(ctx,
+				`SELECT COALESCE(max(agent_version), '') FROM hosts WHERE agent_version IS NOT NULL`).
+				Scan(&minVer); err != nil {
+				slog.Warn("alerts: agent_outdated baseline lookup", "err", err)
+				continue
+			}
+		}
+		if minVer == "" {
+			continue
+		}
+		rows, err := e.Pool.Query(ctx, `
+			SELECT id, hostname, COALESCE(agent_version, '')
+			FROM hosts
+			WHERE agent_version IS NOT NULL
+			  AND agent_version <> ''
+			  AND agent_version < $1
+			  AND last_seen_at > now() - interval '1 day'`, minVer)
+		if err != nil {
+			slog.Warn("alerts: agent_outdated query", "err", err)
+			continue
+		}
+		for rows.Next() {
+			var hostID uuid.UUID
+			var hostname, ver string
+			if err := rows.Scan(&hostID, &hostname, &ver); err != nil {
+				continue
+			}
+			tags, groupIDs := e.fetchHostScope(ctx, hostID)
+			if !r.matchesHost(hostID, tags, groupIDs) {
+				continue
+			}
+			dedup := fmt.Sprintf("agent_outdated:%s", hostID)
+			subj := fmt.Sprintf("[MonSys] agent on %s is outdated (%s < %s)", hostname, ver, minVer)
+			body := fmt.Sprintf("Host %s reports agent version %q; baseline is %q.", hostname, ver, minVer)
+			e.fire(ctx, r, subj, body, dedup)
+		}
+		rows.Close()
+	}
+}
+
+// --- image_update_pending -------------------------------------------------
+func (e *Engine) evalImageUpdatePending(ctx context.Context) {
+	rules, err := e.loadRules(ctx, "image_update_pending")
+	if err != nil || len(rules) == 0 {
+		if err != nil {
+			slog.Warn("alerts: load image_update_pending rules", "err", err)
+		}
+		return
+	}
+	for _, r := range rules {
+		minAge := intParam(r.ConditionParams, "min_age_hours", 24)
+		rows, err := e.Pool.Query(ctx, `
+			SELECT host_id, external_id, COALESCE(name, ''), COALESCE(image, ''), update_checked_at
+			FROM workloads
+			WHERE update_available = TRUE
+			  AND update_checked_at IS NOT NULL
+			  AND update_checked_at < now() - make_interval(hours => $1)`, minAge)
+		if err != nil {
+			slog.Warn("alerts: image_update_pending query", "err", err)
+			continue
+		}
+		for rows.Next() {
+			var hostID uuid.UUID
+			var extID, name, image string
+			var checkedAt time.Time
+			if err := rows.Scan(&hostID, &extID, &name, &image, &checkedAt); err != nil {
+				continue
+			}
+			tags, groupIDs := e.fetchHostScope(ctx, hostID)
+			if !r.matchesHost(hostID, tags, groupIDs) {
+				continue
+			}
+			dedup := fmt.Sprintf("image_update_pending:%s:%s", hostID, extID)
+			subj := fmt.Sprintf("[MonSys] container %s on %s has an image update", name, hostID)
+			body := fmt.Sprintf("Container %s (%s) on host %s has an available image update since %s.",
+				name, image, hostID, checkedAt.UTC().Format(time.RFC3339))
+			e.fire(ctx, r, subj, body, dedup)
+		}
+		rows.Close()
+	}
+}
+
+// --- package_update_available ---------------------------------------------
+func (e *Engine) evalPackageUpdateAvailable(ctx context.Context) {
+	rules, err := e.loadRules(ctx, "package_update_available")
+	if err != nil || len(rules) == 0 {
+		if err != nil {
+			slog.Warn("alerts: load package_update_available rules", "err", err)
+		}
+		return
+	}
+	for _, r := range rules {
+		threshold := intParam(r.ConditionParams, "threshold", 50)
+		rows, err := e.Pool.Query(ctx, `
+			SELECT DISTINCT ON (host_id) host_id, updates_count, time
+			FROM metrics_packages_summary
+			ORDER BY host_id, time DESC`)
+		if err != nil {
+			slog.Warn("alerts: package_update_available query", "err", err)
+			continue
+		}
+		for rows.Next() {
+			var hostID uuid.UUID
+			var cnt int
+			var t time.Time
+			if err := rows.Scan(&hostID, &cnt, &t); err != nil {
+				continue
+			}
+			if cnt <= threshold {
+				continue
+			}
+			tags, groupIDs := e.fetchHostScope(ctx, hostID)
+			if !r.matchesHost(hostID, tags, groupIDs) {
+				continue
+			}
+			dedup := fmt.Sprintf("package_update_available:%s", hostID)
+			subj := fmt.Sprintf("[MonSys] host %s: %d packages need updating", hostID, cnt)
+			body := fmt.Sprintf("Host %s has %d pending package updates (threshold %d, sampled at %s).",
+				hostID, cnt, threshold, t.UTC().Format(time.RFC3339))
+			e.fire(ctx, r, subj, body, dedup)
+		}
+		rows.Close()
+	}
+}
+
+// --- pending_reboot -------------------------------------------------------
+//
+// Fires per host while a kernel package update is pending. The host_status
+// LEFT JOIN auto-resolves once the kernel package row disappears (handled
+// implicitly: nothing in the query returns the host, so the dedup key sees
+// no re-fire and the open alert_state row can be closed by the next periodic
+// pass — see explicit resolve below).
+func (e *Engine) evalPendingReboot(ctx context.Context) {
+	rules, err := e.loadRules(ctx, "pending_reboot")
+	if err != nil || len(rules) == 0 {
+		if err != nil {
+			slog.Warn("alerts: load pending_reboot rules", "err", err)
+		}
+		return
+	}
+	rows, err := e.Pool.Query(ctx, `
+		SELECT DISTINCT host_id, string_agg(name, ', ') AS pkgs
+		FROM package_updates
+		WHERE name LIKE 'linux-image%'
+		   OR name LIKE 'linux-headers%'
+		   OR name LIKE 'kernel%'
+		   OR name LIKE 'linux-%'
+		GROUP BY host_id`)
+	if err != nil {
+		slog.Warn("alerts: pending_reboot query", "err", err)
+		return
+	}
+	defer rows.Close()
+	active := map[uuid.UUID]string{}
+	for rows.Next() {
+		var hostID uuid.UUID
+		var pkgs string
+		if err := rows.Scan(&hostID, &pkgs); err != nil {
+			continue
+		}
+		active[hostID] = pkgs
+	}
+	for hostID, pkgs := range active {
+		for _, r := range rules {
+			tags, groupIDs := e.fetchHostScope(ctx, hostID)
+			if !r.matchesHost(hostID, tags, groupIDs) {
+				continue
+			}
+			dedup := fmt.Sprintf("pending_reboot:%s", hostID)
+			subj := fmt.Sprintf("[MonSys] host %s needs a reboot", hostID)
+			body := fmt.Sprintf("Host %s has kernel package(s) pending update: %s.", hostID, pkgs)
+			e.fire(ctx, r, subj, body, dedup)
+		}
+	}
+	// Resolve hosts that previously had a pending-reboot open alert but no
+	// kernel package update anymore. We scan alert_state and call resolve()
+	// for each closed dedup key.
+	resRows, err := e.Pool.Query(ctx, `
+		SELECT s.dedup_key, s.host_id FROM alert_state s
+		WHERE s.dedup_key LIKE 'pending_reboot:%' AND s.resolved_at IS NULL`)
+	if err != nil {
+		return
+	}
+	defer resRows.Close()
+	for resRows.Next() {
+		var dedup string
+		var hostID *uuid.UUID
+		if err := resRows.Scan(&dedup, &hostID); err != nil {
+			continue
+		}
+		if hostID == nil {
+			continue
+		}
+		if _, stillPending := active[*hostID]; !stillPending {
+			e.resolve(ctx, dedup, fmt.Sprintf("Kernel package(s) on host %s no longer pending.", *hostID))
+		}
+	}
+}
+
+// --- repo_metadata_stale --------------------------------------------------
+func (e *Engine) evalRepoMetadataStale(ctx context.Context) {
+	rules, err := e.loadRules(ctx, "repo_metadata_stale")
+	if err != nil || len(rules) == 0 {
+		if err != nil {
+			slog.Warn("alerts: load repo_metadata_stale rules", "err", err)
+		}
+		return
+	}
+	for _, r := range rules {
+		threshold := intParam(r.ConditionParams, "threshold_sec", 86400)
+		rows, err := e.Pool.Query(ctx, `
+			SELECT host_id, manager, metadata_age_seconds
+			FROM package_repo_state
+			WHERE metadata_age_seconds > $1`, threshold)
+		if err != nil {
+			slog.Warn("alerts: repo_metadata_stale query", "err", err)
+			continue
+		}
+		for rows.Next() {
+			var hostID uuid.UUID
+			var mgr string
+			var age int64
+			if err := rows.Scan(&hostID, &mgr, &age); err != nil {
+				continue
+			}
+			tags, groupIDs := e.fetchHostScope(ctx, hostID)
+			if !r.matchesHost(hostID, tags, groupIDs) {
+				continue
+			}
+			dedup := fmt.Sprintf("repo_metadata_stale:%s:%s", hostID, mgr)
+			subj := fmt.Sprintf("[MonSys] %s repo metadata is stale on %s", mgr, hostID)
+			body := fmt.Sprintf("Host %s manager %s metadata age %ds > threshold %ds.",
+				hostID, mgr, age, threshold)
+			e.fire(ctx, r, subj, body, dedup)
+		}
+		rows.Close()
+	}
+}
+
+// --- inventory_drift ------------------------------------------------------
+//
+// Per-subkind diff against the in-memory baseline. First tick after boot
+// rebuilds the baseline silently; subsequent ticks fire on novel entries.
+// Removals (e.g. NIC disappears) intentionally do NOT trigger inventory_drift
+// — those are covered by nic_link_down/nic_bond_degraded.
+func (e *Engine) evalInventoryDrift(ctx context.Context) {
+	rules, err := e.loadRules(ctx, "inventory_drift")
+	if err != nil || len(rules) == 0 {
+		if err != nil {
+			slog.Warn("alerts: load inventory_drift rules", "err", err)
+		}
+		return
+	}
+	for _, r := range rules {
+		kind := stringParam(r.ConditionParams, "kind", "")
+		switch kind {
+		case "new_user":
+			e.driftNewUser(ctx, r, false)
+		case "new_sudoer":
+			e.driftNewUser(ctx, r, true)
+		case "new_disk":
+			e.driftNewDisk(ctx, r)
+		case "new_nic":
+			e.driftNewNic(ctx, r)
+		case "mac_changed":
+			e.driftMACChanged(ctx, r)
+		case "kernel_changed":
+			e.driftScalarHost(ctx, r, "kernel", e.invKernel)
+		case "distro_changed":
+			e.driftScalarHost(ctx, r, "distro", e.invDistro)
+		default:
+			// "new_package" / "removed_package" intentionally not implemented:
+			// packages cardinality is high and the security_updates_pending /
+			// package_update_available rules already cover the alarming case.
+			slog.Warn("alerts: inventory_drift unsupported kind", "rule", r.Name, "kind", kind)
+		}
+	}
+}
+
+func (e *Engine) driftNewUser(ctx context.Context, r ruleRow, sudoerOnly bool) {
+	filter := ""
+	if sudoerOnly {
+		filter = " WHERE is_sudoer = TRUE"
+	}
+	rows, err := e.Pool.Query(ctx, `SELECT host_id, username FROM observed_users`+filter)
+	if err != nil {
+		slog.Warn("alerts: inventory_drift users query", "err", err)
+		return
+	}
+	defer rows.Close()
+	current := map[uuid.UUID]map[string]bool{}
+	for rows.Next() {
+		var hostID uuid.UUID
+		var u string
+		if err := rows.Scan(&hostID, &u); err != nil {
+			continue
+		}
+		if current[hostID] == nil {
+			current[hostID] = map[string]bool{}
+		}
+		current[hostID][u] = true
+	}
+	e.stateMu.Lock()
+	defer e.stateMu.Unlock()
+	cache := e.invUsers
+	if sudoerOnly {
+		cache = e.invSudoers
+	}
+	for hostID, set := range current {
+		prev, seen := cache[hostID]
+		if !seen {
+			cache[hostID] = set
+			continue
+		}
+		for u := range set {
+			if prev[u] {
+				continue
+			}
+			tags, groupIDs := e.fetchHostScope(ctx, hostID)
+			if !r.matchesHost(hostID, tags, groupIDs) {
+				continue
+			}
+			label := "user"
+			if sudoerOnly {
+				label = "sudoer"
+			}
+			dedup := fmt.Sprintf("inventory_drift:%s:%s:%s", hostID, label, u)
+			subj := fmt.Sprintf("[MonSys] new %s %s on %s", label, u, hostID)
+			body := fmt.Sprintf("New %s %q appeared on host %s.", label, u, hostID)
+			e.fire(ctx, r, subj, body, dedup)
+		}
+		cache[hostID] = set
+	}
+}
+
+func (e *Engine) driftNewDisk(ctx context.Context, r ruleRow) {
+	rows, err := e.Pool.Query(ctx, `SELECT host_id, mountpoint FROM disks`)
+	if err != nil {
+		slog.Warn("alerts: inventory_drift disks query", "err", err)
+		return
+	}
+	defer rows.Close()
+	current := map[uuid.UUID]map[string]bool{}
+	for rows.Next() {
+		var hostID uuid.UUID
+		var mp string
+		if err := rows.Scan(&hostID, &mp); err != nil {
+			continue
+		}
+		if current[hostID] == nil {
+			current[hostID] = map[string]bool{}
+		}
+		current[hostID][mp] = true
+	}
+	e.stateMu.Lock()
+	defer e.stateMu.Unlock()
+	for hostID, set := range current {
+		prev, seen := e.invDisks[hostID]
+		if !seen {
+			e.invDisks[hostID] = set
+			continue
+		}
+		for mp := range set {
+			if prev[mp] {
+				continue
+			}
+			tags, groupIDs := e.fetchHostScope(ctx, hostID)
+			if !r.matchesHost(hostID, tags, groupIDs) {
+				continue
+			}
+			dedup := fmt.Sprintf("inventory_drift:%s:disk:%s", hostID, mp)
+			subj := fmt.Sprintf("[MonSys] new disk %s on %s", mp, hostID)
+			body := fmt.Sprintf("New disk mountpoint %q appeared on host %s.", mp, hostID)
+			e.fire(ctx, r, subj, body, dedup)
+		}
+		e.invDisks[hostID] = set
+	}
+}
+
+func (e *Engine) driftNewNic(ctx context.Context, r ruleRow) {
+	rows, err := e.Pool.Query(ctx, `SELECT host_id, name FROM nics`)
+	if err != nil {
+		slog.Warn("alerts: inventory_drift nics query", "err", err)
+		return
+	}
+	defer rows.Close()
+	current := map[uuid.UUID]map[string]bool{}
+	for rows.Next() {
+		var hostID uuid.UUID
+		var n string
+		if err := rows.Scan(&hostID, &n); err != nil {
+			continue
+		}
+		if current[hostID] == nil {
+			current[hostID] = map[string]bool{}
+		}
+		current[hostID][n] = true
+	}
+	e.stateMu.Lock()
+	defer e.stateMu.Unlock()
+	for hostID, set := range current {
+		prev, seen := e.invNics[hostID]
+		if !seen {
+			e.invNics[hostID] = set
+			continue
+		}
+		for n := range set {
+			if prev[n] {
+				continue
+			}
+			tags, groupIDs := e.fetchHostScope(ctx, hostID)
+			if !r.matchesHost(hostID, tags, groupIDs) {
+				continue
+			}
+			dedup := fmt.Sprintf("inventory_drift:%s:nic:%s", hostID, n)
+			subj := fmt.Sprintf("[MonSys] new NIC %s on %s", n, hostID)
+			body := fmt.Sprintf("New NIC %q appeared on host %s.", n, hostID)
+			e.fire(ctx, r, subj, body, dedup)
+		}
+		e.invNics[hostID] = set
+	}
+}
+
+func (e *Engine) driftMACChanged(ctx context.Context, r ruleRow) {
+	rows, err := e.Pool.Query(ctx, `SELECT host_id, name, COALESCE(mac, '') FROM nics`)
+	if err != nil {
+		slog.Warn("alerts: inventory_drift mac query", "err", err)
+		return
+	}
+	defer rows.Close()
+	current := map[uuid.UUID]map[string]string{}
+	for rows.Next() {
+		var hostID uuid.UUID
+		var n, mac string
+		if err := rows.Scan(&hostID, &n, &mac); err != nil {
+			continue
+		}
+		if current[hostID] == nil {
+			current[hostID] = map[string]string{}
+		}
+		current[hostID][n] = mac
+	}
+	e.stateMu.Lock()
+	defer e.stateMu.Unlock()
+	for hostID, set := range current {
+		prev, seen := e.invMacs[hostID]
+		if !seen {
+			e.invMacs[hostID] = set
+			continue
+		}
+		for n, mac := range set {
+			oldMac, ok := prev[n]
+			if !ok || mac == oldMac || mac == "" || oldMac == "" {
+				continue
+			}
+			tags, groupIDs := e.fetchHostScope(ctx, hostID)
+			if !r.matchesHost(hostID, tags, groupIDs) {
+				continue
+			}
+			dedup := fmt.Sprintf("inventory_drift:%s:mac:%s", hostID, n)
+			subj := fmt.Sprintf("[MonSys] NIC %s MAC changed on %s", n, hostID)
+			body := fmt.Sprintf("NIC %s on host %s changed MAC %s → %s.", n, hostID, oldMac, mac)
+			e.fire(ctx, r, subj, body, dedup)
+		}
+		e.invMacs[hostID] = set
+	}
+}
+
+// driftScalarHost handles single-value host attributes (kernel, distro).
+// Caller passes the apparent cache map; we keep a single source of truth in
+// the engine struct so concurrent ticks don't race.
+func (e *Engine) driftScalarHost(ctx context.Context, r ruleRow, column string, cache map[uuid.UUID]string) {
+	rows, err := e.Pool.Query(ctx, fmt.Sprintf(`SELECT id, COALESCE(%s, '') FROM hosts`, column))
+	if err != nil {
+		slog.Warn("alerts: inventory_drift scalar query", "column", column, "err", err)
+		return
+	}
+	defer rows.Close()
+	current := map[uuid.UUID]string{}
+	for rows.Next() {
+		var hostID uuid.UUID
+		var v string
+		if err := rows.Scan(&hostID, &v); err != nil {
+			continue
+		}
+		current[hostID] = v
+	}
+	e.stateMu.Lock()
+	defer e.stateMu.Unlock()
+	for hostID, v := range current {
+		prev, seen := cache[hostID]
+		if !seen || prev == "" {
+			cache[hostID] = v
+			continue
+		}
+		if prev == v || v == "" {
+			continue
+		}
+		tags, groupIDs := e.fetchHostScope(ctx, hostID)
+		if !r.matchesHost(hostID, tags, groupIDs) {
+			continue
+		}
+		dedup := fmt.Sprintf("inventory_drift:%s:%s", hostID, column)
+		subj := fmt.Sprintf("[MonSys] %s changed on %s: %s → %s", column, hostID, prev, v)
+		body := fmt.Sprintf("Host %s %s changed from %q to %q.", hostID, column, prev, v)
+		e.fire(ctx, r, subj, body, dedup)
+		cache[hostID] = v
+	}
+}
+
+// --- login_anomaly --------------------------------------------------------
+func (e *Engine) evalLoginAnomaly(ctx context.Context) {
+	rules, err := e.loadRules(ctx, "login_anomaly")
+	if err != nil || len(rules) == 0 {
+		if err != nil {
+			slog.Warn("alerts: load login_anomaly rules", "err", err)
+		}
+		return
+	}
+	for _, r := range rules {
+		kind := stringParam(r.ConditionParams, "kind", "")
+		windowSec := intParam(r.ConditionParams, "window_sec", 86400)
+		threshold := intParam(r.ConditionParams, "threshold", 1)
+		switch kind {
+		case "new_source_ip":
+			e.loginAnomalyNewIP(ctx, r, windowSec)
+		case "root_success":
+			e.loginAnomalyRoot(ctx, r, windowSec, threshold)
+		case "sudo_spike":
+			e.loginAnomalySudo(ctx, r, windowSec, threshold)
+		default:
+			slog.Warn("alerts: login_anomaly unsupported kind", "rule", r.Name, "kind", kind)
+		}
+	}
+}
+
+func (e *Engine) loginAnomalyNewIP(ctx context.Context, r ruleRow, windowSec int) {
+	// A "new" source_ip is one observed in the recent window that we have
+	// not previously seen for this (host, username) combination. We keep an
+	// in-memory seen-set so an existing IP from before the engine started
+	// doesn't fire after restart — first tick seeds the set.
+	rows, err := e.Pool.Query(ctx, `
+		SELECT host_id, COALESCE(username, ''), COALESCE(source_ip, '')
+		FROM login_events
+		WHERE success = TRUE
+		  AND time > now() - make_interval(secs => $1)
+		  AND source_ip IS NOT NULL AND source_ip <> ''`, windowSec)
+	if err != nil {
+		slog.Warn("alerts: login_anomaly new_source_ip query", "err", err)
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var hostID uuid.UUID
+		var user, ip string
+		if err := rows.Scan(&hostID, &user, &ip); err != nil {
+			continue
+		}
+		key := hostID.String() + ":" + user + ":" + ip
+		e.stateMu.Lock()
+		seen := e.loginNewIPSeen[key]
+		e.loginNewIPSeen[key] = true
+		e.stateMu.Unlock()
+		if seen {
+			continue
+		}
+		// Skip the first-ever observation for this combo only if the
+		// set is still being seeded (engine boot). Heuristic: if we
+		// have any other entry for the same (host, user), this is a
+		// genuine new IP and we should fire. Otherwise treat as seed.
+		e.stateMu.Lock()
+		hasOthers := false
+		prefix := hostID.String() + ":" + user + ":"
+		for k := range e.loginNewIPSeen {
+			if k == key {
+				continue
+			}
+			if strings.HasPrefix(k, prefix) {
+				hasOthers = true
+				break
+			}
+		}
+		e.stateMu.Unlock()
+		if !hasOthers {
+			continue
+		}
+		tags, groupIDs := e.fetchHostScope(ctx, hostID)
+		if !r.matchesHost(hostID, tags, groupIDs) {
+			continue
+		}
+		dedup := fmt.Sprintf("login_anomaly:%s:new_ip:%s", hostID, ip)
+		subj := fmt.Sprintf("[MonSys] new source IP %s for user %s on %s", ip, user, hostID)
+		body := fmt.Sprintf("Successful login on host %s as %q from previously-unseen source IP %s.",
+			hostID, user, ip)
+		e.fire(ctx, r, subj, body, dedup)
+	}
+}
+
+func (e *Engine) loginAnomalyRoot(ctx context.Context, r ruleRow, windowSec, threshold int) {
+	rows, err := e.Pool.Query(ctx, `
+		SELECT host_id, count(*)
+		FROM login_events
+		WHERE success = TRUE
+		  AND username = 'root'
+		  AND time > now() - make_interval(secs => $1)
+		GROUP BY host_id
+		HAVING count(*) >= $2`, windowSec, threshold)
+	if err != nil {
+		slog.Warn("alerts: login_anomaly root query", "err", err)
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var hostID uuid.UUID
+		var n int
+		if err := rows.Scan(&hostID, &n); err != nil {
+			continue
+		}
+		tags, groupIDs := e.fetchHostScope(ctx, hostID)
+		if !r.matchesHost(hostID, tags, groupIDs) {
+			continue
+		}
+		dedup := fmt.Sprintf("login_anomaly:%s:root", hostID)
+		subj := fmt.Sprintf("[MonSys] root login on %s (%d in %ds)", hostID, n, windowSec)
+		body := fmt.Sprintf("Host %s observed %d successful root logins in the last %ds (threshold %d).",
+			hostID, n, windowSec, threshold)
+		e.fire(ctx, r, subj, body, dedup)
+	}
+}
+
+func (e *Engine) loginAnomalySudo(ctx context.Context, r ruleRow, windowSec, threshold int) {
+	rows, err := e.Pool.Query(ctx, `
+		SELECT host_id, COALESCE(username, ''), count(*)
+		FROM login_events
+		WHERE method = 'sudo'
+		  AND time > now() - make_interval(secs => $1)
+		GROUP BY host_id, username
+		HAVING count(*) > $2`, windowSec, threshold)
+	if err != nil {
+		slog.Warn("alerts: login_anomaly sudo query", "err", err)
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var hostID uuid.UUID
+		var user string
+		var n int
+		if err := rows.Scan(&hostID, &user, &n); err != nil {
+			continue
+		}
+		tags, groupIDs := e.fetchHostScope(ctx, hostID)
+		if !r.matchesHost(hostID, tags, groupIDs) {
+			continue
+		}
+		dedup := fmt.Sprintf("login_anomaly:%s:sudo:%s", hostID, user)
+		subj := fmt.Sprintf("[MonSys] sudo spike for %s on %s (%d in %ds)", user, hostID, n, windowSec)
+		body := fmt.Sprintf("User %s on host %s invoked sudo %d times in %ds (threshold %d).",
+			user, hostID, n, windowSec, threshold)
+		e.fire(ctx, r, subj, body, dedup)
+	}
+}
+
+// --- audit_action ---------------------------------------------------------
+//
+// Audit_log has no host_id column. Dispatch is "fire on every new row that
+// matches actions[] / actor_pattern / target_pattern" with no host scoping.
+// We use a per-rule in-memory cursor (last seen `at`) so a rule fires only
+// on rows added since the previous tick. The first tick after boot seeds the
+// cursor at now() so historical rows don't replay.
+func (e *Engine) evalAuditAction(ctx context.Context) {
+	rules, err := e.loadRules(ctx, "audit_action")
+	if err != nil || len(rules) == 0 {
+		if err != nil {
+			slog.Warn("alerts: load audit_action rules", "err", err)
+		}
+		return
+	}
+	for _, r := range rules {
+		actions := stringSliceParam(r.ConditionParams, "actions", nil)
+		actorPat := stringParam(r.ConditionParams, "actor_pattern", "")
+		targetPat := stringParam(r.ConditionParams, "target_pattern", "")
+		e.stateMu.Lock()
+		cursor, ok := e.auditLastAt[r.ID]
+		if !ok {
+			e.auditLastAt[r.ID] = time.Now()
+			e.stateMu.Unlock()
+			continue
+		}
+		e.stateMu.Unlock()
+		conds := []string{"at > $1"}
+		args := []any{cursor}
+		if len(actions) > 0 {
+			conds = append(conds, fmt.Sprintf("action = ANY($%d)", len(args)+1))
+			args = append(args, actions)
+		}
+		if actorPat != "" {
+			conds = append(conds, fmt.Sprintf("COALESCE(actor,'') ~ $%d", len(args)+1))
+			args = append(args, actorPat)
+		}
+		if targetPat != "" {
+			conds = append(conds, fmt.Sprintf("COALESCE(target,'') ~ $%d", len(args)+1))
+			args = append(args, targetPat)
+		}
+		sql := "SELECT id, at, COALESCE(actor,''), action, COALESCE(target,'') FROM audit_log WHERE " +
+			strings.Join(conds, " AND ") + " ORDER BY at ASC, id ASC"
+		rows, err := e.Pool.Query(ctx, sql, args...)
+		if err != nil {
+			slog.Warn("alerts: audit_action query", "err", err)
+			continue
+		}
+		var maxAt time.Time = cursor
+		for rows.Next() {
+			var id int64
+			var at time.Time
+			var actor, action, target string
+			if err := rows.Scan(&id, &at, &actor, &action, &target); err != nil {
+				continue
+			}
+			if at.After(maxAt) {
+				maxAt = at
+			}
+			dedup := fmt.Sprintf("audit_action:%s:%d", uuid.Nil, id)
+			subj := fmt.Sprintf("[MonSys] audit: %s by %s", action, actor)
+			body := fmt.Sprintf("Audit event id=%d at=%s actor=%q action=%q target=%q.",
+				id, at.UTC().Format(time.RFC3339), actor, action, target)
+			e.fire(ctx, r, subj, body, dedup)
+		}
+		rows.Close()
+		e.stateMu.Lock()
+		e.auditLastAt[r.ID] = maxAt
+		e.stateMu.Unlock()
+	}
+}
+
+// --- firewall_state_change ------------------------------------------------
+func (e *Engine) evalFirewallStateChange(ctx context.Context) {
+	rules, err := e.loadRules(ctx, "firewall_state_change")
+	if err != nil || len(rules) == 0 {
+		if err != nil {
+			slog.Warn("alerts: load firewall_state_change rules", "err", err)
+		}
+		return
+	}
+	rows, err := e.Pool.Query(ctx, `
+		SELECT host_id, engine, active, COALESCE(default_input, ''), COALESCE(rule_count, 0)
+		FROM firewall_status`)
+	if err != nil {
+		slog.Warn("alerts: firewall_state_change query", "err", err)
+		return
+	}
+	defer rows.Close()
+	type fs struct {
+		hostID         uuid.UUID
+		engine, policy string
+		active         bool
+		rules          int
+	}
+	var snapshot []fs
+	for rows.Next() {
+		var f fs
+		if err := rows.Scan(&f.hostID, &f.engine, &f.active, &f.policy, &f.rules); err != nil {
+			continue
+		}
+		snapshot = append(snapshot, f)
+	}
+	for _, f := range snapshot {
+		key := f.hostID.String() + ":" + f.engine
+		e.stateMu.Lock()
+		prevActive, sawActive := e.firewallActive[f.hostID.String()+":"+f.engine]
+		prevPolicy, sawPolicy := e.firewallPolicy[key]
+		prevRules, sawRules := e.firewallRules[key]
+		e.firewallActive[key] = f.active
+		e.firewallPolicy[key] = f.policy
+		e.firewallRules[key] = f.rules
+		e.stateMu.Unlock()
+		for _, r := range rules {
+			kind := stringParam(r.ConditionParams, "kind", "")
+			tags, groupIDs := e.fetchHostScope(ctx, f.hostID)
+			if !r.matchesHost(f.hostID, tags, groupIDs) {
+				continue
+			}
+			switch kind {
+			case "inactive":
+				if sawActive && prevActive && !f.active {
+					dedup := fmt.Sprintf("firewall_state_change:%s:%s:inactive", f.hostID, f.engine)
+					subj := fmt.Sprintf("[MonSys] firewall %s went inactive on %s", f.engine, f.hostID)
+					body := fmt.Sprintf("Firewall engine %s on host %s transitioned to inactive.", f.engine, f.hostID)
+					e.fire(ctx, r, subj, body, dedup)
+				}
+			case "default_policy_weakened":
+				if sawPolicy && policyIsRestrictive(prevPolicy) && !policyIsRestrictive(f.policy) {
+					dedup := fmt.Sprintf("firewall_state_change:%s:%s:policy", f.hostID, f.engine)
+					subj := fmt.Sprintf("[MonSys] firewall %s default policy weakened on %s", f.engine, f.hostID)
+					body := fmt.Sprintf("Firewall %s default_input changed %s → %s.", f.engine, prevPolicy, f.policy)
+					e.fire(ctx, r, subj, body, dedup)
+				}
+			case "rule_count_drop":
+				dropT := intParam(r.ConditionParams, "drop_threshold", 5)
+				if sawRules && prevRules-f.rules >= dropT {
+					dedup := fmt.Sprintf("firewall_state_change:%s:%s:rules", f.hostID, f.engine)
+					subj := fmt.Sprintf("[MonSys] firewall %s rule count dropped on %s", f.engine, f.hostID)
+					body := fmt.Sprintf("Firewall %s rule_count dropped %d → %d (Δ %d, threshold %d).",
+						f.engine, prevRules, f.rules, prevRules-f.rules, dropT)
+					e.fire(ctx, r, subj, body, dedup)
+				}
+			default:
+				// Unknown subkind — skip silently to avoid log spam every tick.
+			}
+		}
+	}
+}
+
+// policyIsRestrictive reports whether a default-chain policy string indicates
+// blocking (drop/deny/reject) vs. permissive (accept/allow/permit).
+func policyIsRestrictive(p string) bool {
+	switch strings.ToLower(strings.TrimSpace(p)) {
+	case "drop", "deny", "reject":
+		return true
+	}
+	return false
+}
+
+// --- fail2ban_jail_disappeared --------------------------------------------
+//
+// We track which (host, jail) pairs we've ever seen. On each tick we mark
+// the ones still present; pairs that were previously seen but absent in the
+// current snapshot fire a one-shot alert.
+func (e *Engine) evalFail2banJailDisappeared(ctx context.Context) {
+	rules, err := e.loadRules(ctx, "fail2ban_jail_disappeared")
+	if err != nil || len(rules) == 0 {
+		if err != nil {
+			slog.Warn("alerts: load fail2ban_jail_disappeared rules", "err", err)
+		}
+		return
+	}
+	rows, err := e.Pool.Query(ctx, `SELECT host_id, jail FROM fail2ban_jails`)
+	if err != nil {
+		slog.Warn("alerts: fail2ban_jail_disappeared query", "err", err)
+		return
+	}
+	defer rows.Close()
+	current := map[string]map[string]bool{}
+	for rows.Next() {
+		var hostID uuid.UUID
+		var jail string
+		if err := rows.Scan(&hostID, &jail); err != nil {
+			continue
+		}
+		hk := hostID.String()
+		if current[hk] == nil {
+			current[hk] = map[string]bool{}
+		}
+		current[hk][jail] = true
+	}
+	e.stateMu.Lock()
+	prev := e.fail2banSeen
+	// First-tick seed: capture but don't fire.
+	if len(prev) == 0 {
+		e.fail2banSeen = current
+		e.stateMu.Unlock()
+		return
+	}
+	e.stateMu.Unlock()
+	for hk, jails := range prev {
+		hostID, err := uuid.Parse(hk)
+		if err != nil {
+			continue
+		}
+		curJails := current[hk]
+		for jail := range jails {
+			if curJails[jail] {
+				continue
+			}
+			for _, r := range rules {
+				tags, groupIDs := e.fetchHostScope(ctx, hostID)
+				if !r.matchesHost(hostID, tags, groupIDs) {
+					continue
+				}
+				dedup := fmt.Sprintf("fail2ban_jail_disappeared:%s:%s", hostID, jail)
+				subj := fmt.Sprintf("[MonSys] fail2ban jail %s disappeared on %s", jail, hostID)
+				body := fmt.Sprintf("fail2ban jail %q on host %s is no longer reported.", jail, hostID)
+				e.fire(ctx, r, subj, body, dedup)
+			}
+		}
+	}
+	// Replace baseline with the union — newly observed jails should now be
+	// tracked too, but disappeared ones stay flagged on the next tick if
+	// they came back (resolve isn't wired here since the table doesn't carry
+	// a "removed_at" we can read).
+	e.stateMu.Lock()
+	for hk, jails := range current {
+		if e.fail2banSeen[hk] == nil {
+			e.fail2banSeen[hk] = map[string]bool{}
+		}
+		for j := range jails {
+			e.fail2banSeen[hk][j] = true
+		}
+	}
+	e.stateMu.Unlock()
+}
+
+// --- crowdsec_decision_threshold ------------------------------------------
+func (e *Engine) evalCrowdSecDecisionThreshold(ctx context.Context) {
+	rules, err := e.loadRules(ctx, "crowdsec_decision_threshold")
+	if err != nil || len(rules) == 0 {
+		if err != nil {
+			slog.Warn("alerts: load crowdsec_decision_threshold rules", "err", err)
+		}
+		return
+	}
+	for _, r := range rules {
+		threshold := intParam(r.ConditionParams, "threshold", 100)
+		rows, err := e.Pool.Query(ctx, `
+			SELECT host_id, count(*)
+			FROM crowdsec_decisions
+			WHERE until > now()
+			GROUP BY host_id
+			HAVING count(*) > $1`, threshold)
+		if err != nil {
+			slog.Warn("alerts: crowdsec_decision_threshold query", "err", err)
+			continue
+		}
+		for rows.Next() {
+			var hostID uuid.UUID
+			var n int
+			if err := rows.Scan(&hostID, &n); err != nil {
+				continue
+			}
+			tags, groupIDs := e.fetchHostScope(ctx, hostID)
+			if !r.matchesHost(hostID, tags, groupIDs) {
+				continue
+			}
+			dedup := fmt.Sprintf("crowdsec_decisions:%s", hostID)
+			subj := fmt.Sprintf("[MonSys] crowdsec decisions on %s: %d > %d", hostID, n, threshold)
+			body := fmt.Sprintf("Host %s has %d active CrowdSec decisions (threshold %d).",
+				hostID, n, threshold)
+			e.fire(ctx, r, subj, body, dedup)
+		}
+		rows.Close()
+	}
 }
