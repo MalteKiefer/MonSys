@@ -103,7 +103,8 @@ func main() {
 	})
 	if err != nil {
 		slog.Error("telemetry init", "err", err)
-		os.Exit(1)
+		otlpCancel()
+		os.Exit(1) //nolint:gocritic // explicit cancel above; defers don't run after Exit
 	}
 	defer func() {
 		sCtx, sCancel := context.WithTimeout(context.Background(), 5*time.Second)

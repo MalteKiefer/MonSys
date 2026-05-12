@@ -44,6 +44,13 @@ The Go module is `github.com/MalteKiefer/MonSys`; the shipped binaries are
                                                                       ┘
 ```
 
+**Live API docs.** The running `mon-server` ships an interactive OpenAPI
+viewer (Scalar, vendored into the binary — no CDN at runtime) at
+[`/docs`](https://mon.kiefer-networks.de/docs). Admin session required —
+the route is gated by `requireSessionForDocs` (AUDIT-066). The raw spec
+is served at `/openapi.yaml` and `/openapi.json` behind the same gate, and
+the committed copy lives at [`api/openapi.yaml`](api/openapi.yaml).
+
 ---
 
 ## Server install

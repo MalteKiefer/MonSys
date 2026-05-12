@@ -247,26 +247,32 @@ func dumpSchema(t *testing.T, db *sql.DB) string {
 	}
 
 	for _, q := range queries {
-		rows, err := db.Query(q.sql)
-		if err != nil {
-			t.Fatalf("schema dump %q: %v", q.label, err)
-		}
-		parts = append(parts, "## "+q.label)
-		for rows.Next() {
-			var s string
-			if err := rows.Scan(&s); err != nil {
-				_ = rows.Close()
-				t.Fatalf("scan %q: %v", q.label, err)
-			}
-			parts = append(parts, s)
-		}
-		if err := rows.Err(); err != nil {
-			_ = rows.Close()
-			t.Fatalf("rows err %q: %v", q.label, err)
-		}
-		_ = rows.Close()
+		dumpQuery(t, db, q.label, q.sql, &parts)
 	}
 	return strings.Join(parts, "\n")
+}
+
+// dumpQuery runs one schema-dump query and appends its rows to parts. Split
+// out so the defer rows.Close() pattern (sqlclosecheck) lives in its own
+// stack frame rather than a tight loop.
+func dumpQuery(t *testing.T, db *sql.DB, label, query string, parts *[]string) {
+	t.Helper()
+	rows, err := db.Query(query)
+	if err != nil {
+		t.Fatalf("schema dump %q: %v", label, err)
+	}
+	defer rows.Close()
+	*parts = append(*parts, "## "+label)
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			t.Fatalf("scan %q: %v", label, err)
+		}
+		*parts = append(*parts, s)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("rows err %q: %v", label, err)
+	}
 }
 
 // upAll runs every migration. Helper around goose.UpContext that surfaces a

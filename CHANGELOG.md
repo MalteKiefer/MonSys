@@ -45,6 +45,8 @@ each `[X.Y.Z]` section will record the commit range.
 - Add workflow concurrency control (release: cancel-in-progress false; CI: cancel-in-progress true) and `persist-credentials: false` on every checkout except the publish job (F-4.3.1.17, F-4.3.1.18, 91550d0).
 - CI commit-signing gate with `docs/COMMIT-SIGNING.md` and advisory pre-commit hook (da612c7).
 - Nightly Go fuzz workflow exercising the 9 fuzz targets (0b1c808).
+- RFC 9116 `/.well-known/security.txt` advertising the coordinated-disclosure address and PGP key (364e16c).
+- Pin Dockerfile `FROM` base images by digest across all 3 build stages; web-dev image switches `npm install` → `npm ci` for reproducibility (fa24e91).
 - Loopback-bind, digest-pinned, TLS-overlay deploy stack with reproducible build flags (d9461bf).
 - Pin every GitHub Actions reference to a commit SHA (1d66214).
 - `SECURITY.md`, `CONTRIBUTING.md`, Dependabot config (b961b7a).
@@ -79,11 +81,16 @@ each `[X.Y.Z]` section will record the commit range.
 - Mail-only admin password reset that withholds the URL on mail success; per-user revoke-sessions endpoint (2065d36).
 - CLI `--reset-password` for admin password recovery (5c61365).
 - CLI recovery flags: `--disable-totp`, `--list-passkeys`, `--delete-all-passkeys`, `--get-security-policy`, `--set-security-policy`, `--revoke-all-sessions`, `--change-email` (c7fc5dd, ef29540).
-- CLI `--verify-audit-chain` for offline audit-chain verification (009fb4d).
 - CLI `--force-weak-password` escape hatch on `--reset-password` (80ae05e).
 - 10 Architecture Decision Records under `docs/adr/` covering bearer-token auth, passkeys + force mode, alert condition_types + JSONB, rule groups, three-step wizard, i18n, signed self-updating agent, OpenAPI source-of-truth + drift gate, distroless signed multi-arch image, and user-facing security primitives (57f7393).
+- Operator runbook at `docs/OPERATIONS.md` covering bring-up, backup/restore, rotation, and incident-response — 430 LOC (adfe293).
+- OpenTelemetry observability: OTLP traces + Prometheus metrics; default-off, opt-in via env (b300e03).
+- Migration round-trip harness using testcontainers — cycles all 31 goose migrations Up/Down/Up to catch destructive Down migrations before deploy (72ff5df).
+- Lighthouse performance + axe-core a11y CI gates against the SPA at the 0.90 baseline with a ratchet plan documented inline (1bd93c5).
+- 48 new pure-helper unit tests covering security-critical primitives; webauthn coverage 0 → 94 % (2a652ed).
+- CLI `--verify-audit-chain` flag for offline tamper-evident audit-chain verification (ee9b827).
 - Go fuzz harness with 9 targets (965aa45).
-- `.golangci.yml` baseline (reduced 187 → 132 findings) and `eslint.config.js` baseline (reduced 895 → 186 warnings) wired into CI gates (965aa45, 645e09b, a9f41ea).
+- `.golangci.yml` flat config + `eslint.config.js` flat config + Go fuzz harness baselines wired into CI gates (965aa45).
 - Proxmox node detection with `qm` / `pct` VM discovery and bridge/bond NIC members (e51f628).
 - `pve-firewall` status collector for Proxmox nodes (696c5e3).
 - Pending OS updates column on the hosts list (b51689d).
@@ -146,6 +153,9 @@ each `[X.Y.Z]` section will record the commit range.
 - OpenAPI spec is source of truth, regenerated and drift-gated in CI (ADR-0008).
 - Bearer-token session auth — no cookies (ADR-0001).
 - Drop `yq` from spec-drift pipeline; use `--print-spec` directly (376ec63).
+- golangci-lint baseline driven to **0 findings** (187 → 132 → 27 → 0) via real refactors plus documented `//nolint` rationale blocks (645e09b, 172da14, 9c29701).
+- ESLint baseline driven to **0 warnings / 0 errors** (895 → 186 → 52 → 0) via real fixes plus scoped per-line rule disables where the rule fights idiomatic React (a9f41ea, 8a134ce, c1ad944).
+- `registerRoutes` in `internal/server/api/api.go` split into 13 focused helpers — each per-resource block now lives behind a single named function instead of one ~600-line sprawl (9c29701).
 
 ### Fixed
 
@@ -154,6 +164,8 @@ each `[X.Y.Z]` section will record the commit range.
 - TopBar language preference now persists server-side (POST → PUT mismatch fixed) (ca44746).
 - Rule wizard: atomic group replace via `replace_existing_ids` no longer leaves orphans on UUID collision; per-row names are collision-safe (e72c8a3).
 - Close 79 ESLint async-handling errors in the SPA (423d2b9).
+- Eliminate the stale theme TODOs across the web client — light/dark toggle now respects the persisted preference on first paint without the previously-tracked FOUC (ee9b827).
+- Pre-existing `webauthn.ts` `Uint8Array<ArrayBuffer>` type-narrowing regression that crept in during a `@types/dom` bump; surfaced once ESLint hit 0 warnings (c1ad944).
 - A11y: DropdownMenu / Stepper roles, URL-synced tabs, plural i18n keys, TopBar strings (86607fa).
 - A11y: ThemeToggle outline + AdminAudit pagination labels (e792c7c).
 - A11y: admin menu + header-h CSS var (3c3c98e).
@@ -191,8 +203,8 @@ Intentionally omitted from this changelog because they were pure
 internal refactors / docs / test-only / merge-of-already-listed work
 with no separate user-visible effect:
 
-- `ee9b827` (close active TODOs across server CLI + web theme — cleanup-only).
 - `01462b2` (refresh web lockfile after devDep add — tooling).
+- `14a5888` (prior refresh of SECURITY_AUDIT_REPORT.md + initial CHANGELOG.md — docs-only; this changelog is its successor).
 - `74fd7c9` (enrich enrollment audit trail + `hostDisplay` sweep — already covered by 8d12110).
 - `b03a709` (install docs — `chgrp monagent` on CrowdSec config — doc-only).
 - `b25785e`, `3efd5bf`, `9557979`, `167e584`, `49f425e`, `398bf81`, `571f39a`, `8b122a8`, `d5b7d9e`, `a0f753b`, `acae031`, `737b74a`, `26984c7`, `1d09e15`, `c4a89f3`, `5442f9b`, `b05bbc3`, `d05e7c3`, `0364da7`, `17794e8`, `ecf2cfd`, `1d20fa9`, `508928a` (wave-merge commits — their content is listed under the underlying feature/fix commits).

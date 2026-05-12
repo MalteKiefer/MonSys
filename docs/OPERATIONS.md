@@ -411,6 +411,8 @@ See `docs/SIGNING.md` for the full procedure.
 
 ## 9. Useful links
 
+- [`https://mon.kiefer-networks.de/docs`](https://mon.kiefer-networks.de/docs) — live interactive OpenAPI viewer (Scalar). **Admin auth required**: log in to the SPA first, copy the session token from the `Authorization: Bearer …` header (or send the request with `curl -H "Authorization: Bearer $token"`). The raw spec lives at `/openapi.yaml` and `/openapi.json` and is gated by the same session check (AUDIT-066).
+- `api/openapi.yaml` — committed copy of the spec; CI fails on drift versus `mon-server --print-spec`.
 - `SECURITY_AUDIT_REPORT.md` — open security findings, severities, remediation status.
 - `docs/adr/README.md` — index of all architectural decision records.
 - `docs/COMMIT-SIGNING.md` — DCO + signed-commit requirements.
