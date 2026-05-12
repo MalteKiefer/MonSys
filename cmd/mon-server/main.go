@@ -67,6 +67,15 @@ func main() {
 		// for the implementation; this flag dispatches before the regular
 		// server boot so it doesn't bring up the HTTP listener.
 		verifyAuditChain = flag.Bool("verify-audit-chain", false, "verify the audit_log SHA-256 chain and exit (0=intact, 1=broken, 2=op error)")
+
+		// Backup / restore preflight. We deliberately do NOT run pg_dump
+		// from inside the mon-server binary — the distroless image has no
+		// pg_dump, and re-implementing it in Go is fragile. Instead these
+		// flags emit a one-shot report (schema version + row counts +
+		// audit-chain status) plus the exact `docker compose exec`
+		// command the operator should run. See cmd/mon-server/backup.go.
+		backupPreflight  = flag.Bool("backup-preflight", false, "print schema version, row counts, audit-chain status, and the exact pg_dump command for the configured DB; requires MON_DSN")
+		restorePreflight = flag.Bool("restore-preflight", false, "check whether the configured DB is safe to restore into (empty / no live rows), and print the exact restore command; requires MON_DSN")
 	)
 	flag.Parse()
 
@@ -167,6 +176,26 @@ func main() {
 
 	openCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
+
+	// Backup / restore preflight dispatch before MigrateUp: these are
+	// read-only reports and must never mutate schema on the operator's
+	// behalf (the preflight is the safety check that runs *before* a
+	// destructive restore — running migrations first would defeat the
+	// purpose of "is this DB empty?").
+	if *backupPreflight {
+		if err := runBackupPreflight(openCtx, dsn, os.Stdout); err != nil {
+			slog.Error("backup preflight failed", "err", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if *restorePreflight {
+		if err := runRestorePreflight(openCtx, dsn, os.Stdout); err != nil {
+			slog.Error("restore preflight failed", "err", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	st, err := store.Open(openCtx, dsn)
 	if err != nil {
