@@ -138,12 +138,12 @@ func (c *Collector) Name() string { return "identity" }
 // marking sudoers (via getent against adminGroups) and system accounts
 // (UID < systemUIDCeiling). Redaction of Shell/Home happens inline here per
 // c.redact so the masked values never leave the collector.
-func (c *Collector) Inventory(_ context.Context, snap *apitypes.InventorySnap) error {
+func (c *Collector) Inventory(ctx context.Context, snap *apitypes.InventorySnap) error {
 	users, err := readPasswd(passwdPath)
 	if err != nil {
 		return fmt.Errorf("identity: read %s: %w", passwdPath, err)
 	}
-	sudoers := sudoerSet()
+	sudoers := sudoerSet(ctx)
 	for i := range users {
 		if _, ok := sudoers[users[i].Username]; ok {
 			users[i].IsSudoer = true
@@ -257,10 +257,12 @@ func readPasswd(path string) ([]apitypes.UserInfo, error) {
 
 // sudoerSet returns the set of usernames in admin-like groups (see
 // adminGroups). Probing multiple group names accommodates distro variance.
-func sudoerSet() map[string]struct{} {
+// Takes the caller's context so agent shutdown aborts hung `getent`
+// invocations instead of waiting for getentTimeout on each group.
+func sudoerSet(ctx context.Context) map[string]struct{} {
 	out := map[string]struct{}{}
 	for _, group := range adminGroups {
-		raw, err := safeexec.RunWithTimeout(context.Background(), getentTimeout, "getent", "group", group)
+		raw, err := safeexec.RunWithTimeout(ctx, getentTimeout, "getent", "group", group)
 		if err != nil || len(raw) == 0 {
 			continue
 		}

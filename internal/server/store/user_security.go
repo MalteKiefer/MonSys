@@ -219,7 +219,10 @@ func (s *Store) GetPasswordPolicy(ctx context.Context) (apitypes.PasswordPolicy,
 	}
 	var p apitypes.PasswordPolicy
 	if err := json.Unmarshal(raw, &p); err != nil {
-		return def, nil
+		// Malformed JSON in settings shouldn't lock the login flow out of
+		// a usable policy — fall back to the conservative defaults set
+		// above. The setting can still be repaired via the admin UI.
+		return def, nil //nolint:nilerr // intentional fallback to defaults
 	}
 	if p.MinLength < 4 {
 		p.MinLength = def.MinLength

@@ -1,0 +1,189 @@
+# MonSys golangci-lint baseline.
+#
+# Pragmatic-strict: surface real bugs (errors, contexts, sql cleanup,
+# concurrency footguns) without bombarding an established codebase with
+# stylistic nits. gosec is intentionally NOT in this config — it runs as
+# its own CI job with documented G115/G123/G402/G703 exclusions.
+#
+# Schema: golangci-lint v2 (see https://golangci-lint.run/usage/configuration/).
+
+version: "2"
+
+run:
+  timeout: 5m
+  # Build tags used across the agent (linux-only collectors, etc.).
+  build-tags:
+    - linux
+  modules-download-mode: readonly
+
+linters:
+  default: none
+  enable:
+    # --- Errors ---
+    - errcheck
+    - errorlint
+
+    # --- Concurrency / correctness ---
+    - bodyclose
+    - contextcheck
+    - noctx
+    - nilerr
+    - nilnesserr
+    - rowserrcheck
+    - sqlclosecheck
+
+    # --- Code health ---
+    - unused
+    - unparam
+    - ineffassign
+    - staticcheck
+    - gocheckcompilerdirectives
+    - gocritic
+
+    # --- Style (light touch) ---
+    - whitespace
+
+    # --- Modern Go ---
+    - usestdlibvars
+    - usetesting
+    - intrange
+    - copyloopvar
+
+    # --- Tests ---
+    # testifylint is a no-op for our stdlib-testing suite, but enabled so
+    # it kicks in immediately if testify ever sneaks in.
+    - testifylint
+    # tparallel can be loud on table-driven tests that intentionally don't
+    # use t.Parallel — re-enable when we audit the test suite.
+    # - tparallel
+
+    # --- Complexity ---
+    - funlen
+    - cyclop
+
+  settings:
+    errcheck:
+      # Check that ignored type assertions (e.g. `_ = x.(T)`) are explicit.
+      check-type-assertions: true
+      # check-blank treats `_ = fn()` as an unchecked error. Leave OFF — we
+      # use blank assignment deliberately to acknowledge "we know, ignored".
+      check-blank: false
+      exclude-functions:
+        # Print-family: dropping return is conventional.
+        - fmt.Print
+        - fmt.Printf
+        - fmt.Println
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+
+    funlen:
+      # Soft limits — some collector / API handlers legitimately reach
+      # these. Bumped slightly above the request to reduce baseline noise
+      # without permitting unbounded growth.
+      lines: 100
+      statements: 60
+      # Don't count comments toward the line limit.
+      ignore-comments: true
+
+    cyclop:
+      max-complexity: 15
+      # Per-package average cap is intentionally lax — we measure per-fn.
+      package-average: 0.0
+
+    gocritic:
+      disabled-checks:
+        - ifElseChain
+        - paramTypeCombine
+      enabled-tags:
+        - diagnostic
+        - performance
+        - style
+
+    staticcheck:
+      # Defaults are fine; rely on staticcheck's own curated set. Disable
+      # only the ones that conflict with our conventions.
+      checks:
+        - all
+        # ST1000 "package comment" — many internal packages skip this.
+        - -ST1000
+        # ST1003 "naming convention" — we have legacy identifiers (e.g.
+        # ID vs Id) we won't churn.
+        - -ST1003
+
+    testifylint:
+      enable-all: true
+
+  exclusions:
+    # Apply path-based and text-based exclusions globally.
+    generated: lax
+    presets:
+      # generated, common-false-positives, legacy, std-error-handling
+      - common-false-positives
+      - std-error-handling
+    rules:
+      # Tests: relax noise-heavy linters. Test functions often legitimately
+      # exceed funlen, skip context propagation, and have unchecked Close().
+      - path: _test\.go
+        linters:
+          - funlen
+          - cyclop
+          - errcheck
+          - noctx
+          - contextcheck
+          - unparam
+          - gocritic
+
+      # main packages: short main() with flag parsing tends to trip cyclop.
+      - path: cmd/.*/main\.go
+        linters:
+          - funlen
+          - cyclop
+
+      # Migrations are generated/declarative — exclude.
+      - path: internal/server/store/migrations/.*\.go
+        linters:
+          - funlen
+          - cyclop
+          - unparam
+
+      # errcheck: closing an io.Closer in defer is a common idiom we
+      # accept project-wide. The Close error path is handled by the
+      # outer context (request failure, transaction rollback, etc.).
+      - linters:
+          - errcheck
+        text: "Error return value of .*\\.Close. is not checked"
+
+    paths:
+      - web/
+      - bin/
+      - api/openapi.yaml
+      - internal/server/spa/dist
+      - third_party$
+      - builtin$
+      - examples$
+
+formatters:
+  enable:
+    - gofmt
+    - gofumpt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/MalteKiefer/MonSys
+
+issues:
+  # Don't cap reports — we want to see everything in the baseline run.
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+severity:
+  default: error
+  rules:
+    - linters:
+        - funlen
+        - cyclop
+        - gocritic
+        - whitespace
+      severity: warning

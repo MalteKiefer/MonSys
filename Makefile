@@ -14,7 +14,7 @@ GOFLAGS_BASE := -trimpath -ldflags='$(LDFLAGS)'
 
 BIN_DIR := bin
 
-.PHONY: all build build-server build-agent build-all tidy test vet fmt clean \
+.PHONY: all build build-server build-agent build-all tidy test vet fmt lint clean \
         web web-dev compose-up compose-down compose-logs install-hooks \
         generate-spec
 
@@ -63,6 +63,12 @@ test:
 
 vet:
 	go vet ./...
+
+# golangci-lint runs the curated set in .golangci.yml. Install locally with:
+#   go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+# CI uses golangci/golangci-lint-action which manages its own binary cache.
+lint:
+	golangci-lint run ./...
 
 fmt:
 	gofmt -s -w .

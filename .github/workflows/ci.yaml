@@ -53,6 +53,22 @@ jobs:
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
 
+  # golangci-lint runs the curated baseline declared in .golangci.yml.
+  # Intentionally orthogonal to the `gosec` job — see that job header for
+  # the documented G115/G123/G402/G703 exclusions; the .golangci.yml does
+  # NOT enable gosec to avoid duplicate findings.
+  golangci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
+        with:
+          go-version: '1.26.x'
+          cache: false # golangci-lint-action manages its own caches
+      - uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
+        with:
+          version: v2.11.4
+
   gosec:
     runs-on: ubuntu-latest
     steps:
@@ -72,6 +88,18 @@ jobs:
           #          monitors + probes), labelled in the UI.
           #   G703 - pwFile path is operator-set MON_DSN_PASSWORD_FILE env.
           gosec -severity=high -exclude=G115,G123,G402,G703 ./...
+
+  web-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+      - name: install
+        run: cd web && npm ci --no-audit --no-fund
+      - name: lint
+        run: cd web && npm run lint
 
   # AUDIT-203 / AUDIT-210: catch operators who change a route or schema
   # but forget to regenerate api/openapi.yaml. The committed spec must

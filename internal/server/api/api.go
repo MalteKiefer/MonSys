@@ -2273,9 +2273,12 @@ func (s *Server) handleTestChannel(ctx context.Context, in *testChannelInput) (*
 		Body:     body,
 		Severity: "info",
 	}); err != nil {
+		// "Test channel" surfaces dispatch failure inside the response
+		// body so the UI can render the operator-facing reason. The HTTP
+		// call itself succeeded.
 		out.Body.OK = false
 		out.Body.Error = err.Error()
-		return out, nil
+		return out, nil //nolint:nilerr // surfaced in out.Body.Error by API contract
 	}
 	out.Body.OK = true
 	return out, nil
@@ -3072,10 +3075,13 @@ func (s *Server) handleAdminTestSmtp(ctx context.Context, in *smtpTestInput) (*s
 	})
 	out := &smtpTestOutput{}
 	if dispatchErr != nil {
+		// SMTP "test send" returns 200 + body.ok=false so the UI renders
+		// the operator-facing failure reason; the HTTP exchange itself
+		// succeeded. Same contract as the per-channel test handler above.
 		out.Body.OK = false
 		out.Body.Error = dispatchErr.Error()
 		s.audit(ctx, "smtp.test", in.Body.To, "error: "+dispatchErr.Error())
-		return out, nil
+		return out, nil //nolint:nilerr // surfaced in out.Body.Error by API contract
 	}
 	out.Body.OK = true
 	s.audit(ctx, "smtp.test", in.Body.To, "ok")
