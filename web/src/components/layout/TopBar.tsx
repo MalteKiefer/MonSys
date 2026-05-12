@@ -94,8 +94,8 @@ function LanguageSwitcher() {
     // refetches /v1/auth/me which carries the new `language` into the auth
     // store via App.tsx's effect.
     void api<{ ok: boolean }>("/v1/auth/me/language", {
-      method: "POST",
-      body: JSON.stringify({ language: value === "auto" ? "" : value }),
+      method: "PUT",
+      body: JSON.stringify({ language: value === "auto" ? "auto" : value }),
     })
       .then(() => qc.invalidateQueries({ queryKey: ["me"] }))
       .catch(() => {

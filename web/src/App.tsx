@@ -59,6 +59,7 @@ const AdminSecurity = lazy(() =>
 const AdminUsers = lazy(() =>
   import("./pages/AdminUsers").then((m) => ({ default: m.AdminUsers })),
 );
+import i18n from "./i18n";
 import { api } from "./lib/api";
 import { useAuth } from "./lib/auth";
 import { CurrentUser } from "./lib/types";
@@ -83,6 +84,19 @@ export function App() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me.data]);
+
+  // Carry the server-side `language` preference into i18next on every /me
+  // refresh. The TopBar switcher writes both to localStorage (immediate paint)
+  // and to the server (cross-device); this effect closes the loop on the
+  // OTHER device or after a fresh login. "auto" leaves the detector-derived
+  // language alone.
+  useEffect(() => {
+    const lang = me.data?.language;
+    if (!lang || lang === "auto") return;
+    if (lang === "en" || lang === "de") {
+      void i18n.changeLanguage(lang);
+    }
+  }, [me.data?.language]);
 
   // When the OS reports we're back online, immediately refetch every active
   // query so the connection banner can clear and stale data gets refreshed
