@@ -136,6 +136,96 @@ jobs:
       - name: lint
         run: cd web && npm run lint
 
+  # Lighthouse CI: enforces an accessibility floor (>=0.95) on the built SPA
+  # bundle. Performance / best-practices / SEO are advisory (warn) so we
+  # don't block on transient network/cold-cache scoring noise; accessibility
+  # is a hard error because regressions there are deterministic and
+  # code-caused. The lhci-bundled static server serves ./dist; index.html
+  # is the public entry (router decides login vs dashboard client-side).
+  lighthouse:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          persist-credentials: false # AUDIT 4.3.1.18
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+      - name: install
+        run: cd web && npm ci --no-audit --no-fund
+      - name: build
+        run: cd web && npm run build
+      - name: lighthouse
+        run: cd web && npm run lighthouse
+
+  # axe-core a11y gate: smoke-tests every public (unauthenticated) route for
+  # WCAG 2.0 A + AA violations. Dashboard and other auth-gated routes are
+  # excluded because the router redirects them to /login without a token, so
+  # axe would only ever see the login page anyway. http-server is invoked
+  # with -P (proxy-to-self) to give the SPA a wildcard 404 -> index.html
+  # fallback so client-side routes resolve.
+  axe-a11y:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          persist-credentials: false # AUDIT 4.3.1.18
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+      - name: install
+        run: cd web && npm ci --no-audit --no-fund
+      - name: build
+        run: cd web && npm run build
+      - name: serve and run axe
+        run: |
+          cd web
+          # SPA fallback: -P proxies unresolved paths back to /, so
+          # react-router can pick them up on the client.
+          npx http-server ./dist -p 5173 --silent -P 'http://localhost:5173?' &
+          SERVER_PID=$!
+          trap "kill $SERVER_PID 2>/dev/null || true" EXIT
+          # Poll for readiness rather than blind-sleeping.
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:5173/ -o /dev/null; then break; fi
+            sleep 1
+          done
+          # Routes that don't require an auth token. '/' redirects
+          # client-side to /login when no token is set; authenticated routes
+          # would just render the login screen and add no axe signal.
+          ROUTES="/ /login /reset /confirm-email"
+          STATUS=0
+          for r in $ROUTES; do
+            echo "::group::axe http://localhost:5173$r"
+            if ! npx axe "http://localhost:5173$r" --tags wcag2a,wcag2aa --exit; then
+              STATUS=1
+            fi
+            echo "::endgroup::"
+          done
+          exit $STATUS
+
+  # Migration round-trip tests: for every numbered migration we run
+  # Up -> Down -> Up against a real TimescaleDB container (same image
+  # digest as the deploy compose pin). Catches Down statements that drop
+  # too much, hypertable conversions that the Down forgets, and similar.
+  # Tests are gated behind MON_TEST_DOCKER=1 inside the file so the main
+  # `go test ./...` job stays fast; this job sets the env explicitly.
+  # ubuntu-latest already exposes /var/run/docker.sock, so testcontainers
+  # uses it directly without needing a service container.
+  migration-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          persist-credentials: false # AUDIT 4.3.1.18
+      - uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
+        with:
+          go-version: '1.26.2'
+          cache: true
+      - name: test-migrations
+        run: make test-migrations
+
   # AUDIT-203 / AUDIT-210: catch operators who change a route or schema
   # but forget to regenerate api/openapi.yaml. The committed spec must
   # match what `mon-server --print-spec` produces.

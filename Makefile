@@ -14,7 +14,7 @@ GOFLAGS_BASE := -trimpath -ldflags='$(LDFLAGS)'
 
 BIN_DIR := bin
 
-.PHONY: all build build-server build-agent build-all tidy test vet fmt lint clean \
+.PHONY: all build build-server build-agent build-all tidy test test-migrations vet fmt lint clean \
         web web-dev compose-up compose-down compose-logs install-hooks \
         generate-spec
 
@@ -71,6 +71,14 @@ tidy:
 
 test:
 	go test ./...
+
+# Migration round-trip tests against a real TimescaleDB container (slow:
+# pulls an image, boots Postgres). Opt-in via MON_TEST_DOCKER=1. The default
+# `make test` target skips them via the env-gate inside the test file, and
+# `go test -short` also skips them - so CI's main test stage is unaffected.
+# See internal/server/store/migrations_test.go for what's covered.
+test-migrations:
+	MON_TEST_DOCKER=1 go test -timeout=10m -run=TestMigration ./internal/server/store/...
 
 vet:
 	go vet ./...
