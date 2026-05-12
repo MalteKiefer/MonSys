@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"log/slog"
@@ -54,11 +55,40 @@ type Server struct {
 	// (latest version + per-arch URL + sha256). Optional — endpoint returns
 	// 404 when nil.
 	AgentUpdate *agentupdate.Resolver
+
+	// audit 2026-05-12 F-9: process-local cache of UserCompliesWithPolicy
+	// results. Used by requireMethodCompliance to fail-closed-when-possible:
+	// on a transient policy lookup error we reuse the most recent answer
+	// (even past its TTL) rather than fail-open. New entries get a 60 s TTL.
+	policyComplianceCache   map[uuid.UUID]policyComplianceCacheEntry
+	policyComplianceCacheMu sync.RWMutex
+
+	// audit 2026-05-12 F-11: per-user throttle for /v1/auth/email/request.
+	// Maps user ID -> time of most recent request. Refuses with 429 if the
+	// caller already requested an email change in the last 60 s. Entries
+	// older than 1 h are purged on access so the map stays bounded.
+	emailChangeThrottle   map[uuid.UUID]time.Time
+	emailChangeThrottleMu sync.Mutex
+}
+
+// audit 2026-05-12 F-9: cache entry. complies+grace are the most recent
+// successful UserCompliesWithPolicy return; expiresAt marks the TTL so a
+// success path knows when to re-query. On error we ignore expiresAt and
+// reuse the entry whatever its age.
+type policyComplianceCacheEntry struct {
+	complies  bool
+	grace     *time.Time
+	expiresAt time.Time
 }
 
 func New(s *store.Store) *Server {
 	r := chi.NewRouter()
-	srv := &Server{Store: s, Router: r}
+	srv := &Server{
+		Store:                 s,
+		Router:                r,
+		policyComplianceCache: make(map[uuid.UUID]policyComplianceCacheEntry),
+		emailChangeThrottle:   make(map[uuid.UUID]time.Time),
+	}
 
 	// chi requires every Use() call before any route registration.
 	// humachi.New below registers the openapi/docs routes, so all
@@ -837,16 +867,17 @@ func (s *Server) registerRoutes() {
 		Tags:        []string{"auth"},
 	}, s.handleConsumeReset)
 
-	// Self-service avatar upload/delete. Both stay in openProtected so a
-	// non-compliant user can still change their picture while sorting out
-	// their 2FA enrollment.
+	// Self-service avatar upload/delete. Sit under `protected` (the
+	// compliance gate) — they're profile customisation, NOT a step on
+	// the path to becoming compliant, so a non-compliant user past their
+	// grace window has no business mutating them. audit 2026-05-12 F-10.
 	huma.Register(s.API, huma.Operation{
 		OperationID: "auth-me-avatar-upload",
 		Method:      http.MethodPost,
 		Path:        "/v1/auth/me/avatar",
 		Summary:     "Upload/replace the caller's avatar (base64-encoded image)",
 		Tags:        []string{"auth"},
-		Middlewares: openProtected,
+		Middlewares: protected,
 	}, s.handleSetAvatar)
 	huma.Register(s.API, huma.Operation{
 		OperationID: "auth-me-avatar-delete",
@@ -854,17 +885,19 @@ func (s *Server) registerRoutes() {
 		Path:        "/v1/auth/me/avatar",
 		Summary:     "Delete the caller's avatar",
 		Tags:        []string{"auth"},
-		Middlewares: openProtected,
+		Middlewares: protected,
 	}, s.handleDeleteAvatar)
 
-	// Self-service UI language preference.
+	// Self-service UI language preference. Under `protected` per F-10 —
+	// the TopBar switcher shouldn't let a non-compliant user customise
+	// the UI past the grace window.
 	huma.Register(s.API, huma.Operation{
 		OperationID: "auth-me-set-language",
 		Method:      http.MethodPut,
 		Path:        "/v1/auth/me/language",
 		Summary:     "Set the caller's UI language preference",
 		Tags:        []string{"auth"},
-		Middlewares: openProtected,
+		Middlewares: protected,
 	}, s.handleSetLanguage)
 
 	// Avatar fetch by user id. Wired on chi directly so we can stream raw
@@ -876,13 +909,16 @@ func (s *Server) registerRoutes() {
 	// Verified email-change flow.
 	// Step 1 — authenticated user posts the new address; we mail a token to
 	// the NEW address proving they control it.
+	// Under `protected` per F-10: an attacker who stole a session of a
+	// non-compliant user inside the grace window could otherwise harvest
+	// the email-change token by redirecting to an address they control.
 	huma.Register(s.API, huma.Operation{
 		OperationID: "auth-me-email-request",
 		Method:      http.MethodPost,
 		Path:        "/v1/auth/me/email/request",
 		Summary:     "Request an email change; sends a confirmation link to the new address",
 		Tags:        []string{"auth"},
-		Middlewares: openProtected,
+		Middlewares: protected,
 	}, s.handleRequestEmailChange)
 	// Step 2 — public consume of the token. No auth: the user may already
 	// be logged out, and the token itself is the credential. Rate-limited
@@ -2634,8 +2670,13 @@ func (s *Server) requireUser(c huma.Context, next func(huma.Context)) {
 // and enforces the active force-mode policy. Compliant users and users
 // still within their grace window pass through; users past grace get a 403
 // with a stable error code the UI can intercept to render the "you must
-// enroll" interstitial. On a policy lookup failure we fail open — a broken
-// settings table is an admin problem, not a reason to lock every user out.
+// enroll" interstitial.
+//
+// audit 2026-05-12 F-9: do not fail open on a policy lookup error if we
+// have a recent cached answer for this user. The process-local cache (TTL
+// 60 s) is consulted on both success (refresh) and error (fall back). Only
+// when the cache misses entirely do we keep today's fail-open behaviour —
+// that is the boot-transient case for a user we have never seen.
 func (s *Server) requireMethodCompliance(c huma.Context, next func(huma.Context)) {
 	if s.Store == nil {
 		next(c)
@@ -2648,13 +2689,40 @@ func (s *Server) requireMethodCompliance(c huma.Context, next func(huma.Context)
 		next(c)
 		return
 	}
+
+	// audit 2026-05-12 F-9: fresh cache hit short-circuits the DB lookup.
+	if entry, ok := s.policyComplianceLookup(u.ID); ok && time.Now().Before(entry.expiresAt) {
+		s.applyComplianceDecision(c, next, entry.complies, entry.grace)
+		return
+	}
+
 	complies, grace, err := s.Store.UserCompliesWithPolicy(c.Context(), u.ID)
 	if err != nil {
-		slog.Warn("policy compliance lookup failed; failing open",
+		// audit 2026-05-12 F-9: prefer any cached answer (even expired) to
+		// failing open. Only when we have no record at all do we let the
+		// request through with a warning — that's the boot-transient case.
+		if entry, ok := s.policyComplianceLookup(u.ID); ok {
+			slog.Warn("policy compliance lookup failed; reusing cached decision",
+				"user_id", u.ID, "err", err,
+				"cache_age", time.Since(entry.expiresAt.Add(-60*time.Second)).String())
+			s.applyComplianceDecision(c, next, entry.complies, entry.grace)
+			return
+		}
+		slog.Warn("policy compliance lookup failed; no cached decision; failing open",
 			"user_id", u.ID, "err", err)
 		next(c)
 		return
 	}
+
+	// audit 2026-05-12 F-9: cache the fresh answer.
+	s.policyComplianceStore(u.ID, complies, grace)
+	s.applyComplianceDecision(c, next, complies, grace)
+}
+
+// applyComplianceDecision is the shared tail of requireMethodCompliance: it
+// either invokes next(c) or writes a 403 based on (complies, grace).
+// audit 2026-05-12 F-9.
+func (s *Server) applyComplianceDecision(c huma.Context, next func(huma.Context), complies bool, grace *time.Time) {
 	if complies {
 		next(c)
 		return
@@ -2665,6 +2733,27 @@ func (s *Server) requireMethodCompliance(c huma.Context, next func(huma.Context)
 	}
 	_ = huma.WriteErr(s.API, c, http.StatusForbidden,
 		"must_enroll_2fa: your administrator requires a second authentication factor; enroll a passkey or TOTP")
+}
+
+// policyComplianceLookup returns any cached entry for userID, fresh or
+// stale. The caller decides whether to honor the TTL. audit 2026-05-12 F-9.
+func (s *Server) policyComplianceLookup(userID uuid.UUID) (policyComplianceCacheEntry, bool) {
+	s.policyComplianceCacheMu.RLock()
+	defer s.policyComplianceCacheMu.RUnlock()
+	entry, ok := s.policyComplianceCache[userID]
+	return entry, ok
+}
+
+// policyComplianceStore writes a fresh 60 s entry for userID.
+// audit 2026-05-12 F-9.
+func (s *Server) policyComplianceStore(userID uuid.UUID, complies bool, grace *time.Time) {
+	s.policyComplianceCacheMu.Lock()
+	defer s.policyComplianceCacheMu.Unlock()
+	s.policyComplianceCache[userID] = policyComplianceCacheEntry{
+		complies:  complies,
+		grace:     grace,
+		expiresAt: time.Now().Add(60 * time.Second),
+	}
 }
 
 func userFromContext(ctx context.Context) (store.User, bool) {
@@ -3692,6 +3781,20 @@ type setSecurityPolicyInput struct {
 
 func (s *Server) handleSetSecurityPolicy(ctx context.Context, in *setSecurityPolicyInput) (*emptyOutput, error) {
 	actor, _ := userFromContext(ctx)
+
+	// audit 2026-05-12 F-20: refuse a policy change that would lock the
+	// calling admin out the moment it persists. If the new policy is
+	// stricter than `off` and the caller has no compliant method enrolled,
+	// they would be redirected to the enrollment surface on the next
+	// request — but with grace_days=0 they'd have no grace either.
+	if in.Body.ForceMode != store.ForceModeOff && in.Body.GraceDays == 0 {
+		complies, _, cerr := s.Store.UserCompliesWithPolicyKind(ctx, actor.ID, in.Body.ForceMode)
+		if cerr == nil && !complies {
+			return nil, huma.Error400BadRequest(
+				"this policy would lock you out immediately — enroll a passkey (or TOTP, for 2fa_any) first, or set grace_days > 0")
+		}
+	}
+
 	if err := s.Store.SetSecurityPolicy(ctx, in.Body, actor.Email); err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}

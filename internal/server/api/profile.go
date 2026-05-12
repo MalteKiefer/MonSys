@@ -13,11 +13,22 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
+	"image"
+	// audit 2026-05-12 F-4: decoder registrations for the avatar allow-list.
+	// The blank imports register handlers with image.Decode so we can verify
+	// the bytes match the claimed content-type instead of trusting the
+	// client.
+	_ "image/jpeg"
+	_ "image/png"
 	"net/http"
 	"strings"
+	"time"
+
+	_ "golang.org/x/image/webp"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-chi/chi/v5"
@@ -66,7 +77,27 @@ func (s *Server) handleSetAvatar(ctx context.Context, in *setAvatarInput) (*empt
 	if len(raw) > store.MaxAvatarBytes {
 		return nil, huma.Error413RequestEntityTooLarge("avatar exceeds size limit")
 	}
-	if err := s.Store.SetAvatar(ctx, u.ID, in.Body.ContentType, raw); err != nil {
+	// audit 2026-05-12 F-4: verify the bytes actually decode as one of the
+	// allow-listed formats and that the detected format matches what the
+	// client claimed. We store the DETECTED content-type — the client's
+	// `content_type` field is only consulted for the initial allow-list
+	// check above; trusting it past that would let a hostile client serve
+	// arbitrary bytes under an image/* MIME and rely on browser sniffing.
+	_, format, decodeErr := image.Decode(bytes.NewReader(raw))
+	if decodeErr != nil {
+		return nil, huma.Error400BadRequest("avatar bytes are not a valid image")
+	}
+	switch format {
+	case "png", "jpeg", "webp":
+		// ok
+	default:
+		return nil, huma.Error400BadRequest("avatar format must be png, jpeg, or webp")
+	}
+	detectedCT := "image/" + format
+	if detectedCT != in.Body.ContentType {
+		return nil, huma.Error400BadRequest("content_type does not match decoded image bytes")
+	}
+	if err := s.Store.SetAvatar(ctx, u.ID, detectedCT, raw); err != nil {
 		if errors.Is(err, store.ErrAvatarTooBig) {
 			return nil, huma.Error413RequestEntityTooLarge("avatar exceeds size limit")
 		}
@@ -75,7 +106,7 @@ func (s *Server) handleSetAvatar(ctx context.Context, in *setAvatarInput) (*empt
 		}
 		return nil, internalErr(ctx, "set avatar failed", err)
 	}
-	s.audit(ctx, "user.avatar.set", u.ID.String(), in.Body.ContentType)
+	s.audit(ctx, "user.avatar.set", u.ID.String(), detectedCT)
 	out := &emptyOutput{}
 	out.Body.OK = true
 	return out, nil
@@ -140,6 +171,11 @@ func (s *Server) handleGetUserAvatar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", ct)
+	// audit 2026-05-12 F-4: defense-in-depth against MIME sniffing. The
+	// upload path already verifies bytes match the stored content-type, but
+	// nosniff stops a browser from second-guessing us if anything ever
+	// regresses there.
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	// Short cache so the SPA doesn't refetch on every render. The
 	// avatar_updated_at column gives clients a cheap cache-buster.
 	w.Header().Set("Cache-Control", "private, max-age=300")
@@ -162,6 +198,13 @@ func (s *Server) handleRequestEmailChange(ctx context.Context, in *requestEmailC
 	}
 	if in.Body.CurrentPassword == "" {
 		return nil, huma.Error400BadRequest("current_password required")
+	}
+	// audit 2026-05-12 F-11: per-user throttle. 60 s minimum between
+	// successive email-change requests so a single session cannot spam the
+	// new-address inbox with confirmation links. The map is also opportun-
+	// istically swept of entries older than an hour so it stays bounded.
+	if !s.emailChangeAllowed(u.ID) {
+		return nil, huma.Error429TooManyRequests("email change request rate limited; try again in a moment")
 	}
 	// Reject no-op changes early to give a friendly error rather than a
 	// confusing "email already in use" later on.
@@ -228,3 +271,29 @@ func (s *Server) handleConfirmEmailChange(ctx context.Context, in *confirmEmailC
 // emailConfirmURL builds the SPA path that consumes an email-change token.
 // Mirrors inviteURL but routes to /email-confirm instead of /reset.
 func emailConfirmURL(token string) string { return "/email-confirm?token=" + token }
+
+// emailChangeAllowed enforces the 60 s per-user cooldown on
+// /v1/auth/email/request. Returns true and records `now` when the caller is
+// past the cooldown; returns false otherwise. Each call also opportunis-
+// tically purges entries older than an hour so the map stays bounded.
+// audit 2026-05-12 F-11.
+func (s *Server) emailChangeAllowed(userID uuid.UUID) bool {
+	const cooldown = 60 * time.Second
+	const purgeAge = time.Hour
+	s.emailChangeThrottleMu.Lock()
+	defer s.emailChangeThrottleMu.Unlock()
+	now := time.Now()
+	if s.emailChangeThrottle == nil {
+		s.emailChangeThrottle = make(map[uuid.UUID]time.Time)
+	}
+	for uid, ts := range s.emailChangeThrottle {
+		if now.Sub(ts) > purgeAge {
+			delete(s.emailChangeThrottle, uid)
+		}
+	}
+	if last, ok := s.emailChangeThrottle[userID]; ok && now.Sub(last) < cooldown {
+		return false
+	}
+	s.emailChangeThrottle[userID] = now
+	return true
+}

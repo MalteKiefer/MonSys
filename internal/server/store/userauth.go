@@ -408,10 +408,34 @@ func (s *Store) GetUserByEmail(ctx context.Context, email string) (User, error) 
 // regardless of how the operator capitalized the address.
 // audit 2026-05-12 F-2: revoke all sessions after a CLI password reset so any
 // previously logged-in attacker session is forcibly invalidated.
+// audit 2026-05-12 F-17: enforce the configured password policy on the CLI
+// reset path too. Operators who genuinely need to bypass the policy (e.g.
+// after tightening it in a way that excludes their own current credential
+// choice) call SetPasswordUnchecked from the --force-weak-password flag.
 func (s *Store) SetPassword(ctx context.Context, email, newPassword string) error {
 	if email == "" || newPassword == "" {
 		return errors.New("email and password required")
 	}
+	if err := s.CheckPassword(ctx, newPassword); err != nil {
+		return err
+	}
+	return s.setPasswordRaw(ctx, email, newPassword)
+}
+
+// SetPasswordUnchecked rewrites the password without consulting the
+// password policy. Reachable only from the CLI --reset-password
+// --force-weak-password escape hatch; never wire this into any HTTP path.
+// audit 2026-05-12 F-17.
+func (s *Store) SetPasswordUnchecked(ctx context.Context, email, newPassword string) error {
+	if email == "" || newPassword == "" {
+		return errors.New("email and password required")
+	}
+	return s.setPasswordRaw(ctx, email, newPassword)
+}
+
+// setPasswordRaw performs the bcrypt + UPDATE + session-revoke dance shared
+// by SetPassword and SetPasswordUnchecked. audit 2026-05-12 F-17.
+func (s *Store) setPasswordRaw(ctx context.Context, email, newPassword string) error {
 	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcryptCost)
 	if err != nil {
 		return err
@@ -502,7 +526,14 @@ func (s *Store) ChangeEmail(ctx context.Context, userID uuid.UUID, password, new
 //
 // audit 2026-05-12 F-7: revoke all sessions after admin password reset so any
 // previously logged-in attacker session is forcibly invalidated.
+// audit 2026-05-12 F-17: defense in depth — the admin reset HTTP path
+// already runs CheckPassword before calling here, but checking again
+// guarantees no future caller can sneak a non-compliant password in via
+// this primitive.
 func (s *Store) SetPasswordByAdmin(ctx context.Context, userID uuid.UUID, newPassword string) error {
+	if err := s.CheckPassword(ctx, newPassword); err != nil {
+		return err
+	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcryptCost)
 	if err != nil {
 		return err

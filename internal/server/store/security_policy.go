@@ -277,3 +277,37 @@ func (s *Store) UserCompliesWithPolicy(ctx context.Context, userID uuid.UUID) (c
 
 	return complies, grace, nil
 }
+
+// UserCompliesWithPolicyKind evaluates compliance against a HYPOTHETICAL
+// force_mode rather than the persisted one. Used by handleSetSecurityPolicy
+// to refuse a policy change that would lock the calling admin out (audit
+// 2026-05-12 F-20). Returns (false, nil, nil) when the kind is invalid;
+// the API layer treats that the same as "complies" because the underlying
+// SetSecurityPolicy will reject the bad enum anyway.
+func (s *Store) UserCompliesWithPolicyKind(ctx context.Context, userID uuid.UUID, kind string) (complies bool, graceUntil *time.Time, err error) {
+	if kind == ForceModeOff {
+		return true, nil, nil
+	}
+	var (
+		totpActive   bool
+		passkeyCount int
+		grace        *time.Time
+	)
+	err = s.Pool.QueryRow(ctx, `
+		SELECT
+		  COALESCE((SELECT enabled_at IS NOT NULL FROM user_totp WHERE user_id = $1), false) AS totp_active,
+		  (SELECT count(*) FROM user_credentials WHERE user_id = $1)                          AS passkey_count,
+		  (SELECT force_grace_until FROM users WHERE id = $1)                                 AS grace`,
+		userID,
+	).Scan(&totpActive, &passkeyCount, &grace)
+	if err != nil {
+		return false, nil, err
+	}
+	switch kind {
+	case ForceMode2FAAny:
+		complies = totpActive || passkeyCount > 0
+	case ForceModePasskeyRequired:
+		complies = passkeyCount > 0
+	}
+	return complies, grace, nil
+}

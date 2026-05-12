@@ -62,6 +62,16 @@ func passkeyNameHasControlChars(name string) bool {
 	return false
 }
 
+// truncate200 caps s to 200 runes for safe inclusion in an audit_log row.
+// audit 2026-05-12 F-14: keeps the bounded-size invariant when we log raw
+// library/error text whose length we don't control.
+func truncate200(s string) string {
+	if runes := []rune(s); len(runes) > 200 {
+		return string(runes[:200])
+	}
+	return s
+}
+
 // errChallengeOwnerMismatch fires when a register-finish call presents a
 // challenge_token that was issued to a different user. The most common
 // cause is a tab swap mid-ceremony; we refuse rather than silently
@@ -542,9 +552,25 @@ func (s *Store) FinishPasskeyLogin(ctx context.Context, challengeToken string, c
 
 	cred, err := s.Webauthn.WA.ValidateDiscoverableLogin(handler, sessionData, parsed)
 	if err != nil {
+		// audit 2026-05-12 F-14: record validation failures so an operator
+		// can spot brute-force or credential-stuffing patterns. We do not
+		// know the user reliably here (the assertion may not have resolved
+		// one), so the actor is "anon".
+		if aerr := s.AuditLog(ctx, "anon", "user.passkey.login.failed", "", truncate200(err.Error())); aerr != nil {
+			slog.Warn("audit_log insert (user.passkey.login.failed)", "err", aerr)
+		}
 		return User{}, fmt.Errorf("verify assertion: %w", err)
 	}
 	if disabled {
+		// audit 2026-05-12 F-14: disabled-user attempts are auditable; the
+		// handler resolved a real user so attribute by email.
+		actor := "anon"
+		if resolvedUser.Email != "" {
+			actor = "user:" + resolvedUser.Email
+		}
+		if aerr := s.AuditLog(ctx, actor, "user.passkey.login.failed", resolvedUser.ID.String(), truncate200("user disabled")); aerr != nil {
+			slog.Warn("audit_log insert (user.passkey.login.failed)", "err", aerr)
+		}
 		return User{}, ErrUserDisabled
 	}
 	if resolvedUser.ID == uuid.Nil || len(resolvedHandle) == 0 {

@@ -40,6 +40,10 @@ func main() {
 		createUserRole    = flag.String("user-role", "user", "role for --create-user (admin|user)")
 		createUserPassword = flag.String("user-password", "", "password for --create-user; if empty, read from stdin")
 		resetPassword      = flag.Bool("reset-password", false, "reset a user's password (use --user-email + --user-password) and exit")
+		// audit 2026-05-12 F-17: bypass the configured password policy on
+		// this CLI path only. The operator owns shell access, so we trust
+		// their judgement when --force-weak-password is set explicitly.
+		forceWeakPassword = flag.Bool("force-weak-password", false, "bypass the password policy on --reset-password (CLI escape hatch)")
 
 		// CLI recovery flags for 2FA / passkeys / security policy. All are
 		// admin shell-level recovery: they bypass current-password / current-
@@ -177,7 +181,15 @@ func main() {
 			}
 			pw = line
 		}
-		if err := st.SetPassword(openCtx, *createUserEmail, pw); err != nil {
+		// audit 2026-05-12 F-17: route through the policy-checked
+		// primitive by default; the unchecked variant is only reachable
+		// via --force-weak-password.
+		setPassword := st.SetPassword
+		if *forceWeakPassword {
+			setPassword = st.SetPasswordUnchecked
+			slog.Warn("--force-weak-password set; password policy bypassed", "email", *createUserEmail)
+		}
+		if err := setPassword(openCtx, *createUserEmail, pw); err != nil {
 			slog.Error("reset password", "err", err)
 			os.Exit(1)
 		}

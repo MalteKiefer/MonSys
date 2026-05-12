@@ -41,6 +41,15 @@ func (s *Store) RequestEmailChange(ctx context.Context, userID uuid.UUID, newEma
 	if err == nil && existingID != userID {
 		return "", ErrUserExists
 	}
+	// audit 2026-05-12 F-11: enforce "one outstanding email_change token
+	// per user" by deleting any unused, still-live token before minting a
+	// fresh one. Cheaper than a UNIQUE partial index and equally tight in
+	// the steady state — an attacker cannot accumulate live tokens by
+	// spamming the request endpoint.
+	_, _ = s.Pool.Exec(ctx,
+		`DELETE FROM user_action_tokens
+		   WHERE user_id = $1 AND type = 'email_change' AND used_at IS NULL AND expires_at > now()`,
+		userID)
 	return s.CreateActionToken(ctx, userID, "email_change", time.Hour, map[string]any{"new_email": newEmail}, createdBy)
 }
 
