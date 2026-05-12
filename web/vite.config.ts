@@ -131,7 +131,12 @@ export default defineConfig({
           /^\/healthz/,
           /^\/readyz/,
           /^\/openapi\./,
-          /^\/docs\//,
+          // Both /docs (Scalar HTML) and /docs/scalar.js must escape the
+          // SPA fallback. /^\/docs\// alone only matched /docs/<anything>,
+          // so a top-level browser nav to /docs was rewritten to the
+          // cached index.html, the SPA booted, and its catch-all <Navigate
+          // to="/" /> redirected away from the docs viewer.
+          /^\/docs(\/|$)/,
           /^\/metrics/,
           /^\/\.well-known\//,
         ],
@@ -146,6 +151,7 @@ export default defineConfig({
               url.pathname === "/healthz" ||
               url.pathname === "/readyz" ||
               url.pathname.startsWith("/openapi.") ||
+              url.pathname === "/docs" ||
               url.pathname.startsWith("/docs/") ||
               url.pathname === "/metrics" ||
               url.pathname.startsWith("/.well-known/"),
