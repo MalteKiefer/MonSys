@@ -379,7 +379,7 @@ function PaletteModal() {
       to: item.to,
     });
     setOpen(false);
-    navigate(item.to);
+    void navigate(item.to);
   }
 
   function onKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {

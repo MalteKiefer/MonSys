@@ -169,7 +169,7 @@ export function RulesPage() {
             setCreating(false);
           }}
           onSaved={() => {
-            qc.invalidateQueries({ queryKey: ["rules"] });
+            void qc.invalidateQueries({ queryKey: ["rules"] });
             setEditing(null);
             setCreating(false);
           }}

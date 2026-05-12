@@ -127,7 +127,7 @@ export function AdminIngestsContent({ onMeta }: { onMeta?: (node: ReactNode) => 
         <Panel>
           <PanelHeader>
             <h3 className="text-sm font-semibold">{t("admin:ingests.recent_heading")}</h3>
-            <Button onClick={() => list.refetch()}>
+            <Button onClick={() => { void list.refetch(); }}>
               <RefreshCcw className="h-3.5 w-3.5" /> {t("admin:ingests.refresh")}
             </Button>
           </PanelHeader>

@@ -325,7 +325,7 @@ function ResultView({
           <div className="flex shrink-0 flex-col gap-1.5 sm:flex-row">
             <Button
               variant="primary"
-              onClick={() => copyText(created.install_command, setCopiedCmd)}
+              onClick={() => { void copyText(created.install_command, setCopiedCmd); }}
               aria-label="Copy install command"
             >
               {copiedCmd ? (
@@ -339,7 +339,7 @@ function ResultView({
               )}
             </Button>
             <Button
-              onClick={() => copyText(created.install_url, setCopiedURL)}
+              onClick={() => { void copyText(created.install_url, setCopiedURL); }}
               aria-label="Copy install URL"
             >
               {copiedURL ? (
@@ -400,7 +400,7 @@ function ResultView({
         expiresIn={expiresIn}
         onOpenHost={() => {
           if (enrollment.used_by_host_id) {
-            navigate(`/hosts/${enrollment.used_by_host_id}`);
+            void navigate(`/hosts/${enrollment.used_by_host_id}`);
           }
         }}
       />

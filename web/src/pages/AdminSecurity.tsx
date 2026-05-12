@@ -67,7 +67,7 @@ export function AdminSecurity() {
       }),
     onSuccess: () => {
       setMsg({ kind: "ok", text: t("security.password.saved") });
-      qc.invalidateQueries({ queryKey: ["password-policy"] });
+      void qc.invalidateQueries({ queryKey: ["password-policy"] });
     },
     onError: (err) =>
       setMsg({
@@ -97,7 +97,7 @@ export function AdminSecurity() {
       }),
     onSuccess: () => {
       setSecMsg({ kind: "ok", text: t("security.auth.saved") });
-      qc.invalidateQueries({ queryKey: ["security-policy"] });
+      void qc.invalidateQueries({ queryKey: ["security-policy"] });
     },
     onError: (err) =>
       setSecMsg({

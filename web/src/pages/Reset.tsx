@@ -57,7 +57,7 @@ export function Reset() {
             <SuccessBox>{t("reset.success")}</SuccessBox>
             <Button
               variant="primary"
-              onClick={() => navigate("/login", { replace: true })}
+              onClick={() => { void navigate("/login", { replace: true }); }}
               className="w-full"
             >
               {t("reset.go_to_login")}
@@ -71,7 +71,7 @@ export function Reset() {
   return (
     <div className="flex min-h-full items-center justify-center px-4 py-10">
       <Panel className="w-full max-w-sm">
-        <form onSubmit={submit} className="space-y-5 p-6">
+        <form onSubmit={(e) => { void submit(e); }} className="space-y-5 p-6">
           <div className="flex items-center gap-2">
             <KeyRound className="h-5 w-5 text-accent" />
             <h1 className="text-lg font-semibold">{t("reset.title")}</h1>

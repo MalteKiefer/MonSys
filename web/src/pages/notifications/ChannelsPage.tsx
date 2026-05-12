@@ -60,7 +60,7 @@ export function ChannelsPage() {
             setCreating(false);
           }}
           onSaved={() => {
-            qc.invalidateQueries({ queryKey: ["channels"] });
+            void qc.invalidateQueries({ queryKey: ["channels"] });
             setEditing(null);
             setCreating(false);
           }}
@@ -102,7 +102,7 @@ export function ChannelsPage() {
                     isAdmin={!!isAdmin}
                     myID={myID}
                     onEdit={() => setEditing(c)}
-                    onChange={() => qc.invalidateQueries({ queryKey: ["channels"] })}
+                    onChange={() => { void qc.invalidateQueries({ queryKey: ["channels"] }); }}
                   />
                 ))}
               </TBody>

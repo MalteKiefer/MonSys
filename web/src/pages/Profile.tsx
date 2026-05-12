@@ -104,7 +104,7 @@ export function Profile() {
         {tab === "two_factor" && (
           <TwoFactorCard
             active={user.totp_active}
-            onSuccess={() => qc.invalidateQueries({ queryKey: ["me"] })}
+            onSuccess={() => { void qc.invalidateQueries({ queryKey: ["me"] }); }}
           />
         )}
         {tab === "passkeys" && <PasskeysCard />}
@@ -286,7 +286,7 @@ function AvatarCard({ user }: { user: CurrentUser }) {
         body: JSON.stringify({ content_type: "image/webp", data_b64: b64 }),
       });
       setMsg({ kind: "ok", text: t("profile:avatar.success.updated") });
-      qc.invalidateQueries({ queryKey: ["me"] });
+      void qc.invalidateQueries({ queryKey: ["me"] });
     } catch (err) {
       setMsg({ kind: "err", text: err instanceof ApiError ? err.detail : (err as Error).message });
     } finally {
@@ -300,7 +300,7 @@ function AvatarCard({ user }: { user: CurrentUser }) {
     try {
       await api<{ ok: boolean }>("/v1/auth/me/avatar", { method: "DELETE" });
       setMsg({ kind: "ok", text: t("profile:avatar.success.removed") });
-      qc.invalidateQueries({ queryKey: ["me"] });
+      void qc.invalidateQueries({ queryKey: ["me"] });
     } catch (err) {
       setMsg({ kind: "err", text: err instanceof ApiError ? err.detail : (err as Error).message });
     } finally {
@@ -325,7 +325,7 @@ function AvatarCard({ user }: { user: CurrentUser }) {
               type="file"
               accept="image/png,image/jpeg,image/webp"
               className="hidden"
-              onChange={onPick}
+              onChange={(e) => { void onPick(e); }}
             />
             <Button
               type="button"
@@ -341,7 +341,7 @@ function AvatarCard({ user }: { user: CurrentUser }) {
                   : t("profile:avatar.uploadNew")}
             </Button>
             {user.has_avatar && (
-              <Button type="button" variant="danger" disabled={busy} onClick={onRemove}>
+              <Button type="button" variant="danger" disabled={busy} onClick={() => { void onRemove(); }}>
                 <Trash2 className="h-3.5 w-3.5" />
                 {t("profile:avatar.remove")}
               </Button>
@@ -414,7 +414,7 @@ function ChangeEmailCard() {
 
   return (
     <ProfilePanel title={t("profile:email.title")}>
-      <form onSubmit={submit} className="space-y-3">
+      <form onSubmit={(e) => { void submit(e); }} className="space-y-3">
         <p className="text-sm text-fg-muted">{t("profile:email.description")}</p>
         <Field label={t("profile:email.currentPassword")}>
           <TextInput
@@ -474,7 +474,7 @@ function ChangePasswordCard() {
 
   return (
     <ProfilePanel title={t("profile:password.title")}>
-      <form onSubmit={submit} className="space-y-3">
+      <form onSubmit={(e) => { void submit(e); }} className="space-y-3">
         <Field label={t("profile:password.currentPassword")}>
           <TextInput type="password" required value={cur} onChange={(e) => setCur(e.target.value)} />
         </Field>
@@ -566,7 +566,7 @@ function TwoFactorCard({ active, onSuccess }: { active: boolean; onSuccess: () =
       title={active ? t("profile:twoFactor.titleActive") : t("profile:twoFactor.titleInactive")}
     >
       {active ? (
-        <form onSubmit={disable} className="space-y-3">
+        <form onSubmit={(e) => { void disable(e); }} className="space-y-3">
           <p className="text-sm text-fg-muted">{t("profile:twoFactor.activeText")}</p>
           <Field label={t("profile:twoFactor.passwordLabel")}>
             <TextInput type="password" required value={pw} onChange={(e) => setPw(e.target.value)} />
@@ -582,7 +582,7 @@ function TwoFactorCard({ active, onSuccess }: { active: boolean; onSuccess: () =
       ) : !setup ? (
         <div className="space-y-3">
           <p className="text-sm text-fg-muted">{t("profile:twoFactor.introText")}</p>
-          <Button variant="primary" onClick={startSetup} disabled={busy}>
+          <Button variant="primary" onClick={() => { void startSetup(); }} disabled={busy}>
             {busy ? t("profile:twoFactor.generating") : t("profile:twoFactor.beginSetup")}
           </Button>
           {msg && <Message msg={msg} />}
@@ -620,7 +620,7 @@ function TwoFactorCard({ active, onSuccess }: { active: boolean; onSuccess: () =
             </div>
           </div>
 
-          <form onSubmit={verify} className="space-y-3">
+          <form onSubmit={(e) => { void verify(e); }} className="space-y-3">
             <Field label={t("profile:twoFactor.confirmCodeLabel")}>
               <TextInput
                 type="text"
@@ -660,8 +660,8 @@ function PasskeysCard() {
     onSuccess: () => {
       setName("");
       setMsg({ kind: "ok", text: t("profile:passkeys.addSuccess") });
-      qc.invalidateQueries({ queryKey: ["passkeys"] });
-      qc.invalidateQueries({ queryKey: ["me"] });
+      void qc.invalidateQueries({ queryKey: ["passkeys"] });
+      void qc.invalidateQueries({ queryKey: ["me"] });
     },
     onError: (err) => {
       setMsg({ kind: "err", text: err instanceof ApiError ? err.detail : (err as Error).message });
@@ -676,7 +676,7 @@ function PasskeysCard() {
       }),
     onSuccess: () => {
       setMsg(null);
-      qc.invalidateQueries({ queryKey: ["passkeys"] });
+      void qc.invalidateQueries({ queryKey: ["passkeys"] });
     },
     onError: (err) => {
       setMsg({ kind: "err", text: err instanceof ApiError ? err.detail : (err as Error).message });
@@ -688,8 +688,8 @@ function PasskeysCard() {
       api<{ ok: boolean }>(`/v1/auth/me/passkeys/${id}`, { method: "DELETE" }),
     onSuccess: () => {
       setMsg(null);
-      qc.invalidateQueries({ queryKey: ["passkeys"] });
-      qc.invalidateQueries({ queryKey: ["me"] });
+      void qc.invalidateQueries({ queryKey: ["passkeys"] });
+      void qc.invalidateQueries({ queryKey: ["me"] });
     },
     onError: (err) => {
       setMsg({ kind: "err", text: err instanceof ApiError ? err.detail : (err as Error).message });
@@ -725,7 +725,7 @@ function PasskeysCard() {
       <div className="space-y-4">
         <p className="text-sm text-fg-muted">{t("profile:passkeys.description")}</p>
 
-        <form onSubmit={submitAdd} className="flex flex-wrap items-end gap-2">
+        <form onSubmit={(e) => { void submitAdd(e); }} className="flex flex-wrap items-end gap-2">
           <div className="flex-1 min-w-[12rem]">
             <Field label={t("profile:passkeys.nameLabel")}>
               <TextInput

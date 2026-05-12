@@ -71,7 +71,7 @@ export function AdminGroups() {
               initial={editing}
               onCancel={() => setEditing(null)}
               onSaved={() => {
-                qc.invalidateQueries({ queryKey: ["groups"] });
+                void qc.invalidateQueries({ queryKey: ["groups"] });
                 setEditing(null);
               }}
             />
@@ -83,7 +83,7 @@ export function AdminGroups() {
               allHosts={hosts.data?.hosts ?? []}
               onClose={() => setMembers(null)}
               onSaved={() => {
-                qc.invalidateQueries({ queryKey: ["groups"] });
+                void qc.invalidateQueries({ queryKey: ["groups"] });
               }}
             />
           )}
@@ -127,7 +127,7 @@ export function AdminGroups() {
                               variant="danger"
                               onClick={() => {
                                 if (confirm(t("admin:groups.list.confirmDelete", { name: g.name })))
-                                  api(`/v1/groups/${g.id}`, { method: "DELETE" }).then(() =>
+                                  void api(`/v1/groups/${g.id}`, { method: "DELETE" }).then(() =>
                                     qc.invalidateQueries({ queryKey: ["groups"] }),
                                   );
                               }}
@@ -149,7 +149,7 @@ export function AdminGroups() {
           allHosts={hosts.data?.hosts ?? []}
           hostsLoading={hosts.isLoading}
           onCreated={() => {
-            qc.invalidateQueries({ queryKey: ["groups"] });
+            void qc.invalidateQueries({ queryKey: ["groups"] });
             setTab("list");
           }}
         />

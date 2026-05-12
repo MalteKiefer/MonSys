@@ -259,7 +259,7 @@ export function RuleForm({
       );
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["rules"] });
+      void qc.invalidateQueries({ queryKey: ["rules"] });
       onSaved();
     },
     onError: (err) =>

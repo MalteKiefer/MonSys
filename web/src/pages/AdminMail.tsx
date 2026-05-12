@@ -101,8 +101,8 @@ export function AdminMail() {
               <SettingsWizard
                 initial={settings.data!}
                 onSaved={() => {
-                  qc.invalidateQueries({ queryKey: ["admin-smtp"] });
-                  qc.invalidateQueries({ queryKey: ["auth-config"] });
+                  void qc.invalidateQueries({ queryKey: ["admin-smtp"] });
+                  void qc.invalidateQueries({ queryKey: ["auth-config"] });
                 }}
                 onOutcome={setLastOutcome}
               />

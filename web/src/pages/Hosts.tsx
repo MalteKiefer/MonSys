@@ -93,7 +93,7 @@ export function Hosts() {
   const onRowKeyDown = (e: KeyboardEvent<HTMLTableRowElement>, id: string) => {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
-      navigate(`/hosts/${id}`);
+      void navigate(`/hosts/${id}`);
     }
   };
 
@@ -118,7 +118,7 @@ export function Hosts() {
       {isLoading ? (
         <p className="text-sm text-fg-muted">{t("hosts:loading")}</p>
       ) : error ? (
-        <ErrorState message={(error as Error).message} onRetry={() => refetch()} />
+        <ErrorState message={(error as Error).message} onRetry={() => { void refetch(); }} />
       ) : (
         <>
           {hosts.length > 0 && (
@@ -214,7 +214,7 @@ export function Hosts() {
                       tabIndex={0}
                       aria-label={t("hosts:table.openHostAria", { host: hostDisplay(h) })}
                       className="cursor-pointer transition-colors duration-100 hover:bg-panel-2 focus:outline-none focus-visible:bg-panel-2 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/50"
-                      onClick={() => navigate(`/hosts/${h.id}`)}
+                      onClick={() => { void navigate(`/hosts/${h.id}`); }}
                       onKeyDown={(e) => onRowKeyDown(e, h.id)}
                     >
                       <TD><StatusPill status={h.status} /></TD>

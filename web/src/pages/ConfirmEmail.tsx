@@ -32,7 +32,7 @@ export function ConfirmEmail() {
   useEffect(() => {
     if (!hasToken) return;
     let cancelled = false;
-    (async () => {
+    void (async () => {
       try {
         await api<{ ok: boolean }>("/v1/auth/email/confirm", {
           method: "POST",
@@ -72,7 +72,7 @@ export function ConfirmEmail() {
               </ErrorBox>
               <Button
                 variant="primary"
-                onClick={() => navigate("/login", { replace: true })}
+                onClick={() => { void navigate("/login", { replace: true }); }}
                 className="w-full"
               >
                 {t("confirmEmail.go_to_login")}
@@ -100,7 +100,7 @@ export function ConfirmEmail() {
               </SuccessBox>
               <Button
                 variant="primary"
-                onClick={() => navigate("/login", { replace: true })}
+                onClick={() => { void navigate("/login", { replace: true }); }}
                 className="w-full"
               >
                 {t("confirmEmail.go_to_login")}
@@ -121,7 +121,7 @@ export function ConfirmEmail() {
               <div className="flex gap-2">
                 <Button
                   variant="secondary"
-                  onClick={() => navigate("/login", { replace: true })}
+                  onClick={() => { void navigate("/login", { replace: true }); }}
                   className="flex-1"
                 >
                   {t("confirmEmail.go_to_login")}

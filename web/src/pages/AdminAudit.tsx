@@ -111,7 +111,7 @@ export function AdminAuditContent({ onMeta }: { onMeta?: (node: ReactNode) => vo
             <div className="p-5">
               <ErrorState
                 message={(audit.error as Error).message}
-                onRetry={() => audit.refetch()}
+                onRetry={() => { void audit.refetch(); }}
               />
             </div>
           ) : entries.length === 0 ? (

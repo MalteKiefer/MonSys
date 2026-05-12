@@ -93,7 +93,7 @@ export function AdminAgentConfig() {
     setCreating(null);
   };
   const onSaved = () => {
-    qc.invalidateQueries({ queryKey: ["agent-configs"] });
+    void qc.invalidateQueries({ queryKey: ["agent-configs"] });
     closeForm();
   };
 
@@ -132,7 +132,7 @@ export function AdminAgentConfig() {
           onDelete={() => {
             if (!globalCfg) return;
             if (confirm(t("admin:agentConfig.confirm.delete_global")))
-              api(`/v1/admin/agent-config/${globalCfg.id}`, { method: "DELETE" }).then(() =>
+              void api(`/v1/admin/agent-config/${globalCfg.id}`, { method: "DELETE" }).then(() =>
                 qc.invalidateQueries({ queryKey: ["agent-configs"] }),
               );
           }}
@@ -154,7 +154,7 @@ export function AdminAgentConfig() {
                 }),
               )
             )
-              api(`/v1/admin/agent-config/${c.id}`, { method: "DELETE" }).then(() =>
+              void api(`/v1/admin/agent-config/${c.id}`, { method: "DELETE" }).then(() =>
                 qc.invalidateQueries({ queryKey: ["agent-configs"] }),
               );
           }}
@@ -176,7 +176,7 @@ export function AdminAgentConfig() {
                 }),
               )
             )
-              api(`/v1/admin/agent-config/${c.id}`, { method: "DELETE" }).then(() =>
+              void api(`/v1/admin/agent-config/${c.id}`, { method: "DELETE" }).then(() =>
                 qc.invalidateQueries({ queryKey: ["agent-configs"] }),
               );
           }}

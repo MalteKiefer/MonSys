@@ -276,7 +276,7 @@ function UserCard({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: 
     qc.clear();
     clear();
     onNavigate?.();
-    navigate("/login", { replace: true });
+    void navigate("/login", { replace: true });
   }
 
   const items = [
@@ -286,7 +286,7 @@ function UserCard({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: 
       icon: UserIcon,
       onClick: () => {
         onNavigate?.();
-        navigate("/profile");
+        void navigate("/profile");
       },
     },
     {

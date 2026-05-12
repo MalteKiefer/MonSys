@@ -85,7 +85,7 @@ export function AdminQuietHours() {
       ) : (
         <SettingsForm
           initial={settings.data!}
-          onSaved={() => qc.invalidateQueries({ queryKey: ["admin-quiet-hours"] })}
+          onSaved={() => { void qc.invalidateQueries({ queryKey: ["admin-quiet-hours"] }); }}
         />
       )}
     </Page>

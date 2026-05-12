@@ -36,11 +36,11 @@ export function Login() {
     if (!webauthnSupported()) return;
     const ctrl = new AbortController();
     abortRef.current = ctrl;
-    (async () => {
+    void (async () => {
       const resp = await conditionalAutofill(ctrl.signal);
       if (!resp?.token) return;
       setSession(resp.token, resp.user);
-      navigate("/", { replace: true });
+      void navigate("/", { replace: true });
     })();
     return () => ctrl.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -66,7 +66,7 @@ export function Login() {
       }
       if (!resp.token) throw new Error(t("login.error_no_session"));
       setSession(resp.token, resp.user);
-      navigate("/", { replace: true });
+      void navigate("/", { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : t("login.error_network"));
     } finally {
@@ -87,7 +87,7 @@ export function Login() {
       });
       if (!resp.token) throw new Error(t("login.totp_missing_token"));
       setSession(resp.token, resp.user);
-      navigate("/", { replace: true });
+      void navigate("/", { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : t("login.error_network"));
     } finally {
@@ -111,7 +111,7 @@ export function Login() {
           </div>
 
           {stage.kind === "password" ? (
-            <form onSubmit={handlePassword} className="space-y-4">
+            <form onSubmit={(e) => { void handlePassword(e); }} className="space-y-4">
               <Field label={t("login.email")}>
                 <TextInput type="email" autoComplete="username webauthn" required value={email} onChange={(e) => setEmail(e.target.value)} />
               </Field>
@@ -133,7 +133,7 @@ export function Login() {
                     type="button"
                     variant="secondary"
                     disabled={submitting}
-                    onClick={async () => {
+                    onClick={() => { void (async () => {
                       setError(null);
                       setSubmitting(true);
                       try {
@@ -144,7 +144,7 @@ export function Login() {
                         const resp = await loginWithPasskey();
                         if (!resp.token) throw new Error(t("login.error_no_session"));
                         setSession(resp.token, resp.user);
-                        navigate("/", { replace: true });
+                        void navigate("/", { replace: true });
                       } catch (err: any) {
                         if (err?.name === "NotAllowedError") {
                           // User cancelled — silent.
@@ -154,7 +154,7 @@ export function Login() {
                       } finally {
                         setSubmitting(false);
                       }
-                    }}
+                    })(); }}
                     className="w-full"
                   >
                     <Fingerprint className="mr-2 inline h-4 w-4" />
@@ -164,7 +164,7 @@ export function Login() {
               )}
             </form>
           ) : (
-            <form onSubmit={handleTOTP} className="space-y-4">
+            <form onSubmit={(e) => { void handleTOTP(e); }} className="space-y-4">
               <p className="text-sm text-fg-muted">
                 {t("login.totp_hint")}
               </p>

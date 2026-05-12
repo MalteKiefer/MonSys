@@ -119,7 +119,7 @@ function ActionMenu({ hostId }: { hostId: string }) {
             // Tag editing lives inline on the Overview pane — the action menu
             // routes the user there rather than duplicating the editor in a
             // popover.
-            onClick={() => { navigate(`/hosts/${hostId}`); close(); }}
+            onClick={() => { void navigate(`/hosts/${hostId}`); close(); }}
           />
           <MenuItem
             icon={UsersIcon}
@@ -127,12 +127,12 @@ function ActionMenu({ hostId }: { hostId: string }) {
             // Group membership is admin-scoped; deep-link to the admin page
             // where groups are managed. Non-admins still see the link but
             // the route is gated by RequireAdmin.
-            onClick={() => { navigate(`/admin/groups`); close(); }}
+            onClick={() => { void navigate(`/admin/groups`); close(); }}
           />
           <MenuItem
             icon={Radio}
             label={t("hostDetail:header.openInMonitors")}
-            onClick={() => { navigate(`/monitors?host_id=${hostId}`); close(); }}
+            onClick={() => { void navigate(`/monitors?host_id=${hostId}`); close(); }}
             trailing={<ExternalLink className="h-3 w-3 text-fg-subtle" />}
           />
           <div className="my-1 h-px bg-border" />

@@ -69,7 +69,7 @@ export function HostLayout() {
 
   if (id && !UUID_RE.test(id)) {
     // Synchronous redirect would re-trigger render cycles — defer one frame.
-    queueMicrotask(() => navigate("/hosts", { replace: true }));
+    queueMicrotask(() => { void navigate("/hosts", { replace: true }); });
     return null;
   }
 

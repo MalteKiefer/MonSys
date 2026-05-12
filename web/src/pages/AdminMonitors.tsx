@@ -122,7 +122,7 @@ export function AdminMonitors() {
             onCreate={() => setTab("create")}
             onDelete={(m) => {
               if (confirm(t("admin:monitors.active.delete_confirm", { name: m.name })))
-                api(`/v1/monitors/${m.id}`, { method: "DELETE" }).then(() =>
+                void api(`/v1/monitors/${m.id}`, { method: "DELETE" }).then(() =>
                   qc.invalidateQueries({ queryKey: ["monitors"] }),
                 );
             }}
@@ -132,7 +132,7 @@ export function AdminMonitors() {
         {tab === "create" && (
           <CreateMonitorTab
             onCreated={() => {
-              qc.invalidateQueries({ queryKey: ["monitors"] });
+              void qc.invalidateQueries({ queryKey: ["monitors"] });
               setTab("active");
             }}
             onCancel={() => setTab("active")}
@@ -154,14 +154,14 @@ export function AdminMonitors() {
               initial={null}
               onCancel={close}
               onSaved={() => {
-                qc.invalidateQueries({ queryKey: ["monitors"] });
+                void qc.invalidateQueries({ queryKey: ["monitors"] });
                 close();
               }}
             />
           ) : liveSelected ? (
             <MonitorDetail
               monitor={liveSelected}
-              onSaved={() => qc.invalidateQueries({ queryKey: ["monitors"] })}
+              onSaved={() => { void qc.invalidateQueries({ queryKey: ["monitors"] }); }}
               onClose={close}
             />
           ) : null}
