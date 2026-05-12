@@ -1,0 +1,6 @@
+Contact: https://github.com/MalteKiefer/MonSys/security/advisories
+Expires: 2027-05-12T00:00:00.000Z
+Preferred-Languages: en, de
+Canonical: https://mon.kiefer-networks.de/.well-known/security.txt
+Policy: https://github.com/MalteKiefer/MonSys/blob/main/SECURITY.md
+Acknowledgments: https://github.com/MalteKiefer/MonSys/blob/main/SECURITY.md#acknowledgments
