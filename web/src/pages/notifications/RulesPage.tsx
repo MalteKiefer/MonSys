@@ -20,6 +20,7 @@ import {
   PanelHeader,
   StatusPill,
 } from "../../components/ui";
+import { useT } from "../../i18n/useT";
 import { api } from "../../lib/api";
 import {
   NotificationChannel,
@@ -86,6 +87,7 @@ function groupRules(rules: NotificationRule[]): RuleGroup[] {
 }
 
 export function RulesPage() {
+  const { t } = useT(["notifications", "common"]);
   const qc = useQueryClient();
   const rules = useQuery({
     queryKey: ["rules"],
@@ -152,8 +154,8 @@ export function RulesPage() {
 
   return (
     <Page
-      title="Notification rules"
-      subtitle="Trigger alerts when host status, monitor result, or login pattern changes."
+      title={t("notifications:rules.page_title")}
+      subtitle={t("notifications:rules.page_subtitle")}
       actions={<NotificationsTabs />}
     >
       {(creating || editing) && (
@@ -176,23 +178,23 @@ export function RulesPage() {
 
       <Panel>
         <PanelHeader>
-          <h3 className="text-sm font-semibold">Rules</h3>
+          <h3 className="text-sm font-semibold">{t("notifications:rules.panel_title")}</h3>
           <Button
             variant="primary"
             disabled={allChannels.length === 0}
             onClick={() => setCreating(true)}
           >
-            <Plus className="h-3.5 w-3.5" /> New rule
+            <Plus className="h-3.5 w-3.5" /> {t("notifications:rules.new_rule")}
           </Button>
         </PanelHeader>
         <PanelBody className="p-0">
           {rules.isLoading ? (
-            <p className="px-5 py-4 text-sm text-fg-subtle">Loading…</p>
+            <p className="px-5 py-4 text-sm text-fg-subtle">{t("common:actions.loading")}</p>
           ) : allRules.length === 0 ? (
             <p className="px-5 py-8 text-center text-sm text-fg-subtle">
               {allChannels.length === 0
-                ? "Create a channel first, then add rules."
-                : "No rules yet."}
+                ? t("notifications:rules.empty_no_channels")
+                : t("notifications:rules.empty_no_rules")}
             </p>
           ) : (
             <ul className="divide-y divide-border">
@@ -208,8 +210,8 @@ export function RulesPage() {
                   onDelete={() => {
                     const label =
                       g.isGroup && g.rows.length > 1
-                        ? `Delete group "${g.name}" (${g.rows.length} rules)?`
-                        : `Delete rule "${g.name}"?`;
+                        ? t("notifications:rules.confirm_delete_group", { name: g.name, count: g.rows.length })
+                        : t("notifications:rules.confirm_delete_rule", { name: g.name });
                     if (confirm(label)) delGroup.mutate(g.rows);
                   }}
                 />
@@ -235,6 +237,7 @@ function GroupCard({
   onToggle: (enabled: boolean) => void;
   onDelete: () => void;
 }) {
+  const { t } = useT(["notifications", "common"]);
   const head = group.rows[0];
   // All rows of a group share name/scope/channels/throttle/severity by
   // construction; if a sysadmin somehow ended up with mixed enabled states
@@ -254,7 +257,7 @@ function GroupCard({
             <p className="text-sm font-semibold text-fg">{group.name}</p>
             {group.rows.length > 1 && (
               <span className="rounded-md bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent ring-1 ring-inset ring-accent/30">
-                {group.rows.length} conditions
+                {t("notifications:rules.card.conditions_count", { count: group.rows.length })}
               </span>
             )}
             <StatusPill status={severityStatus(head.severity)}>
@@ -265,7 +268,11 @@ function GroupCard({
                 enabledMixed ? "warn" : allEnabled ? "ok" : "offline"
               }
             >
-              {enabledMixed ? "mixed" : allEnabled ? "on" : "off"}
+              {enabledMixed
+                ? t("notifications:rules.card.state_mixed")
+                : allEnabled
+                  ? t("notifications:rules.card.state_on")
+                  : t("notifications:rules.card.state_off")}
             </StatusPill>
           </div>
 
@@ -293,16 +300,19 @@ function GroupCard({
           </ul>
 
           <p className="text-[11px] text-fg-subtle">
-            Channels:{" "}
+            {t("notifications:rules.card.channels_label")}{" "}
             <span className="text-fg-muted">
-              {chNames.length > 0 ? chNames.join(", ") : "—"}
+              {chNames.length > 0 ? chNames.join(", ") : t("notifications:rules.card.channels_none")}
             </span>
-            {" • "}Throttle: <span className="tabular-nums">{head.throttle_sec}s</span>
+            {" • "}{t("notifications:rules.card.throttle_label")}{" "}
+            <span className="tabular-nums">
+              {t("notifications:rules.card.throttle_value", { seconds: head.throttle_sec })}
+            </span>
             {head.repeat_interval_sec > 0 && (
               <>
-                {" • "}Repeat:{" "}
+                {" • "}{t("notifications:rules.card.repeat_label")}{" "}
                 <span className="tabular-nums">
-                  {head.repeat_interval_sec}s
+                  {t("notifications:rules.card.repeat_value", { seconds: head.repeat_interval_sec })}
                 </span>
               </>
             )}
@@ -311,16 +321,16 @@ function GroupCard({
 
         <div className="flex shrink-0 items-center gap-1">
           <Button onClick={onEdit}>
-            <PencilLine className="h-3.5 w-3.5" /> Edit
+            <PencilLine className="h-3.5 w-3.5" /> {t("notifications:rules.card.edit")}
           </Button>
           <Button onClick={() => onToggle(!allEnabled)}>
             {allEnabled ? (
               <>
-                <PowerOff className="h-3.5 w-3.5" /> Disable
+                <PowerOff className="h-3.5 w-3.5" /> {t("notifications:rules.card.disable")}
               </>
             ) : (
               <>
-                <Power className="h-3.5 w-3.5" /> Enable
+                <Power className="h-3.5 w-3.5" /> {t("notifications:rules.card.enable")}
               </>
             )}
           </Button>

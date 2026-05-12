@@ -23,6 +23,7 @@ import {
   TextInput,
   TimeRangeSelector,
 } from "../components/ui";
+import { useT } from "../i18n/useT";
 import { api, ApiError } from "../lib/api";
 import { HostGroup, Monitor, MonitorInput, MonitorResult } from "../lib/types";
 
@@ -30,24 +31,28 @@ type TabKey = "active" | "create" | "history";
 
 const TYPES: Monitor["type"][] = ["cert", "postgres", "mysql", "mongodb", "http", "tcp"];
 
-const TARGET_HINT: Record<Monitor["type"], string> = {
-  cert: "host:port (e.g. example.com:443)",
-  postgres: "DSN, e.g. postgres://user:pw@host:5432/db?sslmode=require",
-  mysql: "host:port (handshake-only, no auth)",
-  mongodb: "host:port (hello check)",
-  http: "URL, e.g. https://example.com/health",
-  tcp: "host:port",
+// Hint keys mapped per monitor type; the actual translated text comes from
+// admin:monitors.target_hint.* and admin:monitors.type_fields.* at render time.
+const TARGET_HINT_KEYS: Record<Monitor["type"], string> = {
+  cert: "admin:monitors.target_hint.cert",
+  postgres: "admin:monitors.target_hint.postgres",
+  mysql: "admin:monitors.target_hint.mysql",
+  mongodb: "admin:monitors.target_hint.mongodb",
+  http: "admin:monitors.target_hint.http",
+  tcp: "admin:monitors.target_hint.tcp",
 };
 
-const TYPE_FIELDS: Partial<Record<Monitor["type"], Array<{ key: string; label: string; placeholder?: string }>>> = {
+const TYPE_FIELDS: Partial<
+  Record<Monitor["type"], Array<{ key: string; labelKey: string; placeholder?: string }>>
+> = {
   cert: [
-    { key: "warn_days", label: "Warn (days)", placeholder: "30" },
-    { key: "fail_days", label: "Fail (days)", placeholder: "7" },
-    { key: "server_name", label: "SNI server name (optional)" },
+    { key: "warn_days", labelKey: "admin:monitors.type_fields.warn_days", placeholder: "30" },
+    { key: "fail_days", labelKey: "admin:monitors.type_fields.fail_days", placeholder: "7" },
+    { key: "server_name", labelKey: "admin:monitors.type_fields.server_name" },
   ],
   http: [
-    { key: "expected_status", label: "Expected status", placeholder: "200" },
-    { key: "method", label: "Method", placeholder: "GET" },
+    { key: "expected_status", labelKey: "admin:monitors.type_fields.expected_status", placeholder: "200" },
+    { key: "method", labelKey: "admin:monitors.type_fields.method", placeholder: "GET" },
   ],
 };
 
@@ -59,6 +64,7 @@ type SidePanelMode =
   | { kind: "detail"; monitor: Monitor };
 
 export function AdminMonitors() {
+  const { t } = useT(["admin", "common"]);
   const qc = useQueryClient();
   const list = useQuery({
     queryKey: ["monitors"],
@@ -91,16 +97,15 @@ export function AdminMonitors() {
   }, [panel.kind]);
 
   const monitors = list.data?.monitors ?? [];
-  const subtitle = "Server-side periodic probes: cert expiry, DB reachability, HTTP, raw TCP.";
 
   const tabs: ReadonlyArray<TabItem<TabKey>> = [
-    { key: "active", label: "Active monitors", icon: Activity, badge: monitors.length || undefined },
-    { key: "create", label: "Create monitor", icon: Plus },
-    { key: "history", label: "Recent results", icon: Clock },
+    { key: "active", label: t("admin:monitors.tabs.active"), icon: Activity, badge: monitors.length || undefined },
+    { key: "create", label: t("admin:monitors.tabs.create"), icon: Plus },
+    { key: "history", label: t("admin:monitors.tabs.history"), icon: Clock },
   ];
 
   return (
-    <Page title="Monitors" subtitle={subtitle}>
+    <Page title={t("admin:monitors.title")} subtitle={t("admin:monitors.subtitle")}>
       <Tabs items={tabs} value={tab} onChange={setTab} />
 
       <div
@@ -116,7 +121,7 @@ export function AdminMonitors() {
             onOpenDetail={(m) => setPanel({ kind: "detail", monitor: m })}
             onCreate={() => setTab("create")}
             onDelete={(m) => {
-              if (confirm(`Delete monitor "${m.name}"?`))
+              if (confirm(t("admin:monitors.active.delete_confirm", { name: m.name })))
                 api(`/v1/monitors/${m.id}`, { method: "DELETE" }).then(() =>
                   qc.invalidateQueries({ queryKey: ["monitors"] }),
                 );
@@ -140,7 +145,10 @@ export function AdminMonitors() {
       </div>
 
       {panel.kind !== "closed" && (
-        <SlideOver onClose={close} title={panel.kind === "create" ? "New monitor" : liveSelected?.name ?? ""}>
+        <SlideOver
+          onClose={close}
+          title={panel.kind === "create" ? t("admin:monitors.slide_over.new_title") : liveSelected?.name ?? ""}
+        >
           {panel.kind === "create" ? (
             <MonitorForm
               initial={null}
@@ -182,34 +190,37 @@ function ActiveMonitorsTab({
   onCreate: () => void;
   onDelete: (m: Monitor) => void;
 }) {
+  const { t } = useT(["admin", "common"]);
   return (
     <Panel>
       <PanelHeader>
         <div className="flex items-center gap-3">
-          <h3 className="text-sm font-semibold">All monitors</h3>
-          <span className="text-xs tabular-nums text-fg-subtle">{monitors.length} total</span>
+          <h3 className="text-sm font-semibold">{t("admin:monitors.active.heading")}</h3>
+          <span className="text-xs tabular-nums text-fg-subtle">
+            {t("admin:monitors.active.total_count", { count: monitors.length })}
+          </span>
         </div>
         <Button variant="primary" size="sm" onClick={onCreate}>
-          <Plus className="h-3.5 w-3.5" /> Create monitor
+          <Plus className="h-3.5 w-3.5" /> {t("admin:monitors.active.create_button")}
         </Button>
       </PanelHeader>
       <PanelBody className="p-0 overflow-x-auto">
         {isLoading ? (
-          <p className="px-5 py-4 text-sm text-fg-subtle">Loading…</p>
+          <p className="px-5 py-4 text-sm text-fg-subtle">{t("common:actions.loading")}</p>
         ) : monitors.length === 0 ? (
-          <p className="px-5 py-8 text-center text-sm text-fg-subtle">No monitors yet.</p>
+          <p className="px-5 py-8 text-center text-sm text-fg-subtle">{t("admin:monitors.active.empty")}</p>
         ) : (
           <Table>
             <THead>
               <tr>
-                <TH>Type</TH>
-                <TH>Name</TH>
-                <TH>Target</TH>
-                <TH>Interval</TH>
-                <TH>Status</TH>
-                <TH>Latency</TH>
-                <TH>Last detail</TH>
-                <TH className="text-right">Actions</TH>
+                <TH>{t("admin:monitors.active.col_type")}</TH>
+                <TH>{t("admin:monitors.active.col_name")}</TH>
+                <TH>{t("admin:monitors.active.col_target")}</TH>
+                <TH>{t("admin:monitors.active.col_interval")}</TH>
+                <TH>{t("admin:monitors.active.col_status")}</TH>
+                <TH>{t("admin:monitors.active.col_latency")}</TH>
+                <TH>{t("admin:monitors.active.col_last_detail")}</TH>
+                <TH className="text-right">{t("admin:monitors.active.col_actions")}</TH>
               </tr>
             </THead>
             <TBody>
@@ -246,7 +257,7 @@ function ActiveMonitorsTab({
                       onClick={(e) => e.stopPropagation()}
                     >
                       <Button onClick={() => onOpenDetail(m)}>
-                        <PencilLine className="h-3.5 w-3.5" /> Edit
+                        <PencilLine className="h-3.5 w-3.5" /> {t("common:actions.edit")}
                       </Button>
                       <Button variant="danger" onClick={() => onDelete(m)}>
                         <Trash2 className="h-3.5 w-3.5" />
@@ -275,13 +286,12 @@ function CreateMonitorTab({
   onCreated: () => void;
   onCancel: () => void;
 }) {
+  const { t } = useT(["admin", "common"]);
   return (
     <Panel>
       <PanelHeader>
-        <h3 className="text-sm font-semibold">New monitor</h3>
-        <span className="text-xs text-fg-subtle">
-          Pick a probe type — target syntax updates inline.
-        </span>
+        <h3 className="text-sm font-semibold">{t("admin:monitors.create.heading")}</h3>
+        <span className="text-xs text-fg-subtle">{t("admin:monitors.create.hint")}</span>
       </PanelHeader>
       <PanelBody>
         <MonitorForm initial={null} onCancel={onCancel} onSaved={onCreated} />
@@ -311,6 +321,7 @@ function RecentResultsTab({
   monitors: Monitor[];
   isLoading: boolean;
 }) {
+  const { t } = useT(["admin", "common"]);
   const sorted = useMemo(() => {
     const copy = monitors.slice();
     copy.sort((a, b) => {
@@ -331,33 +342,33 @@ function RecentResultsTab({
     <Panel>
       <PanelHeader>
         <div className="flex items-center gap-3">
-          <h3 className="text-sm font-semibold">Recent results</h3>
+          <h3 className="text-sm font-semibold">{t("admin:monitors.history.heading")}</h3>
           <span className="text-xs tabular-nums text-fg-subtle">
-            latest probe outcome per monitor
+            {t("admin:monitors.history.subheading")}
           </span>
         </div>
         <div className="flex items-center gap-2 text-[11px] tabular-nums">
-          <StatusPill status="fail">{failCount} fail</StatusPill>
-          <StatusPill status="warn">{warnCount} warn</StatusPill>
-          <StatusPill status="unknown">{unknownCount} unknown</StatusPill>
-          <StatusPill status="ok">{okCount} ok</StatusPill>
+          <StatusPill status="fail">{t("admin:monitors.history.fail_count", { count: failCount })}</StatusPill>
+          <StatusPill status="warn">{t("admin:monitors.history.warn_count", { count: warnCount })}</StatusPill>
+          <StatusPill status="unknown">{t("admin:monitors.history.unknown_count", { count: unknownCount })}</StatusPill>
+          <StatusPill status="ok">{t("admin:monitors.history.ok_count", { count: okCount })}</StatusPill>
         </div>
       </PanelHeader>
       <PanelBody className="p-0 overflow-x-auto">
         {isLoading ? (
-          <p className="px-5 py-4 text-sm text-fg-subtle">Loading…</p>
+          <p className="px-5 py-4 text-sm text-fg-subtle">{t("common:actions.loading")}</p>
         ) : sorted.length === 0 ? (
-          <p className="px-5 py-8 text-center text-sm text-fg-subtle">No monitor results yet.</p>
+          <p className="px-5 py-8 text-center text-sm text-fg-subtle">{t("admin:monitors.history.empty")}</p>
         ) : (
           <Table>
             <THead>
               <tr>
-                <TH>Status</TH>
-                <TH>Name</TH>
-                <TH>Type</TH>
-                <TH>Target</TH>
-                <TH>Latency</TH>
-                <TH>Detail</TH>
+                <TH>{t("admin:monitors.history.col_status")}</TH>
+                <TH>{t("admin:monitors.history.col_name")}</TH>
+                <TH>{t("admin:monitors.history.col_type")}</TH>
+                <TH>{t("admin:monitors.history.col_target")}</TH>
+                <TH>{t("admin:monitors.history.col_latency")}</TH>
+                <TH>{t("admin:monitors.history.col_detail")}</TH>
               </tr>
             </THead>
             <TBody>
@@ -401,6 +412,7 @@ function SlideOver({
   onClose: () => void;
   children: React.ReactNode;
 }) {
+  const { t } = useT(["admin", "common"]);
   return (
     <div
       className="fixed inset-0 z-50 flex"
@@ -410,7 +422,7 @@ function SlideOver({
     >
       <button
         type="button"
-        aria-label="Close"
+        aria-label={t("admin:monitors.slide_over.close_aria")}
         onClick={onClose}
         className="flex-1 cursor-default bg-bg/60 backdrop-blur-sm transition-opacity duration-150"
       />
@@ -420,7 +432,7 @@ function SlideOver({
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close panel"
+            aria-label={t("admin:monitors.slide_over.close_panel_aria")}
             className="rounded p-1 text-fg-subtle hover:bg-panel-2 hover:text-fg"
           >
             <X className="h-4 w-4" />
@@ -447,17 +459,18 @@ function MonitorDetail({
   onSaved: () => void;
   onClose: () => void;
 }) {
+  const { t } = useT(["admin", "common"]);
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 gap-3 text-sm">
-        <DetailRow label="Type" value={<span className="text-fg-muted">{monitor.type}</span>} />
+        <DetailRow label={t("admin:monitors.detail.type")} value={<span className="text-fg-muted">{monitor.type}</span>} />
         <DetailRow
-          label="Status"
+          label={t("admin:monitors.detail.status")}
           value={<StatusPill status={monitor.last_status ?? "unknown"}>{monitor.last_status ?? "?"}</StatusPill>}
         />
-        <DetailRow label="Interval" value={<span className="tabular-nums">{monitor.interval_sec}s</span>} />
+        <DetailRow label={t("admin:monitors.detail.interval")} value={<span className="tabular-nums">{monitor.interval_sec}s</span>} />
         <DetailRow
-          label="Latency"
+          label={t("admin:monitors.detail.latency")}
           value={
             <span className="tabular-nums text-fg-muted">
               {monitor.last_latency_ms ? `${monitor.last_latency_ms} ms` : "—"}
@@ -465,13 +478,13 @@ function MonitorDetail({
           }
         />
         <DetailRow
-          label="Target"
+          label={t("admin:monitors.detail.target")}
           value={<span className="break-all font-mono text-xs text-fg-muted">{monitor.target}</span>}
           full
         />
         {monitor.last_detail && (
           <DetailRow
-            label="Last detail"
+            label={t("admin:monitors.detail.last_detail")}
             value={<span className="break-all font-mono text-xs text-fg-subtle">{monitor.last_detail}</span>}
             full
           />
@@ -482,7 +495,7 @@ function MonitorDetail({
 
       <div>
         <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">
-          Edit monitor
+          {t("admin:monitors.detail.edit_heading")}
         </h3>
         <MonitorForm
           initial={monitor}
@@ -525,6 +538,7 @@ function MonitorForm({
   onCancel: () => void;
   onSaved: () => void;
 }) {
+  const { t } = useT(["admin", "common"]);
   const tagsQuery = useQuery({
     queryKey: ["tags"],
     queryFn: () => api<{ tags: Array<{ tag: string; count: number }> }>("/v1/tags"),
@@ -581,7 +595,7 @@ function MonitorForm({
       });
     },
     onSuccess: onSaved,
-    onError: (err) => setError(err instanceof ApiError ? err.detail : "failed"),
+    onError: (err) => setError(err instanceof ApiError ? err.detail : t("admin:monitors.form.failed")),
   });
 
   function submit(e: FormEvent) {
@@ -595,7 +609,7 @@ function MonitorForm({
   return (
     <form onSubmit={submit} className="space-y-4">
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Type">
+        <Field label={t("admin:monitors.form.type")}>
           <select
             value={type}
             disabled={!!initial}
@@ -605,26 +619,26 @@ function MonitorForm({
             }}
             className="w-full rounded-md border border-border bg-panel px-3 py-2 text-sm disabled:opacity-60"
           >
-            {TYPES.map((t) => (
-              <option key={t} value={t}>
-                {t}
+            {TYPES.map((typeOpt) => (
+              <option key={typeOpt} value={typeOpt}>
+                {typeOpt}
               </option>
             ))}
           </select>
         </Field>
-        <Field label="Name">
+        <Field label={t("admin:monitors.form.name")}>
           <TextInput required value={name} onChange={(e) => setName(e.target.value)} />
         </Field>
       </div>
 
-      <Field label="Target" hint={TARGET_HINT[type]}>
+      <Field label={t("admin:monitors.form.target")} hint={t(TARGET_HINT_KEYS[type])}>
         <TextInput required value={target} onChange={(e) => setTarget(e.target.value)} className="font-mono" />
       </Field>
 
       {fields.length > 0 && (
         <div className="grid grid-cols-2 gap-3">
           {fields.map((f) => (
-            <Field key={f.key} label={f.label}>
+            <Field key={f.key} label={t(f.labelKey)}>
               <TextInput
                 placeholder={f.placeholder}
                 value={params[f.key] ?? ""}
@@ -636,7 +650,7 @@ function MonitorForm({
       )}
 
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Interval (seconds)">
+        <Field label={t("admin:monitors.form.interval_seconds")}>
           <TextInput
             type="number"
             min={10}
@@ -645,31 +659,33 @@ function MonitorForm({
             onChange={(e) => setIntervalSec(parseInt(e.target.value || "60", 10))}
           />
         </Field>
-        <Field label="Enabled">
+        <Field label={t("admin:monitors.form.enabled")}>
           <label className="mt-2 inline-flex items-center gap-2 text-sm text-fg-muted">
             <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-            On
+            {t("admin:monitors.form.on")}
           </label>
         </Field>
       </div>
 
       <Field
-        label="Apply to tags (comma-separated)"
+        label={t("admin:monitors.form.tags_label")}
         hint={
           tagsQuery.data?.tags?.length
-            ? `Existing: ${tagsQuery.data.tags.map((t) => t.tag).join(", ")}`
-            : "No tags defined yet."
+            ? t("admin:monitors.form.tags_existing_hint", {
+                tags: tagsQuery.data.tags.map((tag) => tag.tag).join(", "),
+              })
+            : t("admin:monitors.form.tags_none_hint")
         }
       >
         <TextInput
           value={tagsRaw}
           onChange={(e) => setTagsRaw(e.target.value)}
-          placeholder="prod, db"
+          placeholder={t("admin:monitors.form.tags_placeholder")}
           className="font-mono"
         />
       </Field>
 
-      <Field label="Apply to groups (Ctrl/⌘ to multi-select)">
+      <Field label={t("admin:monitors.form.groups_label")}>
         <select
           multiple
           size={Math.min(5, Math.max(2, groupsQuery.data?.groups.length ?? 2))}
@@ -691,10 +707,14 @@ function MonitorForm({
 
       <div className="flex items-center gap-2">
         <Button variant="primary" type="submit" disabled={save.isPending}>
-          {save.isPending ? "Saving…" : initial ? "Save" : "Create"}
+          {save.isPending
+            ? t("common:actions.saving")
+            : initial
+              ? t("common:actions.save")
+              : t("common:actions.create")}
         </Button>
         <Button type="button" onClick={onCancel}>
-          Cancel
+          {t("common:actions.cancel")}
         </Button>
       </div>
     </form>
@@ -704,6 +724,7 @@ function MonitorForm({
 // ---- Results block (inside slide-over) -----------------------------------
 
 function ResultsBlock({ monitor }: { monitor: Monitor }) {
+  const { t } = useT(["admin", "common"]);
   const [rangeSec, setRangeSec] = useState(60 * 60);
   const sinceISO = useMemo(
     () => new Date(Date.now() - rangeSec * 1000).toISOString(),
@@ -727,7 +748,7 @@ function ResultsBlock({ monitor }: { monitor: Monitor }) {
   }, [samples]);
 
   const series: ChartSeries[] = [
-    { label: "latency (ms)", color: colorFor(0), fill: "rgba(16,185,129,0.10)" },
+    { label: t("admin:monitors.results.latency_series"), color: colorFor(0), fill: "rgba(16,185,129,0.10)" },
   ];
 
   const okCount = samples.filter((r) => r.status === "ok").length;
@@ -740,22 +761,22 @@ function ResultsBlock({ monitor }: { monitor: Monitor }) {
       <div className="mb-2 flex items-center justify-between">
         <h3 className="text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">
           <Activity className="mr-1 inline h-3 w-3" />
-          Results
+          {t("admin:monitors.results.heading")}
         </h3>
         <TimeRangeSelector value={rangeSec} onChange={setRangeSec} />
       </div>
       {samples.length === 0 ? (
-        <Empty>No results in this range.</Empty>
+        <Empty>{t("admin:monitors.results.empty_range")}</Empty>
       ) : (
         <>
           <div className="grid grid-cols-4 gap-2 text-xs">
-            <SmallStat label="Samples" value={samples.length} />
-            <SmallStat label="OK" value={okCount} tone="ok" />
-            <SmallStat label="Warn" value={warnCount} tone="warn" />
-            <SmallStat label="Fail" value={failCount} tone="fail" />
+            <SmallStat label={t("admin:monitors.results.samples")} value={samples.length} />
+            <SmallStat label={t("admin:monitors.results.ok")} value={okCount} tone="ok" />
+            <SmallStat label={t("admin:monitors.results.warn")} value={warnCount} tone="warn" />
+            <SmallStat label={t("admin:monitors.results.fail")} value={failCount} tone="fail" />
           </div>
           <p className="mt-2 text-xs text-fg-subtle tabular-nums">
-            Effective uptime in window: {uptimePct.toFixed(1)} %
+            {t("admin:monitors.results.uptime", { pct: uptimePct.toFixed(1) })}
           </p>
           <div className="mt-3">
             <ChartLine

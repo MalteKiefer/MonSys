@@ -14,6 +14,7 @@ import { ComponentType, createContext, useContext, useMemo } from "react";
 import { NavLink, Outlet, useNavigate, useParams } from "react-router-dom";
 
 import { Skeleton } from "../../components/ui";
+import { useT } from "../../i18n/useT";
 import { api } from "../../lib/api";
 import { HostDetail as HostDetailT, HostSecurity } from "../../lib/types";
 
@@ -46,6 +47,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export function HostLayout() {
   const { id = "" } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { t } = useT(["hostDetail", "common"]);
 
   const detail = useQuery({
     queryKey: ["host", id],
@@ -81,7 +83,7 @@ export function HostLayout() {
     );
   }
   if (detail.error || !detail.data) {
-    return <p className="p-6 text-sm text-fail">{(detail.error as Error)?.message ?? "host not found"}</p>;
+    return <p className="p-6 text-sm text-fail">{(detail.error as Error)?.message ?? t("hostDetail:header.hostNotFound")}</p>;
   }
 
   const d = detail.data;
@@ -117,21 +119,22 @@ type SubTab = {
 
 function SubTabs({ detail }: { detail: HostDetailT }) {
   const id = detail.host.id;
+  const { t } = useT(["hostDetail", "common"]);
   const items: SubTab[] = useMemo(() => {
     const workloadCount = detail.workloads.length;
     const vmCount = detail.vms.length;
     return [
-      { to: `/hosts/${id}`, end: true, label: "Overview", icon: LayoutGrid },
-      { to: `/hosts/${id}/storage`, label: "Storage", icon: HardDrive, count: detail.disks.length, dim: detail.disks.length === 0 },
-      { to: `/hosts/${id}/network`, label: "Network", icon: NetworkIcon, count: detail.nics.length, dim: detail.nics.length === 0 },
-      { to: `/hosts/${id}/workloads`, label: "Workloads", icon: Container, count: workloadCount, dim: workloadCount === 0 },
-      { to: `/hosts/${id}/vms`, label: "VMs", icon: Boxes, count: vmCount, dim: vmCount === 0 },
-      { to: `/hosts/${id}/users`, label: "Users", icon: UsersIcon, count: detail.users.length, dim: detail.users.length === 0 },
-      { to: `/hosts/${id}/security`, label: "Security", icon: ShieldCheck },
-      { to: `/hosts/${id}/packages`, label: "Packages", icon: Package, count: detail.packages_summary?.installed_count },
-      { to: `/hosts/${id}/charts`, label: "Charts", icon: BarChart3 },
+      { to: `/hosts/${id}`, end: true, label: t("hostDetail:nav.overview"), icon: LayoutGrid },
+      { to: `/hosts/${id}/storage`, label: t("hostDetail:nav.storage"), icon: HardDrive, count: detail.disks.length, dim: detail.disks.length === 0 },
+      { to: `/hosts/${id}/network`, label: t("hostDetail:nav.network"), icon: NetworkIcon, count: detail.nics.length, dim: detail.nics.length === 0 },
+      { to: `/hosts/${id}/workloads`, label: t("hostDetail:nav.workloads"), icon: Container, count: workloadCount, dim: workloadCount === 0 },
+      { to: `/hosts/${id}/vms`, label: t("hostDetail:nav.vms"), icon: Boxes, count: vmCount, dim: vmCount === 0 },
+      { to: `/hosts/${id}/users`, label: t("hostDetail:nav.users"), icon: UsersIcon, count: detail.users.length, dim: detail.users.length === 0 },
+      { to: `/hosts/${id}/security`, label: t("hostDetail:nav.security"), icon: ShieldCheck },
+      { to: `/hosts/${id}/packages`, label: t("hostDetail:nav.packages"), icon: Package, count: detail.packages_summary?.installed_count },
+      { to: `/hosts/${id}/charts`, label: t("hostDetail:nav.charts"), icon: BarChart3 },
     ];
-  }, [detail, id]);
+  }, [detail, id, t]);
 
   return (
     <div

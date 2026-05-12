@@ -1,0 +1,58 @@
+{
+  "groups": {
+    "overview": "Übersicht",
+    "notifications": "Benachrichtigungen",
+    "account": "Konto",
+    "admin": "Verwaltung",
+    "fleet": "Flotte",
+    "identity": "Identität",
+    "operations": "Betrieb",
+    "diagnostics": "Diagnose"
+  },
+  "items": {
+    "dashboard": "Übersicht",
+    "hosts": "Hosts",
+    "packages": "Pakete",
+    "monitors": "Monitore",
+    "rules": "Regeln",
+    "channels": "Kanäle",
+    "alerts": "Alarme",
+    "profile": "Profil",
+    "groups": "Gruppen",
+    "agent_config": "Agent-Konfiguration",
+    "enrollments": "Einrollungen",
+    "users": "Benutzer",
+    "mail_smtp": "E-Mail (SMTP)",
+    "quiet_hours": "Ruhezeiten",
+    "security": "Sicherheit",
+    "logs": "Protokolle",
+    "audit": "Audit-Protokoll"
+  },
+  "actions": {
+    "sign_out": "Abmelden",
+    "expand_sidebar": "Seitenleiste ausklappen",
+    "collapse_sidebar": "Seitenleiste einklappen",
+    "open_navigation": "Navigation",
+    "close_navigation": "Navigation schließen",
+    "account_menu": "Kontomenü für {{email}}",
+    "switch_to_light": "Zum hellen Design wechseln",
+    "switch_to_dark": "Zum dunklen Design wechseln"
+  },
+  "sidebar": {
+    "heading": "Navigation"
+  },
+  "appshell": {
+    "connection_lost": "Verbindung zum mon-Server verloren – erneuter Versuch…",
+    "loading": "Wird geladen…"
+  },
+  "palette": {
+    "placeholder": "Hosts, Seiten, Monitore, Regeln suchen…",
+    "empty_prompt": "Tippen, um zu suchen…",
+    "empty_results": "Keine Ergebnisse.",
+    "dialog_label": "Schnellbefehlspalette",
+    "results_label": "Palettenergebnisse",
+    "brand": "MonSys-Palette",
+    "hint_navigate": "navigieren",
+    "hint_open": "öffnen"
+  }
+}

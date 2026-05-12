@@ -31,6 +31,7 @@ import {
   type TabItem,
   TextInput,
 } from "../components/ui";
+import { useT } from "../i18n/useT";
 import { api, ApiError } from "../lib/api";
 import {
   AgentEnrollment,
@@ -65,6 +66,7 @@ function lifecycle(e: AgentEnrollment): Lifecycle {
 }
 
 export default function AdminEnrollments() {
+  const { t } = useT(["admin", "common"]);
   const qc = useQueryClient();
   const [tab, setTab] = useState<TabKey>("active");
 
@@ -104,31 +106,31 @@ export default function AdminEnrollments() {
   const tabs: ReadonlyArray<TabItem<TabKey>> = [
     {
       key: "active",
-      label: "Active tokens",
+      label: t("admin:enrollments.tabs.active"),
       icon: Key,
       badge: activeEnrollments.length || undefined,
     },
     {
       key: "consumed",
-      label: "History",
+      label: t("admin:enrollments.tabs.history"),
       icon: Clock,
       badge: consumedEnrollments.length || undefined,
     },
-    { key: "create", label: "Create new", icon: Plus },
+    { key: "create", label: t("admin:enrollments.tabs.create"), icon: Plus },
   ];
 
   function onRevoke(id: string) {
-    if (window.confirm("Revoke this enrollment?")) revoke.mutate(id);
+    if (window.confirm(t("admin:enrollments.active.confirmRevoke"))) revoke.mutate(id);
   }
 
   return (
     <Page
-      title="Agent enrollments"
+      title={t("admin:enrollments.title")}
       subtitle={
         <>
-          One-shot tokens for{" "}
-          <code className="font-mono">/v1/agents/install.sh</code> — pending
-          tokens can be revoked.
+          {t("admin:enrollments.subtitleLead")}
+          <code className="font-mono">/v1/agents/install.sh</code>
+          {t("admin:enrollments.subtitleTail")}
         </>
       }
     >
@@ -187,17 +189,18 @@ function ActiveTokensPanel({
   onRevoke: (id: string) => void;
   revokingId: string | undefined;
 }) {
+  const { t } = useT(["admin", "common"]);
   return (
     <Panel>
       <PanelHeader>
-        <h3 className="text-sm font-semibold">Active tokens</h3>
+        <h3 className="text-sm font-semibold">{t("admin:enrollments.active.title")}</h3>
         <span className="text-xs text-fg-subtle tabular-nums">
-          {enrollments.length} pending
+          {t("admin:enrollments.active.countPending", { count: enrollments.length })}
         </span>
       </PanelHeader>
       <PanelBody className="p-0 overflow-x-auto">
         {loading ? (
-          <p className="px-5 py-4 text-sm text-fg-subtle">Loading…</p>
+          <p className="px-5 py-4 text-sm text-fg-subtle">{t("common:actions.loading")}</p>
         ) : error ? (
           <div className="p-5">
             <ErrorState message={error.message} onRetry={onRetry} />
@@ -205,21 +208,21 @@ function ActiveTokensPanel({
         ) : enrollments.length === 0 ? (
           <EmptyState
             icon={Ticket}
-            title="No active enrollment tokens."
-            hint="Mint a new one from the Create tab; tokens auto-expire after their TTL (max 24h)."
+            title={t("admin:enrollments.active.empty")}
+            hint={t("admin:enrollments.active.emptyHint")}
           />
         ) : (
-          <Table aria-label="Active enrollment tokens">
+          <Table aria-label={t("admin:enrollments.active.tableLabel")}>
             <THead>
               <tr>
-                <TH>Created</TH>
-                <TH>Label</TH>
-                <TH>Description</TH>
-                <TH>Tags</TH>
-                <TH>Groups</TH>
-                <TH>Created by</TH>
-                <TH>Expires</TH>
-                <TH className="text-right">Actions</TH>
+                <TH>{t("admin:enrollments.active.columns.created")}</TH>
+                <TH>{t("admin:enrollments.active.columns.label")}</TH>
+                <TH>{t("admin:enrollments.active.columns.description")}</TH>
+                <TH>{t("admin:enrollments.active.columns.tags")}</TH>
+                <TH>{t("admin:enrollments.active.columns.groups")}</TH>
+                <TH>{t("admin:enrollments.active.columns.createdBy")}</TH>
+                <TH>{t("admin:enrollments.active.columns.expires")}</TH>
+                <TH className="text-right">{t("admin:enrollments.active.columns.actions")}</TH>
               </tr>
             </THead>
             <TBody>
@@ -251,6 +254,7 @@ function ActiveRow({
   onRevoke: (id: string) => void;
   revoking: boolean;
 }) {
+  const { t } = useT(["admin"]);
   const [copied, setCopied] = useState(false);
 
   async function copyId() {
@@ -303,16 +307,16 @@ function ActiveRow({
           <Button
             size="sm"
             onClick={copyId}
-            aria-label="Copy enrollment ID"
-            title="Copy enrollment ID"
+            aria-label={t("admin:enrollments.active.copyIdAria")}
+            title={t("admin:enrollments.active.copyIdAria")}
           >
             {copied ? (
               <>
-                <Check className="h-3.5 w-3.5" /> Copied
+                <Check className="h-3.5 w-3.5" /> {t("admin:enrollments.active.copied")}
               </>
             ) : (
               <>
-                <Copy className="h-3.5 w-3.5" /> Copy ID
+                <Copy className="h-3.5 w-3.5" /> {t("admin:enrollments.active.copyId")}
               </>
             )}
           </Button>
@@ -323,7 +327,9 @@ function ActiveRow({
             onClick={() => onRevoke(enrollment.id)}
           >
             <Trash2 className="h-3.5 w-3.5" />
-            {revoking ? "Revoking…" : "Revoke"}
+            {revoking
+              ? t("admin:enrollments.active.revoking")
+              : t("admin:enrollments.active.revoke")}
           </Button>
         </div>
       </TD>
@@ -346,17 +352,18 @@ function HistoryPanel({
   onRetry: () => void;
   groupNameById: Map<string, string>;
 }) {
+  const { t } = useT(["admin", "common"]);
   return (
     <Panel>
       <PanelHeader>
-        <h3 className="text-sm font-semibold">History</h3>
+        <h3 className="text-sm font-semibold">{t("admin:enrollments.history.title")}</h3>
         <span className="text-xs text-fg-subtle tabular-nums">
-          {enrollments.length} entries
+          {t("admin:enrollments.history.countEntries", { count: enrollments.length })}
         </span>
       </PanelHeader>
       <PanelBody className="p-0 overflow-x-auto">
         {loading ? (
-          <p className="px-5 py-4 text-sm text-fg-subtle">Loading…</p>
+          <p className="px-5 py-4 text-sm text-fg-subtle">{t("common:actions.loading")}</p>
         ) : error ? (
           <div className="p-5">
             <ErrorState message={error.message} onRetry={onRetry} />
@@ -364,21 +371,21 @@ function HistoryPanel({
         ) : enrollments.length === 0 ? (
           <EmptyState
             icon={Clock}
-            title="No consumed or expired tokens in the last 24 hours."
-            hint="Issued tokens auto-expire after their TTL; the server prunes records older than 24h."
+            title={t("admin:enrollments.history.empty")}
+            hint={t("admin:enrollments.history.emptyHint")}
           />
         ) : (
-          <Table aria-label="Consumed enrollment tokens">
+          <Table aria-label={t("admin:enrollments.history.tableLabel")}>
             <THead>
               <tr>
-                <TH>Created</TH>
-                <TH>Label</TH>
-                <TH>Tags</TH>
-                <TH>Groups</TH>
-                <TH>Status</TH>
-                <TH>Used by</TH>
-                <TH>Created by</TH>
-                <TH>Expires</TH>
+                <TH>{t("admin:enrollments.history.columns.created")}</TH>
+                <TH>{t("admin:enrollments.history.columns.label")}</TH>
+                <TH>{t("admin:enrollments.history.columns.tags")}</TH>
+                <TH>{t("admin:enrollments.history.columns.groups")}</TH>
+                <TH>{t("admin:enrollments.history.columns.status")}</TH>
+                <TH>{t("admin:enrollments.history.columns.usedBy")}</TH>
+                <TH>{t("admin:enrollments.history.columns.createdBy")}</TH>
+                <TH>{t("admin:enrollments.history.columns.expires")}</TH>
               </tr>
             </THead>
             <TBody>
@@ -456,6 +463,7 @@ function CreateTokenPanel({
   onCreated: () => void;
   onSwitchToActive: () => void;
 }) {
+  const { t } = useT(["admin", "common"]);
   const tagsQuery = useQuery({
     queryKey: ["tags"],
     queryFn: () => api<{ tags: Array<{ tag: string; count: number }> }>("/v1/tags"),
@@ -478,7 +486,7 @@ function CreateTokenPanel({
   const create = useMutation({
     mutationFn: () => {
       if (ttlMinutes < 5 || ttlMinutes > 1440) {
-        throw new Error("TTL must be between 5 and 1440 minutes.");
+        throw new Error(t("admin:enrollments.create.ttlError"));
       }
       const tags = tagsRaw
         .split(",")
@@ -532,16 +540,17 @@ function CreateTokenPanel({
   return (
     <Panel>
       <PanelHeader>
-        <h3 className="text-sm font-semibold">Create new bootstrap token</h3>
+        <h3 className="text-sm font-semibold">{t("admin:enrollments.create.title")}</h3>
       </PanelHeader>
       <PanelBody>
         {created ? (
           <div className="space-y-4">
-            <SuccessBox>
-              Token generated. Shown once — copy the install command now.
-            </SuccessBox>
+            <SuccessBox>{t("admin:enrollments.create.success")}</SuccessBox>
 
-            <Field label="Install command" hint="Run on the new host as root.">
+            <Field
+              label={t("admin:enrollments.create.installLabel")}
+              hint={t("admin:enrollments.create.installHint")}
+            >
               <div className="flex items-start justify-between gap-3 rounded-md border border-border bg-bg/60 px-3 py-2">
                 <pre className="m-0 flex-1 whitespace-pre-wrap break-all font-mono text-xs text-fg">
                   {created.install_command}
@@ -551,30 +560,30 @@ function CreateTokenPanel({
                     variant="primary"
                     size="sm"
                     onClick={() => copyText(created.install_command, setCopiedCmd)}
-                    aria-label="Copy install command"
+                    aria-label={t("admin:enrollments.create.copyCommandAria")}
                   >
                     {copiedCmd ? (
                       <>
-                        <Check className="h-3.5 w-3.5" /> Copied
+                        <Check className="h-3.5 w-3.5" /> {t("admin:enrollments.create.copied")}
                       </>
                     ) : (
                       <>
-                        <Copy className="h-3.5 w-3.5" /> Copy command
+                        <Copy className="h-3.5 w-3.5" /> {t("admin:enrollments.create.copyCommand")}
                       </>
                     )}
                   </Button>
                   <Button
                     size="sm"
                     onClick={() => copyText(created.install_url, setCopiedURL)}
-                    aria-label="Copy install URL"
+                    aria-label={t("admin:enrollments.create.copyUrlAria")}
                   >
                     {copiedURL ? (
                       <>
-                        <Check className="h-3.5 w-3.5" /> Copied
+                        <Check className="h-3.5 w-3.5" /> {t("admin:enrollments.create.copied")}
                       </>
                     ) : (
                       <>
-                        <Copy className="h-3.5 w-3.5" /> Copy URL
+                        <Copy className="h-3.5 w-3.5" /> {t("admin:enrollments.create.copyUrl")}
                       </>
                     )}
                   </Button>
@@ -583,32 +592,32 @@ function CreateTokenPanel({
             </Field>
 
             <div className="flex items-center justify-end gap-2 pt-2">
-              <Button onClick={resetForm}>Mint another</Button>
+              <Button onClick={resetForm}>{t("admin:enrollments.create.mintAnother")}</Button>
               <Button variant="primary" onClick={onSwitchToActive}>
-                View active tokens
+                {t("admin:enrollments.create.viewActive")}
               </Button>
             </div>
           </div>
         ) : (
           <form onSubmit={submit} className="space-y-4">
-            <p className="text-xs text-fg-subtle">
-              Generates a single-use enrollment token. The new agent claims it on its
-              first check-in and inherits the label, tags, and groups you set here.
-            </p>
+            <p className="text-xs text-fg-subtle">{t("admin:enrollments.create.intro")}</p>
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Field
-                label="Display label"
-                hint="Optional. Shown in the host list before the first hostname is reported."
+                label={t("admin:enrollments.create.fields.label")}
+                hint={t("admin:enrollments.create.fields.labelHint")}
               >
                 <TextInput
                   value={label}
                   onChange={(e) => setLabel(e.target.value)}
-                  placeholder="e.g. db-replica-3"
+                  placeholder={t("admin:enrollments.create.fields.labelPh")}
                   maxLength={120}
                 />
               </Field>
-              <Field label="Token TTL (minutes)" hint="Min 5, max 1440 (24h). Default 30.">
+              <Field
+                label={t("admin:enrollments.create.fields.ttl")}
+                hint={t("admin:enrollments.create.fields.ttlHint")}
+              >
                 <TextInput
                   type="number"
                   min={5}
@@ -619,35 +628,42 @@ function CreateTokenPanel({
               </Field>
             </div>
 
-            <Field label="Description" hint={`Optional, max 200 chars. (${description.length}/200)`}>
+            <Field
+              label={t("admin:enrollments.create.fields.description")}
+              hint={t("admin:enrollments.create.fields.descriptionHint", {
+                count: description.length,
+              })}
+            >
               <TextInput
                 value={description}
                 onChange={(e) => setDescription(e.target.value.slice(0, 200))}
-                placeholder="Why this host is being added"
+                placeholder={t("admin:enrollments.create.fields.descriptionPh")}
                 maxLength={200}
               />
             </Field>
 
             <Field
-              label="Default tags (comma-separated)"
+              label={t("admin:enrollments.create.fields.tags")}
               hint={
                 tagsQuery.data?.tags?.length
-                  ? `Existing: ${tagsQuery.data.tags
-                      .slice(0, 12)
-                      .map((t) => t.tag)
-                      .join(", ")}`
-                  : "No tags defined yet."
+                  ? t("admin:enrollments.create.fields.tagsExisting", {
+                      list: tagsQuery.data.tags
+                        .slice(0, 12)
+                        .map((tg) => tg.tag)
+                        .join(", "),
+                    })
+                  : t("admin:enrollments.create.fields.tagsNone")
               }
             >
               <TextInput
                 value={tagsRaw}
                 onChange={(e) => setTagsRaw(e.target.value)}
-                placeholder="prod, db"
+                placeholder={t("admin:enrollments.create.fields.tagsPh")}
                 className="font-mono"
               />
             </Field>
 
-            <Field label="Default groups (Ctrl/⌘ to multi-select)">
+            <Field label={t("admin:enrollments.create.fields.groups")}>
               <select
                 multiple
                 size={Math.min(5, Math.max(2, groupsQuery.data?.groups.length ?? 2))}
@@ -669,7 +685,9 @@ function CreateTokenPanel({
 
             <div className="flex items-center justify-end gap-2 pt-2">
               <Button variant="primary" type="submit" disabled={create.isPending}>
-                {create.isPending ? "Generating…" : "Generate install command"}
+                {create.isPending
+                  ? t("admin:enrollments.create.submitting")
+                  : t("admin:enrollments.create.submit")}
               </Button>
             </div>
           </form>
@@ -716,7 +734,10 @@ function GroupCount({
 }
 
 function LifecyclePill({ state }: { state: Lifecycle }) {
-  if (state === "consumed") return <StatusPill status="ok">consumed</StatusPill>;
-  if (state === "expired") return <StatusPill status="offline">expired</StatusPill>;
-  return <StatusPill status="warn">pending</StatusPill>;
+  const { t } = useT(["admin"]);
+  if (state === "consumed")
+    return <StatusPill status="ok">{t("admin:enrollments.lifecycle.consumed")}</StatusPill>;
+  if (state === "expired")
+    return <StatusPill status="offline">{t("admin:enrollments.lifecycle.expired")}</StatusPill>;
+  return <StatusPill status="warn">{t("admin:enrollments.lifecycle.pending")}</StatusPill>;
 }

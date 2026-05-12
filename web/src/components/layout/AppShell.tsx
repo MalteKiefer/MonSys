@@ -5,6 +5,7 @@ import { MobileDrawer } from "./MobileDrawer";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
 import { getConnectionStatus, subscribe as subscribeConnection } from "../../lib/connection";
+import { useT } from "../../i18n/useT";
 
 // AppShell is the post-auth chrome: connection banner, topbar, sidebar,
 // mobile drawer, and the scrollable main slot for the routed page.
@@ -37,6 +38,7 @@ function useTabletForceCollapse(): boolean {
 }
 
 function ConnectionBanner() {
+  const { t } = useT("nav");
   const status = useSyncExternalStore(subscribeConnection, getConnectionStatus, getConnectionStatus);
   if (status !== "lost") return null;
   return (
@@ -49,12 +51,13 @@ function ConnectionBanner() {
       className="sticky top-0 z-50 flex items-center justify-center gap-2 border-b border-fail/30 bg-fail/10 px-4 py-1.5 text-xs font-medium text-fail ring-1 ring-inset ring-fail/30 backdrop-blur"
     >
       <CloudOff className="h-3.5 w-3.5" aria-hidden />
-      <span>Connection to mon-server lost — retrying…</span>
+      <span>{t("appshell.connection_lost")}</span>
     </div>
   );
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  const { t } = useT("nav");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const tabletCollapsed = useTabletForceCollapse();
 
@@ -65,7 +68,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="flex min-h-0 flex-1">
         <Sidebar forceCollapsed={tabletCollapsed} />
         <main className="min-w-0 flex-1 overflow-auto">
-          <Suspense fallback={<div className="p-6 text-sm text-fg-muted">Loading…</div>}>
+          <Suspense fallback={<div className="p-6 text-sm text-fg-muted">{t("appshell.loading")}</div>}>
             {children}
           </Suspense>
         </main>

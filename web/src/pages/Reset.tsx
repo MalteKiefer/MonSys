@@ -3,6 +3,7 @@ import { FormEvent, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { Button, ErrorBox, Field, Panel, SuccessBox, TextInput } from "../components/ui";
+import { useT } from "../i18n/useT";
 import { api, ApiError } from "../lib/api";
 
 // TODO(theme): this page still uses raw `zinc-*` Tailwind classes which
@@ -10,6 +11,7 @@ import { api, ApiError } from "../lib/api";
 // (text-fg-muted, bg-panel, border-border, …) in a follow-up.
 
 export function Reset() {
+  const { t } = useT("auth");
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const token = params.get("token") ?? "";
@@ -23,7 +25,7 @@ export function Reset() {
     return (
       <div className="flex min-h-full items-center justify-center px-4">
         <div className="w-full max-w-sm">
-          <ErrorBox>Missing reset token. Use the link from your invite email.</ErrorBox>
+          <ErrorBox>{t("reset.error_missing_token")}</ErrorBox>
         </div>
       </div>
     );
@@ -33,7 +35,7 @@ export function Reset() {
     e.preventDefault();
     setError(null);
     if (pw !== pw2) {
-      setError("Passwords do not match.");
+      setError(t("reset.error_mismatch"));
       return;
     }
     setBusy(true);
@@ -45,7 +47,7 @@ export function Reset() {
       });
       setDone(true);
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "failed");
+      setError(err instanceof ApiError ? err.detail : t("reset.error_failed"));
     } finally {
       setBusy(false);
     }
@@ -56,13 +58,13 @@ export function Reset() {
       <div className="flex min-h-full items-center justify-center px-4 py-10">
         <Panel className="w-full max-w-sm">
           <div className="space-y-4 p-6">
-            <SuccessBox>Password set. You can sign in now.</SuccessBox>
+            <SuccessBox>{t("reset.success")}</SuccessBox>
             <Button
               variant="primary"
               onClick={() => navigate("/login", { replace: true })}
               className="w-full"
             >
-              Go to login
+              {t("reset.go_to_login")}
             </Button>
           </div>
         </Panel>
@@ -76,12 +78,12 @@ export function Reset() {
         <form onSubmit={submit} className="space-y-5 p-6">
           <div className="flex items-center gap-2">
             <KeyRound className="h-5 w-5 text-accent" />
-            <h1 className="text-lg font-semibold">Set your password</h1>
+            <h1 className="text-lg font-semibold">{t("reset.title")}</h1>
           </div>
           <p className="text-sm text-fg-muted">
-            Choose a strong password. Server policy will reject weak ones.
+            {t("reset.hint")}
           </p>
-          <Field label="New password">
+          <Field label={t("reset.new_password")}>
             <TextInput
               type="password"
               required
@@ -89,7 +91,7 @@ export function Reset() {
               onChange={(e) => setPw(e.target.value)}
             />
           </Field>
-          <Field label="Confirm">
+          <Field label={t("reset.confirm")}>
             <TextInput
               type="password"
               required
@@ -99,7 +101,7 @@ export function Reset() {
           </Field>
           {error && <ErrorBox>{error}</ErrorBox>}
           <Button type="submit" variant="primary" disabled={busy} className="w-full">
-            {busy ? "Saving…" : "Set password"}
+            {busy ? t("reset.submitting") : t("reset.submit")}
           </Button>
         </form>
       </Panel>

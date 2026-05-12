@@ -15,6 +15,7 @@ import {
   type TabItem,
   TextInput,
 } from "../components/ui";
+import { useT } from "../i18n/useT";
 import { api, ApiError } from "../lib/api";
 import { ForceMode, PasswordPolicy, RevokeAllSessionsResponse, SecurityPolicy } from "../lib/types";
 
@@ -24,18 +25,19 @@ import { ForceMode, PasswordPolicy, RevokeAllSessionsResponse, SecurityPolicy } 
 
 type TabKey = "password" | "auth" | "sessions";
 
-const TAB_ITEMS: ReadonlyArray<TabItem<TabKey>> = [
-  { key: "password", label: "Password policy", icon: Lock },
-  { key: "auth", label: "Authentication", icon: Shield },
-  { key: "sessions", label: "Active sessions", icon: Activity },
-];
-
 function isTabKey(v: string | null): v is TabKey {
   return v === "password" || v === "auth" || v === "sessions";
 }
 
 export function AdminSecurity() {
+  const { t } = useT(["admin", "common"]);
   const qc = useQueryClient();
+
+  const TAB_ITEMS: ReadonlyArray<TabItem<TabKey>> = [
+    { key: "password", label: t("security.tabs.password"), icon: Lock },
+    { key: "auth", label: t("security.tabs.auth"), icon: Shield },
+    { key: "sessions", label: t("security.tabs.sessions"), icon: Activity },
+  ];
 
   // Deep-link via ?tab=… — fall back to "password".
   const [searchParams, setSearchParams] = useSearchParams();
@@ -68,10 +70,14 @@ export function AdminSecurity() {
         body: JSON.stringify(next),
       }),
     onSuccess: () => {
-      setMsg({ kind: "ok", text: "Policy updated." });
+      setMsg({ kind: "ok", text: t("security.password.saved") });
       qc.invalidateQueries({ queryKey: ["password-policy"] });
     },
-    onError: (err) => setMsg({ kind: "err", text: err instanceof ApiError ? err.detail : "failed" }),
+    onError: (err) =>
+      setMsg({
+        kind: "err",
+        text: err instanceof ApiError ? err.detail : t("security.password.generic_failure"),
+      }),
   });
 
   // Force-Modus & Session-Limits ------------------------------------------------
@@ -94,11 +100,14 @@ export function AdminSecurity() {
         body: JSON.stringify(next),
       }),
     onSuccess: () => {
-      setSecMsg({ kind: "ok", text: "Force-Modus aktualisiert." });
+      setSecMsg({ kind: "ok", text: t("security.auth.saved") });
       qc.invalidateQueries({ queryKey: ["security-policy"] });
     },
     onError: (err) =>
-      setSecMsg({ kind: "err", text: err instanceof ApiError ? err.detail : "failed" }),
+      setSecMsg({
+        kind: "err",
+        text: err instanceof ApiError ? err.detail : t("security.auth.generic_failure"),
+      }),
   });
 
   const revokeAll = useMutation({
@@ -109,10 +118,13 @@ export function AdminSecurity() {
     onSuccess: (data) =>
       setSecMsg({
         kind: "ok",
-        text: `Revoked ${data.revoked} sessions (your own session was preserved)`,
+        text: t("security.sessions.revoked_toast", { count: data.revoked }),
       }),
     onError: (err) =>
-      setSecMsg({ kind: "err", text: err instanceof ApiError ? err.detail : "failed" }),
+      setSecMsg({
+        kind: "err",
+        text: err instanceof ApiError ? err.detail : t("security.auth.generic_failure"),
+      }),
   });
 
   if (policy.isLoading || !draft || sec.isLoading || !secDraft)
@@ -147,11 +159,11 @@ export function AdminSecurity() {
     setSecMsg(null);
     const d = secDraft!;
     if (!VALID_FORCE_MODES.includes(d.force_mode)) {
-      setSecMsg({ kind: "err", text: "Ungültiger Force-Modus." });
+      setSecMsg({ kind: "err", text: t("security.auth.invalid_force_mode") });
       return;
     }
     if (!VALID_GRACE_DAYS.includes(d.grace_days)) {
-      setSecMsg({ kind: "err", text: "Grace-Period muss 0, 1, 7 oder 30 Tage sein." });
+      setSecMsg({ kind: "err", text: t("security.auth.invalid_grace") });
       return;
     }
     if (
@@ -159,7 +171,7 @@ export function AdminSecurity() {
       d.max_session_hours < 1 ||
       d.max_session_hours > 720
     ) {
-      setSecMsg({ kind: "err", text: "Max-Session muss zwischen 1 und 720 Stunden liegen." });
+      setSecMsg({ kind: "err", text: t("security.auth.invalid_max_session") });
       return;
     }
     if (
@@ -167,18 +179,14 @@ export function AdminSecurity() {
       d.idle_timeout_minutes < 0 ||
       d.idle_timeout_minutes > 10080
     ) {
-      setSecMsg({ kind: "err", text: "Idle-Timeout muss zwischen 0 und 10080 Minuten liegen." });
+      setSecMsg({ kind: "err", text: t("security.auth.invalid_idle_timeout") });
       return;
     }
     saveSec.mutate(d);
   }
 
   function onRevokeAll() {
-    if (
-      !window.confirm(
-        "Alle aktiven Sessions (außer deiner eigenen) werden invalidiert. Fortfahren?",
-      )
-    ) {
+    if (!window.confirm(t("security.sessions.revoke_confirm"))) {
       return;
     }
     setSecMsg(null);
@@ -194,10 +202,8 @@ export function AdminSecurity() {
   return (
     <div className="mx-auto max-w-3xl space-y-6 p-6">
       <header>
-        <h2 className="text-lg font-semibold">Security</h2>
-        <p className="text-sm text-fg-muted">
-          Password requirements, authentication enforcement, and active session controls.
-        </p>
+        <h2 className="text-lg font-semibold">{t("security.page.title")}</h2>
+        <p className="text-sm text-fg-muted">{t("security.page.subtitle")}</p>
       </header>
 
       <Tabs items={TAB_ITEMS} value={activeTab} onChange={onTabChange} />
@@ -210,12 +216,14 @@ export function AdminSecurity() {
         >
           <Panel>
             <PanelHeader>
-              <h3 className="text-sm font-semibold text-fg">Password policy</h3>
+              <h3 className="text-sm font-semibold text-fg">{t("security.password.panel_title")}</h3>
             </PanelHeader>
             <PanelBody>
               <form onSubmit={submit} className="space-y-4">
                 <label className="block">
-                  <span className="mb-1 block text-xs font-medium text-fg-muted">Minimum length</span>
+                  <span className="mb-1 block text-xs font-medium text-fg-muted">
+                    {t("security.password.min_length")}
+                  </span>
                   <TextInput
                     type="number"
                     min={4}
@@ -227,15 +235,31 @@ export function AdminSecurity() {
                 </label>
 
                 <fieldset className="grid grid-cols-2 gap-2 text-sm text-fg">
-                  <Toggle label="Uppercase letter" value={draft.require_upper} onChange={set("require_upper")} />
-                  <Toggle label="Lowercase letter" value={draft.require_lower} onChange={set("require_lower")} />
-                  <Toggle label="Digit" value={draft.require_digit} onChange={set("require_digit")} />
-                  <Toggle label="Symbol" value={draft.require_symbol} onChange={set("require_symbol")} />
+                  <Toggle
+                    label={t("security.password.require_upper")}
+                    value={draft.require_upper}
+                    onChange={set("require_upper")}
+                  />
+                  <Toggle
+                    label={t("security.password.require_lower")}
+                    value={draft.require_lower}
+                    onChange={set("require_lower")}
+                  />
+                  <Toggle
+                    label={t("security.password.require_digit")}
+                    value={draft.require_digit}
+                    onChange={set("require_digit")}
+                  />
+                  <Toggle
+                    label={t("security.password.require_symbol")}
+                    value={draft.require_symbol}
+                    onChange={set("require_symbol")}
+                  />
                 </fieldset>
 
                 <label className="block">
                   <span className="mb-1 block text-xs font-medium text-fg-muted">
-                    Max age (days, 0 = no expiry)
+                    {t("security.password.max_age")}
                   </span>
                   <TextInput
                     type="number"
@@ -247,7 +271,9 @@ export function AdminSecurity() {
                 </label>
 
                 <Button type="submit" variant="primary" disabled={save.isPending}>
-                  {save.isPending ? "Saving…" : "Save policy"}
+                  {save.isPending
+                    ? t("security.password.submitting")
+                    : t("security.password.submit")}
                 </Button>
                 {msg &&
                   (msg.kind === "ok" ? (
@@ -269,42 +295,46 @@ export function AdminSecurity() {
         >
           <Panel>
             <PanelHeader>
-              <h3 className="text-sm font-semibold text-fg">Force-Modus &amp; Session-Limits</h3>
+              <h3 className="text-sm font-semibold text-fg">{t("security.auth.panel_title")}</h3>
             </PanelHeader>
             <PanelBody>
               <form onSubmit={submitSec} className="space-y-4">
                 <label className="block">
-                  <span className="mb-1 block text-xs font-medium text-fg-muted">Force-Modus</span>
+                  <span className="mb-1 block text-xs font-medium text-fg-muted">
+                    {t("security.auth.force_mode_label")}
+                  </span>
                   <select
                     value={secDraft.force_mode}
                     onChange={(e) => setSec("force_mode")(e.target.value as ForceMode)}
                     className={selectCls}
                   >
-                    <option value="off">Aus (kein Zwang)</option>
-                    <option value="2fa_any">Passkey ODER TOTP für alle</option>
-                    <option value="passkey_required">Passkey verpflichtend für alle</option>
+                    <option value="off">{t("security.auth.force_off")}</option>
+                    <option value="2fa_any">{t("security.auth.force_2fa_any")}</option>
+                    <option value="passkey_required">
+                      {t("security.auth.force_passkey_required")}
+                    </option>
                   </select>
                 </label>
 
                 <label className="block">
                   <span className="mb-1 block text-xs font-medium text-fg-muted">
-                    Grace-Period (Tage)
+                    {t("security.auth.grace_label")}
                   </span>
                   <select
                     value={secDraft.grace_days}
                     onChange={(e) => setSec("grace_days")(parseInt(e.target.value, 10))}
                     className={selectCls}
                   >
-                    <option value={0}>0 — sofort</option>
-                    <option value={1}>1 Tag</option>
-                    <option value={7}>7 Tage</option>
-                    <option value={30}>30 Tage</option>
+                    <option value={0}>{t("security.auth.grace_0")}</option>
+                    <option value={1}>{t("security.auth.grace_1")}</option>
+                    <option value={7}>{t("security.auth.grace_7")}</option>
+                    <option value={30}>{t("security.auth.grace_30")}</option>
                   </select>
                 </label>
 
                 <label className="block">
                   <span className="mb-1 block text-xs font-medium text-fg-muted">
-                    Max Session (Stunden, 1–720)
+                    {t("security.auth.max_session_label")}
                   </span>
                   <TextInput
                     type="number"
@@ -320,7 +350,7 @@ export function AdminSecurity() {
 
                 <label className="block">
                   <span className="mb-1 block text-xs font-medium text-fg-muted">
-                    Idle-Timeout (Minuten, 0–10080)
+                    {t("security.auth.idle_timeout_label")}
                   </span>
                   <TextInput
                     type="number"
@@ -332,22 +362,23 @@ export function AdminSecurity() {
                     }
                     className="w-32"
                   />
-                  <span className="mt-1 block text-xs text-fg-muted">0 = aus</span>
+                  <span className="mt-1 block text-xs text-fg-muted">
+                    {t("security.auth.idle_timeout_hint")}
+                  </span>
                 </label>
 
                 {escalatingToPasskey && (
                   <div className="flex items-start gap-2 rounded-md border border-yellow-500/40 bg-yellow-500/10 p-3 text-sm text-yellow-200">
                     <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-                    <span>
-                      Achtung: alle Nutzer ohne Passkey werden nach Grace-Period gesperrt.
-                      Sicherstellen, dass mindestens du selbst einen Passkey eingerichtet hast.
-                    </span>
+                    <span>{t("security.auth.escalation_warning")}</span>
                   </div>
                 )}
 
                 <div className="flex flex-wrap items-center gap-3">
                   <Button type="submit" variant="primary" disabled={saveSec.isPending}>
-                    {saveSec.isPending ? "Speichern…" : "Speichern"}
+                    {saveSec.isPending
+                      ? t("security.auth.submitting")
+                      : t("security.auth.submit")}
                   </Button>
                 </div>
 
@@ -371,22 +402,17 @@ export function AdminSecurity() {
         >
           <Panel>
             <PanelHeader>
-              <h3 className="text-sm font-semibold text-fg">Active sessions</h3>
+              <h3 className="text-sm font-semibold text-fg">
+                {t("security.sessions.panel_title")}
+              </h3>
             </PanelHeader>
             <PanelBody>
               <div className="space-y-4">
-                <p className="text-sm text-fg-muted">
-                  Invalidiert alle aktiven Sessions aller Nutzer. Deine eigene Session bleibt
-                  erhalten, alle anderen werden sofort ausgeloggt und müssen sich neu anmelden.
-                  Nützlich nach einer Policy-Verschärfung oder einem vermuteten Token-Leak.
-                </p>
+                <p className="text-sm text-fg-muted">{t("security.sessions.description")}</p>
 
                 <div className="flex items-start gap-2 rounded-md border border-fail/30 bg-fail/10 p-3 text-sm text-fail">
                   <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-                  <span>
-                    Diese Aktion kann nicht rückgängig gemacht werden. Stelle sicher, dass du
-                    weißt, was du tust.
-                  </span>
+                  <span>{t("security.sessions.danger")}</span>
                 </div>
 
                 <div>
@@ -396,7 +422,9 @@ export function AdminSecurity() {
                     onClick={onRevokeAll}
                     disabled={revokeAll.isPending}
                   >
-                    {revokeAll.isPending ? "Revoking…" : "Alle Sessions revoken"}
+                    {revokeAll.isPending
+                      ? t("security.sessions.revoking")
+                      : t("security.sessions.revoke_button")}
                   </Button>
                 </div>
 

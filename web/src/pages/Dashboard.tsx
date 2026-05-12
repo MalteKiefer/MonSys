@@ -30,6 +30,7 @@ import {
   Table,
   TimeRangeSelector,
 } from "../components/ui";
+import { useT } from "../i18n/useT";
 import { api } from "../lib/api";
 import { AlertHistoryEntry, Host, SystemSample } from "../lib/types";
 import { hostDisplay } from "../lib/utils";
@@ -37,6 +38,7 @@ import { hostDisplay } from "../lib/utils";
 type SystemMetricsResp = { host_id: string; from: string; to: string; samples: SystemSample[] };
 
 export function Dashboard() {
+  const { t } = useT(["dashboard", "common"]);
   const hosts = useQuery({
     queryKey: ["hosts"],
     queryFn: () => api<{ hosts: Host[] }>("/v1/hosts"),
@@ -103,31 +105,31 @@ export function Dashboard() {
   if (hosts.isLoading) return <DashboardSkeleton />;
 
   return (
-    <Page title="Overview" subtitle="Fleet status at a glance.">
+    <Page title={t("dashboard:title")} subtitle={t("dashboard:subtitle")}>
       {/* KPIs */}
       <div className="grid gap-3 md:grid-cols-4">
         <StatCard
-          label="Online hosts"
+          label={t("dashboard:kpi.onlineHosts")}
           value={
             <span className="inline-flex items-center gap-2">
               <CheckCircle2 className="h-4 w-4 text-ok" />
               {counts.online}
             </span>
           }
-          hint={`of ${counts.total} total`}
+          hint={t("dashboard:kpi.onlineHostsHint", { count: counts.total })}
         />
         <StatCard
-          label="Open alerts"
+          label={t("dashboard:kpi.openAlerts")}
           value={
             <span className="inline-flex items-center gap-2">
               <Bell className={`h-4 w-4 ${(alerts.data?.alerts.length ?? 0) > 0 ? "text-warn" : "text-fg-subtle"}`} />
               {alerts.data?.alerts.length ?? 0}
             </span>
           }
-          hint="last 24h"
+          hint={t("dashboard:kpi.openAlertsHint")}
         />
         <StatCard
-          label="Stale hosts"
+          label={t("dashboard:kpi.staleHosts")}
           value={
             <span className="inline-flex items-center gap-2">
               <AlertTriangle
@@ -136,17 +138,17 @@ export function Dashboard() {
               {counts.stale + counts.offline}
             </span>
           }
-          hint={`${counts.stale} stale, ${counts.offline} offline`}
+          hint={t("dashboard:kpi.staleHostsHint", { stale: counts.stale, offline: counts.offline })}
         />
         <StatCard
-          label="Pending updates"
+          label={t("dashboard:kpi.pendingUpdates")}
           value={
             <span className="inline-flex items-center gap-2">
               <PackageIcon className="h-4 w-4 text-fg-subtle" />
-              <Link to="/packages" className="text-accent hover:underline">View packages</Link>
+              <Link to="/packages" className="text-accent hover:underline">{t("dashboard:kpi.viewPackages")}</Link>
             </span>
           }
-          hint="per-host detail"
+          hint={t("dashboard:kpi.pendingUpdatesHint")}
         />
       </div>
 
@@ -156,20 +158,20 @@ export function Dashboard() {
           <PanelHeader>
             <div className="flex items-center gap-2">
               <ServerCrash className="h-4 w-4 text-fg-muted" />
-              <h3 className="text-sm font-semibold">Hosts needing attention</h3>
+              <h3 className="text-sm font-semibold">{t("dashboard:attention.title")}</h3>
             </div>
-            <Link to="/hosts" className="text-xs text-accent hover:underline">All hosts →</Link>
+            <Link to="/hosts" className="text-xs text-accent hover:underline">{t("dashboard:attention.allHosts")}</Link>
           </PanelHeader>
           <PanelBody className="p-0 overflow-x-auto">
             {needAttention.length === 0 ? (
-              <p className="px-5 py-6 text-center text-sm text-fg-subtle">All hosts online.</p>
+              <p className="px-5 py-6 text-center text-sm text-fg-subtle">{t("dashboard:attention.allOnline")}</p>
             ) : (
               <Table>
                 <THead>
                   <tr>
-                    <TH>Status</TH>
-                    <TH>Host</TH>
-                    <TH>Last seen</TH>
+                    <TH>{t("dashboard:attention.colStatus")}</TH>
+                    <TH>{t("dashboard:attention.colHost")}</TH>
+                    <TH>{t("dashboard:attention.colLastSeen")}</TH>
                   </tr>
                 </THead>
                 <TBody>
@@ -185,7 +187,7 @@ export function Dashboard() {
                           {hostDisplay(h)}
                         </Link>
                       </TD>
-                      <TD className="text-fg-muted">{relTime(h.last_seen_at)}</TD>
+                      <TD className="text-fg-muted">{relTime(h.last_seen_at, t)}</TD>
                     </tr>
                   ))}
                 </TBody>
@@ -198,26 +200,26 @@ export function Dashboard() {
           <PanelHeader>
             <div className="flex items-center gap-2">
               <Bell className="h-4 w-4 text-fg-muted" />
-              <h3 className="text-sm font-semibold">Recent alerts</h3>
+              <h3 className="text-sm font-semibold">{t("dashboard:alerts.title")}</h3>
             </div>
-            <Link to="/notifications" className="text-xs text-accent hover:underline">All alerts →</Link>
+            <Link to="/notifications" className="text-xs text-accent hover:underline">{t("dashboard:alerts.allAlerts")}</Link>
           </PanelHeader>
           <PanelBody className="p-0 overflow-x-auto">
             {recentAlerts.length === 0 ? (
-              <Empty>No alerts in the last 24h.</Empty>
+              <Empty>{t("dashboard:alerts.empty")}</Empty>
             ) : (
               <Table>
                 <THead>
                   <tr>
-                    <TH>When</TH>
-                    <TH>Severity</TH>
-                    <TH>Subject</TH>
+                    <TH>{t("dashboard:alerts.colWhen")}</TH>
+                    <TH>{t("dashboard:alerts.colSeverity")}</TH>
+                    <TH>{t("dashboard:alerts.colSubject")}</TH>
                   </tr>
                 </THead>
                 <TBody>
                   {recentAlerts.map((a) => (
                     <tr key={a.id} className="hover:bg-panel-2">
-                      <TD className="font-mono text-xs text-fg-muted whitespace-nowrap">{relTime(a.at)}</TD>
+                      <TD className="font-mono text-xs text-fg-muted whitespace-nowrap">{relTime(a.at, t)}</TD>
                       <TD>
                         <StatusPill
                           status={a.severity === "info" ? "ok" : a.severity === "warning" ? "warn" : "fail"}
@@ -245,7 +247,7 @@ export function Dashboard() {
         <PanelHeader>
           <div className="flex items-center gap-2">
             <Cpu className="h-4 w-4 text-fg-muted" />
-            <h3 className="text-sm font-semibold">Live system</h3>
+            <h3 className="text-sm font-semibold">{t("dashboard:system.title")}</h3>
             {selectedHost && (
               <span className="text-xs text-fg-subtle">· {hostDisplay(selectedHost)}</span>
             )}
@@ -256,9 +258,9 @@ export function Dashboard() {
                 value={hostID}
                 onChange={(e) => setHostID(e.target.value)}
                 className="appearance-none rounded-md border border-border bg-panel py-1 pl-2 pr-7 text-xs text-fg focus:border-accent focus:outline-none"
-                aria-label="Pick a host for charts"
+                aria-label={t("dashboard:system.pickHost")}
               >
-                <option value="">— pick a host —</option>
+                <option value="">{t("dashboard:system.pickHostPlaceholder")}</option>
                 {list.map((h) => (
                   <option key={h.id} value={h.id}>
                     {hostDisplay(h)} {h.status !== "online" ? `(${h.status})` : ""}
@@ -275,7 +277,7 @@ export function Dashboard() {
             if (!selectedHost) {
               return (
                 <p className="py-6 text-center text-sm text-fg-subtle">
-                  Pick a host to display live CPU and RAM charts.
+                  {t("dashboard:system.pickHostHint")}
                 </p>
               );
             }
@@ -284,16 +286,16 @@ export function Dashboard() {
               return <Skeleton className="h-48" />;
             }
             if (samples.length === 0) {
-              return <Empty>No system samples in this range.</Empty>;
+              return <Empty>{t("dashboard:system.noSamples")}</Empty>;
             }
-            return <SystemChart samples={samples} ramTotal={selectedHost.ram_total_bytes} />;
+            return <SystemChart samples={samples} ramTotal={selectedHost.ram_total_bytes} cpuLabel={t("dashboard:system.cpu")} ramLabel={t("dashboard:system.ram")} />;
           })()}
         </PanelBody>
       </Panel>
 
       <p className="flex items-center justify-center gap-1 pt-2 text-xs text-fg-subtle">
         <Activity className="h-3 w-3" />
-        Live data refreshes every 15-30 seconds.
+        {t("dashboard:footer")}
       </p>
     </Page>
   );
@@ -304,7 +306,7 @@ export function Dashboard() {
 // Renders the same CPU/RAM line chart used on HostDetail's Live System panel.
 // The math is a straight port — we deliberately don't share code so this page
 // stays editable in isolation.
-function SystemChart({ samples, ramTotal }: { samples: SystemSample[]; ramTotal: number }) {
+function SystemChart({ samples, ramTotal, cpuLabel, ramLabel }: { samples: SystemSample[]; ramTotal: number; cpuLabel: string; ramLabel: string }) {
   const matrix = useMemo(() => {
     const t = samples.map((s) => Math.floor(new Date(s.time).getTime() / 1000));
     const cpu = samples.map((s) => s.cpu_usage_pct);
@@ -312,8 +314,8 @@ function SystemChart({ samples, ramTotal }: { samples: SystemSample[]; ramTotal:
     return [t, cpu, ram];
   }, [samples, ramTotal]);
   const series: ChartSeries[] = [
-    { label: "CPU", color: colorFor(0), fill: "rgba(16,185,129,0.10)" },
-    { label: "RAM", color: colorFor(1), fill: "rgba(96,165,250,0.10)" },
+    { label: cpuLabel, color: colorFor(0), fill: "rgba(16,185,129,0.10)" },
+    { label: ramLabel, color: colorFor(1), fill: "rgba(96,165,250,0.10)" },
   ];
   return (
     <ChartLine
@@ -344,12 +346,12 @@ function DashboardSkeleton() {
 
 // ---- Helpers --------------------------------------------------------------
 
-function relTime(iso: string): string {
-  const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return iso;
-  const diff = (Date.now() - t) / 1000;
-  if (diff < 60) return `${Math.round(diff)}s ago`;
-  if (diff < 3600) return `${Math.round(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.round(diff / 3600)}h ago`;
-  return `${Math.round(diff / 86400)}d ago`;
+function relTime(iso: string, t: (key: string, opts?: Record<string, unknown>) => string): string {
+  const ts = new Date(iso).getTime();
+  if (Number.isNaN(ts)) return iso;
+  const diff = (Date.now() - ts) / 1000;
+  if (diff < 60) return t("dashboard:time.secondsAgo", { count: Math.round(diff) });
+  if (diff < 3600) return t("dashboard:time.minutesAgo", { count: Math.round(diff / 60) });
+  if (diff < 86400) return t("dashboard:time.hoursAgo", { count: Math.round(diff / 3600) });
+  return t("dashboard:time.daysAgo", { count: Math.round(diff / 86400) });
 }

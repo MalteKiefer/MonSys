@@ -1,0 +1,37 @@
+{
+  "title": "Pakete",
+  "subtitleSecurity": "{{count}} Sicherheit · ",
+  "subtitleTotal": "{{count}} Treffer insgesamt",
+  "managers": {
+    "all": "Alle Manager",
+    "dpkg": "apt (dpkg)",
+    "rpm": "dnf (rpm)",
+    "pacman": "pacman",
+    "apk": "apk"
+  },
+  "filters": {
+    "searchPlaceholder": "Suche nach Name oder Version… (Groß-/Kleinschreibung egal)",
+    "managerAria": "Nach Paketmanager filtern",
+    "hostAria": "Nach Host filtern",
+    "allHosts": "Alle Hosts",
+    "securityOnly": "Nur Sicherheit"
+  },
+  "empty": "Keine Pakete gefunden.",
+  "group": {
+    "packageOne": "Paket",
+    "packageOther": "Pakete",
+    "viewAll": "Alle {{count}} Pakete anzeigen →"
+  },
+  "table": {
+    "manager": "Manager",
+    "name": "Name",
+    "version": "Version",
+    "arch": "Arch",
+    "source": "Quelle"
+  },
+  "pagination": {
+    "range": "{{from}}–{{to}} von {{total}}",
+    "prev": "Zurück",
+    "next": "Weiter"
+  }
+}

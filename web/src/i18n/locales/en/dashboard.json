@@ -1,0 +1,47 @@
+{
+  "title": "Overview",
+  "subtitle": "Fleet status at a glance.",
+  "kpi": {
+    "onlineHosts": "Online hosts",
+    "onlineHostsHint": "of {{count}} total",
+    "openAlerts": "Open alerts",
+    "openAlertsHint": "last 24h",
+    "staleHosts": "Stale hosts",
+    "staleHostsHint": "{{stale}} stale, {{offline}} offline",
+    "pendingUpdates": "Pending updates",
+    "pendingUpdatesHint": "per-host detail",
+    "viewPackages": "View packages"
+  },
+  "attention": {
+    "title": "Hosts needing attention",
+    "allHosts": "All hosts →",
+    "allOnline": "All hosts online.",
+    "colStatus": "Status",
+    "colHost": "Host",
+    "colLastSeen": "Last seen"
+  },
+  "alerts": {
+    "title": "Recent alerts",
+    "allAlerts": "All alerts →",
+    "empty": "No alerts in the last 24h.",
+    "colWhen": "When",
+    "colSeverity": "Severity",
+    "colSubject": "Subject"
+  },
+  "system": {
+    "title": "Live system",
+    "pickHost": "Pick a host for charts",
+    "pickHostPlaceholder": "— pick a host —",
+    "pickHostHint": "Pick a host to display live CPU and RAM charts.",
+    "noSamples": "No system samples in this range.",
+    "cpu": "CPU",
+    "ram": "RAM"
+  },
+  "footer": "Live data refreshes every 15-30 seconds.",
+  "time": {
+    "secondsAgo": "{{count}}s ago",
+    "minutesAgo": "{{count}}m ago",
+    "hoursAgo": "{{count}}h ago",
+    "daysAgo": "{{count}}d ago"
+  }
+}

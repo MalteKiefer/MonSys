@@ -19,6 +19,7 @@ import { Code2, Pencil, Plus, Sliders, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Button } from "../../../components/ui";
+import { useT } from "../../../i18n/useT";
 import type { NotificationConditionType } from "../../../lib/types";
 
 import {
@@ -47,6 +48,7 @@ export function StepDetect({
   draft: RuleDraft;
   patch: (p: Partial<RuleDraft>) => void;
 }) {
+  const { t } = useT(["notifications", "common"]);
   const editing = draft.editingConditionIdx;
   const isEditing = editing !== null;
 
@@ -130,13 +132,13 @@ export function StepDetect({
         <section>
           <div className="mb-2 flex items-baseline justify-between">
             <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-fg-subtle">
-              Conditions{" "}
+              {t("notifications:wizard.detect.conditions_label")}{" "}
               <span className="text-fg-subtle/70 normal-case">
-                (rule fires when ANY trigger)
+                {t("notifications:wizard.detect.conditions_hint")}
               </span>
             </p>
             <span className="text-[10px] text-fg-subtle">
-              {draft.conditions.length} configured
+              {t("notifications:wizard.detect.configured_count", { count: draft.conditions.length })}
             </span>
           </div>
           <ul className="space-y-1.5">
@@ -160,19 +162,19 @@ export function StepDetect({
                       <p className="text-sm font-medium text-fg">
                         {c.conditionType
                           ? conditionLabel(c.conditionType)
-                          : "(no type)"}
+                          : t("notifications:wizard.detect.no_type")}
                       </p>
                       <p className="mt-0.5 text-[11px] text-fg-subtle">
                         {c.conditionType
                           ? conditionSummary(c.conditionType, c.conditionParams)
-                          : "—"}
+                          : t("notifications:wizard.detect.no_summary")}
                       </p>
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
                       <button
                         type="button"
                         onClick={() => openEditor(idx)}
-                        aria-label={`Edit condition ${idx + 1}`}
+                        aria-label={t("notifications:wizard.detect.edit_condition_aria", { index: idx + 1 })}
                         disabled={isEditing && !editingThis}
                         className="rounded-md p-1 text-fg-subtle hover:bg-panel-2 hover:text-fg disabled:opacity-40"
                       >
@@ -181,7 +183,7 @@ export function StepDetect({
                       <button
                         type="button"
                         onClick={() => removeAt(idx)}
-                        aria-label={`Remove condition ${idx + 1}`}
+                        aria-label={t("notifications:wizard.detect.remove_condition_aria", { index: idx + 1 })}
                         disabled={isEditing && !editingThis}
                         className="rounded-md p-1 text-fg-subtle hover:bg-fail/15 hover:text-fail disabled:opacity-40"
                       >
@@ -199,7 +201,7 @@ export function StepDetect({
               onClick={openNew}
               className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-dashed border-border bg-panel-2/30 px-3 py-1.5 text-xs font-medium text-fg-muted hover:border-accent/50 hover:bg-accent/5 hover:text-fg"
             >
-              <Plus className="h-3.5 w-3.5" /> Add another condition
+              <Plus className="h-3.5 w-3.5" /> {t("notifications:wizard.detect.add_another")}
             </button>
           )}
         </section>
@@ -235,6 +237,7 @@ function ConditionEditor({
   onSave: () => void;
   onCancel: () => void;
 }) {
+  const { t } = useT(["notifications", "common"]);
   const derivedCategory = buffer.conditionType
     ? categoryOf(buffer.conditionType)
     : null;
@@ -261,7 +264,9 @@ function ConditionEditor({
     <section className="rounded-md border-2 border-dashed border-accent/30 bg-accent/5 p-3">
       <div className="mb-3 flex items-center justify-between gap-2">
         <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-fg-subtle">
-          {isNew ? "Add condition" : "Edit condition"}
+          {isNew
+            ? t("notifications:wizard.detect.editor_title_new")
+            : t("notifications:wizard.detect.editor_title_edit")}
         </p>
         <button
           type="button"
@@ -273,14 +278,14 @@ function ConditionEditor({
               ? "bg-accent/15 text-accent ring-accent/40"
               : "bg-panel ring-border text-fg-subtle hover:text-fg hover:bg-panel-2"
           }`}
-          title="Toggle expert / raw JSON mode for this leg"
+          title={t("notifications:wizard.detect.expert_tooltip")}
         >
           {buffer.expertMode ? (
             <Code2 className="h-3.5 w-3.5" />
           ) : (
             <Sliders className="h-3.5 w-3.5" />
           )}
-          Expert JSON
+          {t("notifications:wizard.detect.expert_toggle")}
         </button>
       </div>
 
@@ -288,7 +293,7 @@ function ConditionEditor({
         <div className="space-y-3">
           <div className="rounded-md border border-border bg-panel-2/40 p-3">
             <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-fg-subtle">
-              Condition type
+              {t("notifications:wizard.detect.section_condition_type")}
             </p>
             <select
               value={buffer.conditionType}
@@ -298,7 +303,7 @@ function ConditionEditor({
               }}
               className="w-full rounded-md border border-border bg-panel px-3 py-2 text-sm focus:border-accent focus:outline-none"
             >
-              <option value="">— pick one —</option>
+              <option value="">{t("notifications:wizard.detect.select_placeholder")}</option>
               {CONDITION_TYPES.map((c) => (
                 <option key={c.value} value={c.value}>
                   {c.label}
@@ -320,7 +325,7 @@ function ConditionEditor({
         <div className="space-y-4">
           <section>
             <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-fg-subtle">
-              1. What kind of signal?
+              {t("notifications:wizard.detect.step1_heading")}
             </p>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {CATEGORY_CARDS.map((c) => (
@@ -352,7 +357,7 @@ function ConditionEditor({
             <section>
               <div className="mb-2 flex items-baseline justify-between">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-fg-subtle">
-                  2. Pick a condition
+                  {t("notifications:wizard.detect.step2_heading")}
                 </p>
                 <button
                   type="button"
@@ -362,7 +367,7 @@ function ConditionEditor({
                   }}
                   className="text-[11px] text-fg-subtle hover:text-fg"
                 >
-                  ← Back to categories
+                  {t("notifications:wizard.detect.back_to_categories")}
                 </button>
               </div>
               <div className="space-y-1.5">
@@ -413,7 +418,7 @@ function ConditionEditor({
           {buffer.conditionType && (
             <section>
               <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-fg-subtle">
-                3. Configure {conditionMeta?.label.toLowerCase()}
+                {t("notifications:wizard.detect.step3_heading", { label: conditionMeta?.label.toLowerCase() ?? "" })}
               </p>
               <ConditionParamsPane
                 conditionType={buffer.conditionType}
@@ -428,7 +433,7 @@ function ConditionEditor({
       <div className="mt-4 flex items-center justify-end gap-2 border-t border-accent/20 pt-3">
         {canCancel && (
           <Button type="button" onClick={onCancel}>
-            Cancel
+            {t("notifications:wizard.detect.cancel")}
           </Button>
         )}
         <Button
@@ -437,7 +442,9 @@ function ConditionEditor({
           disabled={!canSave}
           onClick={onSave}
         >
-          {isNew ? "Save condition" : "Update condition"}
+          {isNew
+            ? t("notifications:wizard.detect.save_condition")
+            : t("notifications:wizard.detect.update_condition")}
         </Button>
       </div>
     </section>

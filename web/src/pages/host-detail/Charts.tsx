@@ -17,6 +17,7 @@ import {
   Skeleton,
   TimeRangeSelector,
 } from "../../components/ui";
+import { useT } from "../../i18n/useT";
 import { api } from "../../lib/api";
 import { SystemSample } from "../../lib/types";
 
@@ -28,6 +29,7 @@ import { useHostDetail } from "./HostLayout";
 // neighbouring series.
 export function Charts() {
   const { detail, hostId } = useHostDetail();
+  const { t } = useT(["hostDetail", "common"]);
   const [rangeSec, setRangeSec] = useState(60 * 60);
 
   const fromTo = useMemo(() => {
@@ -49,37 +51,37 @@ export function Charts() {
   // Pre-compute the time axis once and reuse it across all three charts so
   // they share an x scale visually (uPlot itself doesn't link them, but
   // tooltips line up which is what users actually compare).
-  const t = useMemo(
+  const times = useMemo(
     () => samples.map((s) => Math.floor(new Date(s.time).getTime() / 1000)),
     [samples],
   );
 
-  const cpuMatrix = useMemo(() => [t, samples.map((s) => s.cpu_usage_pct)], [t, samples]);
+  const cpuMatrix = useMemo(() => [times, samples.map((s) => s.cpu_usage_pct)], [times, samples]);
   const ramMatrix = useMemo(
-    () => [t, samples.map((s) => (ramTotal > 0 ? (s.ram_used_bytes / ramTotal) * 100 : 0))],
-    [t, samples, ramTotal],
+    () => [times, samples.map((s) => (ramTotal > 0 ? (s.ram_used_bytes / ramTotal) * 100 : 0))],
+    [times, samples, ramTotal],
   );
   const loadMatrix = useMemo(
     () => [
-      t,
+      times,
       samples.map((s) => s.load_1),
       samples.map((s) => s.load_5),
       samples.map((s) => s.load_15),
     ],
-    [t, samples],
+    [times, samples],
   );
 
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <h2 className="text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">System charts</h2>
+        <h2 className="text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">{t("hostDetail:charts.systemCharts")}</h2>
         <TimeRangeSelector value={rangeSec} onChange={setRangeSec} />
       </div>
 
-      <ChartPanel title="CPU usage" icon={Cpu} loading={sys.isLoading} empty={samples.length === 0}>
+      <ChartPanel title={t("hostDetail:charts.cpuUsage")} icon={Cpu} loading={sys.isLoading} empty={samples.length === 0}>
         <ChartLine
           data={{ matrix: cpuMatrix }}
-          series={[{ label: "CPU %", color: colorFor(0), fill: "rgba(16,185,129,0.10)" }]}
+          series={[{ label: t("hostDetail:charts.cpuSeries"), color: colorFor(0), fill: "rgba(16,185,129,0.10)" }]}
           formatY={formatPercent}
           yMin={0}
           height={220}
@@ -87,29 +89,29 @@ export function Charts() {
       </ChartPanel>
 
       <ChartPanel
-        title="Memory usage"
+        title={t("hostDetail:charts.memoryUsage")}
         icon={MemoryStick}
         loading={sys.isLoading}
         empty={samples.length === 0}
-        sub={ramTotal > 0 ? `total ${formatBytes(ramTotal)}` : undefined}
+        sub={ramTotal > 0 ? t("hostDetail:charts.totalSub", { total: formatBytes(ramTotal) }) : undefined}
       >
         <ChartLine
           data={{ matrix: ramMatrix }}
-          series={[{ label: "RAM %", color: colorFor(1), fill: "rgba(96,165,250,0.10)" }]}
+          series={[{ label: t("hostDetail:charts.ramSeries"), color: colorFor(1), fill: "rgba(96,165,250,0.10)" }]}
           formatY={formatPercent}
           yMin={0}
           height={220}
         />
       </ChartPanel>
 
-      <ChartPanel title="Load average" icon={Activity} loading={sys.isLoading} empty={samples.length === 0}>
+      <ChartPanel title={t("hostDetail:charts.loadAverage")} icon={Activity} loading={sys.isLoading} empty={samples.length === 0}>
         <ChartLine
           data={{ matrix: loadMatrix }}
           series={
             [
-              { label: "load 1", color: colorFor(0) },
-              { label: "load 5", color: colorFor(1) },
-              { label: "load 15", color: colorFor(2) },
+              { label: t("hostDetail:charts.load1"), color: colorFor(0) },
+              { label: t("hostDetail:charts.load5"), color: colorFor(1) },
+              { label: t("hostDetail:charts.load15"), color: colorFor(2) },
             ] as ChartSeries[]
           }
           yMin={0}
@@ -135,6 +137,7 @@ function ChartPanel({
   empty: boolean;
   children: React.ReactNode;
 }) {
+  const { t } = useT(["hostDetail", "common"]);
   return (
     <Panel>
       <PanelHeader>
@@ -148,7 +151,7 @@ function ChartPanel({
         {loading && empty ? (
           <Skeleton className="h-48" />
         ) : empty ? (
-          <Empty>No samples in this range.</Empty>
+          <Empty>{t("hostDetail:charts.noSamples")}</Empty>
         ) : (
           children
         )}

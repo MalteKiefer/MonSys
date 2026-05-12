@@ -1,12 +1,16 @@
-import { Activity, Menu, Search } from "lucide-react";
+import { Activity, Check, Globe, Menu, Search } from "lucide-react";
 import { useSyncExternalStore } from "react";
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
+import { useQueryClient } from "@tanstack/react-query";
 
-import { Avatar } from "../ui";
+import { Avatar, DropdownMenu, type DropdownItem } from "../ui";
 import { ThemeToggle } from "../ThemeToggle";
 import { useCommandPalette } from "../../lib/palette-store";
 import { useAuth } from "../../lib/auth";
 import { getConnectionStatus, subscribe as subscribeConnection } from "../../lib/connection";
+import { setLocale, SUPPORTED_LOCALES, type SupportedLocale } from "../../i18n";
+import { api } from "../../lib/api";
 
 // Compact connection-status pill rendered inline on the topbar. The full
 // red banner is still shown on connection loss (via AppShell), but this
@@ -56,6 +60,115 @@ function SearchTrigger() {
   );
 }
 
+// LanguageSwitcher — compact button with the active locale code in caps.
+// Click opens a DropdownMenu with "Auto" (clears the persisted choice and
+// falls back to browser detection) and explicit "English" / "Deutsch"
+// entries. Locale change is optimistic locally; the server PUT runs in the
+// background and only invalidates the `me` query so the auth store picks up
+// the new value once it lands.
+function LanguageSwitcher() {
+  const { i18n } = useTranslation();
+  const user = useAuth((s) => s.user);
+  const qc = useQueryClient();
+
+  // The runtime locale (i18next.language) is the source of truth for what
+  // the UI is currently rendering; the persisted preference may legitimately
+  // disagree until the next reload, but the badge should reflect what the
+  // user sees right now.
+  const raw = (i18n.language || "en").toLowerCase();
+  const base = raw.split("-")[0];
+  const current: SupportedLocale = (SUPPORTED_LOCALES as readonly string[]).includes(base)
+    ? (base as SupportedLocale)
+    : "en";
+
+  // Whether the persisted preference is "auto" (i.e. no explicit choice
+  // stored). When set, the Check moves to "Auto" instead of the resolved
+  // language so the menu reflects intent, not just detection output.
+  const isAuto = !user?.language;
+
+  function persist(value: "auto" | SupportedLocale) {
+    if (!useAuth.getState().token) return;
+    // Fire-and-forget; the api() helper already reports liveness and surfaces
+    // 401s into the auth store. We don't await the PUT — the user shouldn't
+    // wait for the round-trip to see the UI flip. On success the invalidation
+    // refetches /v1/auth/me which carries the new `language` into the auth
+    // store via App.tsx's effect.
+    void api<{ ok: boolean }>("/v1/auth/me/language", {
+      method: "POST",
+      body: JSON.stringify({ language: value === "auto" ? "" : value }),
+    })
+      .then(() => qc.invalidateQueries({ queryKey: ["me"] }))
+      .catch(() => {
+        /* swallow — local change still applied; next /me refresh corrects */
+      });
+  }
+
+  function choose(value: "auto" | SupportedLocale) {
+    if (value === "auto") {
+      // Drop the localStorage override; i18next-browser-languagedetector
+      // will fall back to navigator.language on next init. For *this* paint
+      // we resolve navigator.language down to a supported locale so the UI
+      // updates immediately without a reload.
+      try {
+        localStorage.removeItem("mon-lang");
+      } catch {
+        /* private browsing — no-op */
+      }
+      const nav = (typeof navigator !== "undefined" ? navigator.language : "en")
+        .toLowerCase()
+        .split("-")[0];
+      const resolved: SupportedLocale = (SUPPORTED_LOCALES as readonly string[]).includes(nav)
+        ? (nav as SupportedLocale)
+        : "en";
+      void i18n.changeLanguage(resolved);
+    } else {
+      setLocale(value);
+    }
+    persist(value);
+  }
+
+  // DropdownMenu only renders a single leading icon per item. We use that
+  // slot as a binary "is this the active row?" indicator: Check for active,
+  // Globe for the inactive entries (so every row has *some* glyph and the
+  // label column lines up).
+  const items: DropdownItem[] = [
+    {
+      key: "auto",
+      label: "Auto",
+      icon: isAuto ? Check : Globe,
+      onClick: () => choose("auto"),
+    },
+    {
+      key: "en",
+      label: "English",
+      icon: !isAuto && current === "en" ? Check : Globe,
+      onClick: () => choose("en"),
+    },
+    {
+      key: "de",
+      label: "Deutsch",
+      icon: !isAuto && current === "de" ? Check : Globe,
+      onClick: () => choose("de"),
+    },
+  ];
+
+  return (
+    <DropdownMenu
+      align="right"
+      trigger={
+        <button
+          type="button"
+          aria-label="Change language"
+          className="inline-flex h-8 min-w-8 items-center justify-center rounded-md border border-border bg-panel px-2 text-[11px] font-semibold uppercase tracking-wide text-fg-muted transition-colors hover:bg-panel-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+        >
+          {current}
+        </button>
+      }
+      items={items}
+    />
+  );
+}
+
 // User identity cluster. The full account menu (Profile / Sign out) lives
 // in the sidebar's UserCard now — the topbar keeps a compact avatar + 2FA
 // pill + theme toggle so the bar still says "you are signed in" at a
@@ -71,7 +184,6 @@ function UserBlock() {
           2FA
         </span>
       )}
-      <span className="hidden text-fg-muted lg:inline">{user.email}</span>
       <Avatar
         userId={user.id}
         hasAvatar={user.has_avatar}
@@ -79,6 +191,7 @@ function UserBlock() {
         email={user.email}
         size="sm"
       />
+      <LanguageSwitcher />
       <ThemeToggle />
     </div>
   );

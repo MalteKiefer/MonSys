@@ -1,0 +1,18 @@
+{
+  "empty": {
+    "default": "Keine Daten."
+  },
+  "timeRange": {
+    "ariaLabel": "Zeitraum",
+    "labels": {
+      "15m": "15 Min.",
+      "1h": "1 Std.",
+      "6h": "6 Std.",
+      "24h": "24 Std.",
+      "7d": "7 T."
+    }
+  },
+  "stepper": {
+    "ariaLabel": "Fortschritt"
+  }
+}

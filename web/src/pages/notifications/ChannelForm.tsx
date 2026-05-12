@@ -16,6 +16,7 @@ import {
   Toggle,
   TypeCardGrid,
 } from "../../components/notifications/FormParts";
+import { useT } from "../../i18n/useT";
 import { api, ApiError } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 import {
@@ -34,39 +35,41 @@ import {
 // type=email is special-cased in ChannelForm: it has no per-channel config,
 // only a top-level recipient_email field. Transport (host/auth/from) lives
 // in the admin-managed SMTP settings.
-const CHANNEL_FIELDS: Record<Exclude<ChannelType, "email">, Array<{ key: string; label: string; type?: string; placeholder?: string; help?: string }>> = {
+// Labels come from the i18n bundle — we keep the field-key list static here
+// and translate inside the render closure.
+type FieldDef = { key: string; labelKey: string; type?: string; placeholder?: string; help?: string };
+const CHANNEL_FIELDS: Record<Exclude<ChannelType, "email">, FieldDef[]> = {
   slack: [
-    { key: "webhook_url", label: "Incoming webhook URL", type: "password", placeholder: "https://hooks.slack.com/…" },
+    { key: "webhook_url", labelKey: "webhook_url", type: "password", placeholder: "https://hooks.slack.com/…" },
   ],
   mattermost: [
-    { key: "webhook_url", label: "Incoming webhook URL", type: "password" },
-    { key: "username", label: "Display username (optional)", placeholder: "MonSys" },
+    { key: "webhook_url", labelKey: "webhook_url", type: "password" },
+    { key: "username", labelKey: "username_optional", placeholder: "MonSys" },
   ],
   discord: [
-    { key: "webhook_url", label: "Webhook URL", type: "password", placeholder: "https://discord.com/api/webhooks/…" },
-    { key: "username", label: "Display username (optional)", placeholder: "MonSys" },
+    { key: "webhook_url", labelKey: "discord_webhook_url", type: "password", placeholder: "https://discord.com/api/webhooks/…" },
+    { key: "username", labelKey: "username_optional", placeholder: "MonSys" },
   ],
   ntfy: [
-    { key: "server_url", label: "Server URL", placeholder: "https://ntfy.sh" },
-    { key: "topic", label: "Topic" },
-    { key: "auth_token", label: "Bearer token (optional)", type: "password" },
-    { key: "username", label: "Basic auth user (optional)" },
-    { key: "password", label: "Basic auth password (optional)", type: "password" },
+    { key: "server_url", labelKey: "server_url", placeholder: "https://ntfy.sh" },
+    { key: "topic", labelKey: "topic" },
+    { key: "auth_token", labelKey: "auth_token_optional", type: "password" },
+    { key: "username", labelKey: "basic_user_optional" },
+    { key: "password", labelKey: "basic_pass_optional", type: "password" },
   ],
 };
 
 // Card data for the channel-type picker. Order matches the previous select.
+// Labels and descriptions come from i18n; we just declare value+icon here.
 const CHANNEL_TYPE_CARDS: Array<{
   value: ChannelType;
-  label: string;
-  description: string;
   icon: typeof Mail;
 }> = [
-  { value: "email", label: "Email", description: "Send a templated email", icon: Mail },
-  { value: "slack", label: "Slack", description: "Post to a Slack channel via webhook", icon: MessageSquare },
-  { value: "mattermost", label: "Mattermost", description: "Post to a Mattermost channel via webhook", icon: MessageCircle },
-  { value: "discord", label: "Discord", description: "Post to a Discord channel via webhook", icon: MessageCircle },
-  { value: "ntfy", label: "ntfy", description: "Push to an ntfy topic", icon: Bell },
+  { value: "email", icon: Mail },
+  { value: "slack", icon: MessageSquare },
+  { value: "mattermost", icon: MessageCircle },
+  { value: "discord", icon: MessageCircle },
+  { value: "ntfy", icon: Bell },
 ];
 
 function parseConfig(_type: ChannelType, cfg: Record<string, string>): Record<string, unknown> {
@@ -96,6 +99,7 @@ export function ChannelForm({
   onCancel: () => void;
   onSaved: () => void;
 }) {
+  const { t } = useT(["notifications", "common"]);
   const myEmail = useAuth((s) => s.user?.email ?? "");
   // Server-wide readiness flags: lets us warn a non-admin that creating an
   // email channel is pointless until SMTP is configured. Falls back silently
@@ -140,7 +144,7 @@ export function ChannelForm({
       });
     },
     onSuccess: onSaved,
-    onError: (err) => setError(err instanceof ApiError ? err.detail : "failed"),
+    onError: (err) => setError(err instanceof ApiError ? err.detail : t("notifications:channels.form.error_generic")),
   });
 
   function submit(e: FormEvent) {
@@ -151,16 +155,29 @@ export function ChannelForm({
 
   const fields = type === "email" ? [] : CHANNEL_FIELDS[type];
 
+  // Build the translated card options each render — TypeCardGrid wants
+  // `{ value, label, description, icon }`.
+  const typeCardOptions = CHANNEL_TYPE_CARDS.map((c) => ({
+    value: c.value,
+    icon: c.icon,
+    label: t(`notifications:channels.form.types.${c.value}.label` as const),
+    description: t(`notifications:channels.form.types.${c.value}.description` as const),
+  }));
+
   return (
     <Panel>
       <PanelHeader>
-        <h3 className="text-sm font-semibold">{initial ? `Edit ${initial.name}` : "New channel"}</h3>
+        <h3 className="text-sm font-semibold">
+          {initial
+            ? t("notifications:channels.form.title_edit", { name: initial.name })
+            : t("notifications:channels.form.title_new")}
+        </h3>
       </PanelHeader>
       <PanelBody>
         <form onSubmit={submit} className="space-y-5">
           <FormSection
-            label="Channel type"
-            hint={initial ? "Type cannot be changed after creation." : undefined}
+            label={t("notifications:channels.form.type_section")}
+            hint={initial ? t("notifications:channels.form.type_locked_hint") : undefined}
           >
             <TypeCardGrid
               value={type}
@@ -170,17 +187,17 @@ export function ChannelForm({
                 setConfig({});
                 if (next === "email") setRecipientEmail(myEmail);
               }}
-              options={CHANNEL_TYPE_CARDS}
+              options={typeCardOptions}
             />
           </FormSection>
 
-          <FormSection label="Identification" divider={false}>
-            <Field label="Name">
+          <FormSection label={t("notifications:channels.form.identification_section")} divider={false}>
+            <Field label={t("notifications:channels.form.name_label")}>
               <TextInput
                 required
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. ops-oncall"
+                placeholder={t("notifications:channels.form.name_placeholder")}
               />
             </Field>
 
@@ -188,12 +205,12 @@ export function ChannelForm({
               <>
                 {authConfig.data && authConfig.data.smtp_configured === false && (
                   <p className="rounded-md border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-warn">
-                    Outbound mail isn't configured yet — ask an admin to set up SMTP under Admin → Mail before this channel can deliver.
+                    {t("notifications:channels.form.smtp_warning")}
                   </p>
                 )}
                 <Field
-                  label="Recipient email"
-                  hint="Defaults to your account email. Outbound transport (SMTP host, auth, from address) is configured by an admin under Admin → Mail (SMTP)."
+                  label={t("notifications:channels.form.recipient_email_label")}
+                  hint={t("notifications:channels.form.recipient_email_hint")}
                 >
                   <TextInput
                     type="email"
@@ -208,11 +225,15 @@ export function ChannelForm({
               <div className="rounded-md border border-border bg-panel-2/40 p-3">
                 <div className="mb-3 flex items-center gap-2 text-[11px] uppercase tracking-[0.08em] text-fg-subtle">
                   <Hash className="h-3 w-3" />
-                  {type} configuration
+                  {type} {t("notifications:channels.form.config_section_suffix")}
                 </div>
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   {fields.map((f) => (
-                    <Field key={f.key} label={f.label} hint={f.help}>
+                    <Field
+                      key={f.key}
+                      label={t(`notifications:channels.form.fields.${f.labelKey}` as const)}
+                      hint={f.help}
+                    >
                       <TextInput
                         type={f.type || "text"}
                         placeholder={f.placeholder}
@@ -229,8 +250,8 @@ export function ChannelForm({
             <Toggle
               checked={enabled}
               onChange={setEnabled}
-              label="Enabled"
-              hint="Disable to keep the channel configured but skip deliveries."
+              label={t("notifications:channels.form.enabled_label")}
+              hint={t("notifications:channels.form.enabled_hint")}
             />
           </FormSection>
 
@@ -238,10 +259,14 @@ export function ChannelForm({
 
           <div className="flex items-center gap-2 pt-1">
             <Button variant="primary" type="submit" disabled={save.isPending}>
-              {save.isPending ? "Saving…" : initial ? "Save" : "Create"}
+              {save.isPending
+                ? t("notifications:channels.form.saving")
+                : initial
+                  ? t("notifications:channels.form.save")
+                  : t("notifications:channels.form.create")}
             </Button>
             <Button type="button" onClick={onCancel}>
-              Cancel
+              {t("notifications:channels.form.cancel")}
             </Button>
           </div>
         </form>

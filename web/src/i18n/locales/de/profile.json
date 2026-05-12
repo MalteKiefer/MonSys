@@ -1,0 +1,106 @@
+{
+  "signedInAs": "Angemeldet als <1>{{email}}</1> ({{role}})",
+  "tabs": {
+    "account": "Konto",
+    "twoFactor": "Zwei-Faktor",
+    "passkeys": "Passkeys"
+  },
+  "display": {
+    "title": "Anzeige",
+    "description": "Die Dichte passt Tabellenzeilen, Panels und Schriftgrößen in der gesamten App an. Die Einstellung wird in diesem Browser gespeichert.",
+    "ariaLabel": "UI-Dichte",
+    "compact": {
+      "label": "Kompakt",
+      "hint": "Dichtere Tabellen und engere Panels."
+    },
+    "comfortable": {
+      "label": "Komfortabel",
+      "hint": "Standardabstand."
+    }
+  },
+  "avatar": {
+    "title": "Avatar",
+    "working": "Arbeite…",
+    "replace": "Ersetzen",
+    "uploadNew": "Neu hochladen",
+    "remove": "Entfernen",
+    "helpText": "PNG, JPG oder WebP, max. 5 MiB. Automatisch zu einem Kreis zugeschnitten und auf 400×400 verkleinert. Sofort übernommen.",
+    "errors": {
+      "tooLarge": "Datei zu groß. Wähle etwas unter 5 MiB.",
+      "resizedTooLarge": "Das verkleinerte Bild ist immer noch zu groß. Wähle ein einfacheres Bild.",
+      "decodeFailed": "Bild konnte nicht dekodiert werden",
+      "canvasUnavailable": "Canvas-2D-Kontext nicht verfügbar",
+      "encodingFailed": "Kodierung fehlgeschlagen",
+      "fileReaderResult": "Unerwartetes FileReader-Ergebnis",
+      "fileReaderGeneric": "FileReader-Fehler"
+    },
+    "success": {
+      "updated": "Avatar aktualisiert.",
+      "removed": "Avatar entfernt."
+    }
+  },
+  "email": {
+    "title": "E-Mail ändern",
+    "description": "Wir senden einen Bestätigungslink an deine neue Adresse. Sobald du ihn anklickst, wird die Änderung wirksam und alle Sitzungen werden aus Sicherheitsgründen beendet — du musst dich danach mit der neuen E-Mail neu anmelden.",
+    "currentPassword": "Aktuelles Passwort",
+    "newEmail": "Neue E-Mail",
+    "submit": "Bestätigung senden",
+    "submitting": "Wird gesendet…",
+    "genericFailure": "fehlgeschlagen",
+    "pending": {
+      "message": "Bestätigungslink gesendet an <1>{{email}}</1>. Klicke ihn innerhalb von 1 Stunde an. Nach der Bestätigung werden deine Sitzungen beendet.",
+      "hint": "Keine E-Mail erhalten? Sieh im Spam nach und beginne dann unten erneut.",
+      "sendAnother": "Weiteren Link senden"
+    }
+  },
+  "password": {
+    "title": "Passwort ändern",
+    "currentPassword": "Aktuelles Passwort",
+    "newPassword": "Neues Passwort",
+    "submit": "Passwort aktualisieren",
+    "submitting": "Aktualisiere…",
+    "success": "Passwort aktualisiert.",
+    "genericFailure": "fehlgeschlagen"
+  },
+  "twoFactor": {
+    "titleActive": "Zwei-Faktor-Authentifizierung (aktiv)",
+    "titleInactive": "Zwei-Faktor-Authentifizierung (aus)",
+    "activeText": "TOTP ist aktiv. Zum Entfernen bestätige dein Passwort.",
+    "passwordLabel": "Passwort",
+    "disableSubmit": "2FA deaktivieren",
+    "disableSubmitting": "Deaktiviere…",
+    "introText": "Füge einen zweiten Faktor hinzu, indem du einen QR-Code in deiner Authenticator-App scannst (Aegis, 1Password, usw.).",
+    "generating": "Erstelle…",
+    "beginSetup": "Einrichtung starten",
+    "scanLabel": "Mit Authenticator scannen",
+    "qrAlt": "TOTP-QR-Code",
+    "manualSecret": "Oder gib das Geheimnis manuell ein:",
+    "backupCodesLabel": "Backup-Codes (einmalig speichern!)",
+    "confirmCodeLabel": "Mit einem aktuellen 6-stelligen Code bestätigen",
+    "activateSubmit": "2FA aktivieren",
+    "activateSubmitting": "Verifiziere…",
+    "successEnabled": "Zwei-Faktor-Authentifizierung aktiviert. Speichere deine Backup-Codes!",
+    "successDisabled": "Zwei-Faktor-Authentifizierung deaktiviert.",
+    "genericFailure": "fehlgeschlagen"
+  },
+  "passkeys": {
+    "title": "Passkeys",
+    "description": "Sicherer und schneller Login ohne Passwort. Browser oder Hardware-Key.",
+    "unsupported": "Dein Browser unterstützt keine Passkeys.",
+    "nameLabel": "Passkey-Name",
+    "namePlaceholder": "z.B. Laptop, YubiKey 5C",
+    "addSubmit": "Passkey hinzufügen",
+    "addSubmitting": "Registriere…",
+    "addSuccess": "Passkey hinzugefügt.",
+    "addNameRequired": "Bitte einen Namen vergeben.",
+    "empty": "Noch keine Passkeys registriert.",
+    "lastUsed": "Zuletzt verwendet: {{value}}",
+    "lastUsedNever": "—",
+    "renameAria": "Passkey umbenennen",
+    "deleteAria": "Passkey löschen",
+    "saving": "…",
+    "save": "Speichern",
+    "cancel": "Abbrechen",
+    "confirmDelete": "Passkey „{{name}}\" wirklich löschen?"
+  }
+}

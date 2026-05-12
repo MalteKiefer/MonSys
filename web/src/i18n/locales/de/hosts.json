@@ -1,0 +1,50 @@
+{
+  "title": "Hosts",
+  "subtitleKnown": "{{count}} bekannt",
+  "subtitleFiltered": "{{shown}} von {{total}}",
+  "addAgent": "Agent hinzufügen",
+  "loading": "Hosts werden geladen…",
+  "filters": {
+    "all": "Alle",
+    "online": "Online",
+    "stale": "Veraltet",
+    "offline": "Offline",
+    "searchLabel": "Suche",
+    "searchHint": "Findet Hostname, Label oder Tag (Groß-/Kleinschreibung egal).",
+    "searchPlaceholder": "Hostname, Label oder #tag…",
+    "searchAria": "Hosts durchsuchen",
+    "statusLabel": "Status",
+    "statusGroupAria": "Nach Status filtern"
+  },
+  "empty": {
+    "noneTitle": "Noch keine Hosts",
+    "noneHintPrefix": "Token über ",
+    "noneHintCode": "/admin/enrollments",
+    "noneHintSuffix": " ausstellen und Installationsbefehl auf dem Ziel-Host ausführen.",
+    "noMatch": "Keine Hosts entsprechen dem Filter."
+  },
+  "table": {
+    "status": "Status",
+    "host": "Host",
+    "distro": "Distribution",
+    "services": "Dienste",
+    "tagsGroups": "Tags / Gruppen",
+    "cpuRam": "CPU / RAM",
+    "agent": "Agent",
+    "updates": "Updates",
+    "lastSeen": "Zuletzt gesehen",
+    "openHostAria": "Host {{host}} öffnen",
+    "updatesColAria": "Spalte Updates, {{label}}, zum Ändern klicken",
+    "sortPendingDesc": "sortiert nach Ausstehend absteigend",
+    "sortSecurityDesc": "sortiert nach Sicherheit absteigend",
+    "sortUnsorted": "unsortiert",
+    "securityTitle": "{{count}} Sicherheit",
+    "cpuRamValue": "{{cores}}c · {{ram}}"
+  },
+  "time": {
+    "secondsAgo": "vor {{count}}s",
+    "minutesAgo": "vor {{count}}m",
+    "hoursAgo": "vor {{count}}h",
+    "daysAgo": "vor {{count}}T"
+  }
+}

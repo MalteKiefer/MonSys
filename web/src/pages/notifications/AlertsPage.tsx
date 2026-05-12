@@ -15,6 +15,7 @@ import {
   THead,
   Table,
 } from "../../components/ui";
+import { useT } from "../../i18n/useT";
 import { api } from "../../lib/api";
 import { hostDisplay } from "../../lib/utils";
 import {
@@ -39,17 +40,22 @@ function severityStatus(s: NotificationRule["severity"]): "ok" | "warn" | "fail"
   return "fail";
 }
 
-function relTime(iso: string): string {
-  const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return iso;
-  const diff = (Date.now() - t) / 1000;
-  if (diff < 60) return `${Math.round(diff)}s ago`;
-  if (diff < 3600) return `${Math.round(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.round(diff / 3600)}h ago`;
-  return `${Math.round(diff / 86400)}d ago`;
+function useRelTime() {
+  const { t } = useT(["notifications", "common"]);
+  return (iso: string): string => {
+    const ts = new Date(iso).getTime();
+    if (Number.isNaN(ts)) return iso;
+    const diff = (Date.now() - ts) / 1000;
+    if (diff < 60) return t("notifications:alerts.rel_time.seconds_ago", { count: Math.round(diff) });
+    if (diff < 3600) return t("notifications:alerts.rel_time.minutes_ago", { count: Math.round(diff / 60) });
+    if (diff < 86400) return t("notifications:alerts.rel_time.hours_ago", { count: Math.round(diff / 3600) });
+    return t("notifications:alerts.rel_time.days_ago", { count: Math.round(diff / 86400) });
+  };
 }
 
 export function AlertsPage() {
+  const { t } = useT(["notifications", "common"]);
+  const relTime = useRelTime();
   const [since, setSince] = useState("24h");
   const [hostFilter, setHostFilter] = useState<string>("");
   const sinceISO = useMemo(() => {
@@ -95,13 +101,13 @@ export function AlertsPage() {
 
   return (
     <Page
-      title="Alert history"
-      subtitle="Recent alerts delivered through the rules + channels above."
+      title={t("notifications:alerts.page_title")}
+      subtitle={t("notifications:alerts.page_subtitle")}
       actions={<NotificationsTabs />}
     >
       <Panel>
         <PanelHeader>
-          <h3 className="text-sm font-semibold">Alert history</h3>
+          <h3 className="text-sm font-semibold">{t("notifications:alerts.panel_title")}</h3>
           <div className="inline-flex rounded-md border border-border bg-panel p-0.5">
             {(["1h", "24h", "7d", "30d"] as const).map((s) => (
               <button
@@ -111,20 +117,20 @@ export function AlertsPage() {
                   since === s ? "bg-panel-2 text-fg shadow-panel" : "text-fg-subtle hover:text-fg"
                 }`}
               >
-                {s}
+                {t(`notifications:alerts.windows.${s}` as const)}
               </button>
             ))}
           </div>
         </PanelHeader>
         <PanelBody className="p-0 overflow-x-auto">
           <div className="flex flex-wrap items-end gap-3 px-5 py-3 border-b border-border">
-            <Field label="Filter by host" hint="Only host-scoped alerts (offline, login-failed) will match.">
+            <Field label={t("notifications:alerts.filter_label")} hint={t("notifications:alerts.filter_hint")}>
               <select
                 value={hostFilter}
                 onChange={(e) => setHostFilter(e.target.value)}
                 className="w-full rounded-md border border-border bg-panel px-3 py-2 text-sm focus:border-accent focus:outline-none md:w-72"
               >
-                <option value="">All hosts</option>
+                <option value="">{t("notifications:alerts.all_hosts")}</option>
                 {sortedHosts.map((h) => (
                   <option key={h.id} value={h.id}>
                     {hostDisplay(h)}
@@ -134,27 +140,27 @@ export function AlertsPage() {
             </Field>
             <p className="pb-2 text-xs text-fg-subtle tabular-nums">
               {hostFilter && allAlerts.length !== filteredAlerts.length
-                ? `${filteredAlerts.length} of ${allAlerts.length}`
-                : `${allAlerts.length} alert${allAlerts.length === 1 ? "" : "s"}`}
+                ? t("notifications:alerts.count_filtered", { filtered: filteredAlerts.length, total: allAlerts.length })
+                : t("notifications:alerts.count_total", { count: allAlerts.length })}
             </p>
           </div>
           {list.isLoading ? (
-            <p className="px-5 py-4 text-sm text-fg-subtle">Loading…</p>
+            <p className="px-5 py-4 text-sm text-fg-subtle">{t("common:actions.loading")}</p>
           ) : filteredAlerts.length === 0 ? (
             <p className="px-5 py-8 text-center text-sm text-fg-subtle">
               {allAlerts.length === 0
-                ? "No alerts in this window."
-                : "No alerts match the selected host."}
+                ? t("notifications:alerts.empty_window")
+                : t("notifications:alerts.empty_filter")}
             </p>
           ) : (
             <Table>
               <THead>
                 <tr>
-                  <TH>When</TH>
-                  <TH>Severity</TH>
-                  <TH>Rule</TH>
-                  <TH>Subject</TH>
-                  <TH>Delivered</TH>
+                  <TH>{t("notifications:alerts.table.when")}</TH>
+                  <TH>{t("notifications:alerts.table.severity")}</TH>
+                  <TH>{t("notifications:alerts.table.rule")}</TH>
+                  <TH>{t("notifications:alerts.table.subject")}</TH>
+                  <TH>{t("notifications:alerts.table.delivered")}</TH>
                 </tr>
               </THead>
               <TBody>

@@ -36,6 +36,7 @@ import {
   THead,
   TextInput,
 } from "../components/ui";
+import { useT } from "../i18n/useT";
 import { api, ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { AdminCreateUserResponse, AdminUser } from "../lib/types";
@@ -53,11 +54,6 @@ type StatusFilter = "all" | "active" | "disabled";
 // us a typed `onChange`. Audit is intentionally absent — this page has no
 // user-audit logic to surface.
 type TabKey = "list" | "invites";
-
-const TABS: ReadonlyArray<TabItem<TabKey>> = [
-  { key: "list", label: "Users", icon: Users },
-  { key: "invites", label: "Invites", icon: Send },
-];
 
 // ---- Page-level toast banner ---------------------------------------------
 
@@ -91,9 +87,15 @@ function ToastBanner({
 }
 
 export function AdminUsers() {
+  const { t } = useT(["admin", "common"]);
   const qc = useQueryClient();
   const [tab, setTab] = useState<TabKey>("list");
   const [toast, setToast] = useState<Toast | null>(null);
+
+  const TABS: ReadonlyArray<TabItem<TabKey>> = [
+    { key: "list", label: t("users.tabs.list"), icon: Users },
+    { key: "invites", label: t("users.tabs.invites"), icon: Send },
+  ];
 
   const list = useQuery({
     queryKey: ["admin-users"],
@@ -104,9 +106,12 @@ export function AdminUsers() {
 
   return (
     <Page
-      title="Users"
-      subtitle="Create, lock, reset password, reset 2FA."
-      breadcrumb={[{ label: "Admin" }, { label: "Users" }]}
+      title={t("users.page.title")}
+      subtitle={t("users.page.subtitle")}
+      breadcrumb={[
+        { label: t("users.page.breadcrumb_admin") },
+        { label: t("users.page.breadcrumb_users") },
+      ]}
     >
       <Tabs items={TABS} value={tab} onChange={setTab} />
 
@@ -123,7 +128,7 @@ export function AdminUsers() {
 
           <Panel>
             <PanelHeader>
-              <h3 className="text-sm font-semibold text-fg">All users</h3>
+              <h3 className="text-sm font-semibold text-fg">{t("users.list.panel_title")}</h3>
             </PanelHeader>
             <PanelBody>
               {list.isLoading ? (
@@ -160,25 +165,21 @@ export function AdminUsers() {
 // — once `GET /v1/admin/invites` (and a "Create invite" mutation) land,
 // replace this with a real table + create-invite form.
 function InvitesPlaceholder() {
+  const { t } = useT(["admin", "common"]);
   return (
     <Panel>
       <PanelHeader>
-        <h3 className="text-sm font-semibold text-fg">Pending invites</h3>
+        <h3 className="text-sm font-semibold text-fg">{t("users.invites.panel_title")}</h3>
       </PanelHeader>
       <PanelBody>
-        <Empty>
-          Invite-token listing is not yet exposed by the API. Invites are
-          currently issued inline when creating a user (Users tab) — the
-          one-time link is shown once and can be copied from the success
-          banner. A dedicated endpoint to list, re-send, and revoke pending
-          invites is planned.
-        </Empty>
+        <Empty>{t("users.invites.empty")}</Empty>
       </PanelBody>
     </Panel>
   );
 }
 
 function CreateUserCard({ onCreated }: { onCreated: () => void }) {
+  const { t } = useT(["admin", "common"]);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<"admin" | "user">("user");
   const [password, setPassword] = useState("");
@@ -208,14 +209,17 @@ function CreateUserCard({ onCreated }: { onCreated: () => void }) {
       setMsg({
         kind: "ok",
         text: resp.invite_sent
-          ? `Invite mailed to ${resp.user.email}.`
+          ? t("users.create.invite_mailed", { email: resp.user.email })
           : password
-          ? `User ${resp.user.email} created.`
-          : `User ${resp.user.email} created. Copy the invite link below — it is shown only once.`,
+          ? t("users.create.created_with_password", { email: resp.user.email })
+          : t("users.create.created_with_link", { email: resp.user.email }),
       });
       onCreated();
     } catch (err) {
-      setMsg({ kind: "err", text: err instanceof ApiError ? err.detail : "failed" });
+      setMsg({
+        kind: "err",
+        text: err instanceof ApiError ? err.detail : t("users.create.generic_failure"),
+      });
     } finally {
       setBusy(false);
     }
@@ -224,11 +228,11 @@ function CreateUserCard({ onCreated }: { onCreated: () => void }) {
   return (
     <Panel>
       <PanelHeader>
-        <h3 className="text-sm font-semibold text-fg">Create user</h3>
+        <h3 className="text-sm font-semibold text-fg">{t("users.create.panel_title")}</h3>
       </PanelHeader>
       <PanelBody>
         <form onSubmit={submit} className="space-y-3">
-          <Field label="Email">
+          <Field label={t("users.create.email_label")}>
             <TextInput
               type="email"
               required
@@ -237,17 +241,17 @@ function CreateUserCard({ onCreated }: { onCreated: () => void }) {
             />
           </Field>
           <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Role">
+            <Field label={t("users.create.role_label")}>
               <select
                 value={role}
                 onChange={(e) => setRole(e.target.value as "admin" | "user")}
                 className="w-full rounded-md border border-border bg-panel px-3 py-2 text-sm text-fg transition-colors duration-150 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
               >
-                <option value="user">user</option>
-                <option value="admin">admin</option>
+                <option value="user">{t("users.create.role_user")}</option>
+                <option value="admin">{t("users.create.role_admin")}</option>
               </select>
             </Field>
-            <Field label="Password (leave empty to invite)">
+            <Field label={t("users.create.password_label")}>
               <TextInput
                 type="text"
                 value={password}
@@ -261,10 +265,10 @@ function CreateUserCard({ onCreated }: { onCreated: () => void }) {
               checked={sendInvite}
               onChange={(e) => setSendInvite(e.target.checked)}
             />
-            Send invite email (requires SMTP configured under Admin → Mail)
+            {t("users.create.send_invite_label")}
           </label>
           <Button type="submit" variant="primary" disabled={busy}>
-            {busy ? "Creating…" : "Create user"}
+            {busy ? t("users.create.submitting") : t("users.create.submit")}
           </Button>
           {msg &&
             (msg.kind === "ok" ? (
@@ -274,7 +278,7 @@ function CreateUserCard({ onCreated }: { onCreated: () => void }) {
             ))}
           {resetURL && (
             <div className="rounded-md border border-border bg-panel-2 p-3 font-mono text-xs">
-              <p className="mb-1 text-fg-muted">Invite link (one-time, expires in 7 days):</p>
+              <p className="mb-1 text-fg-muted">{t("users.create.invite_link_label")}</p>
               <code className="break-all text-fg">{location.origin + resetURL}</code>
             </div>
           )}
@@ -293,6 +297,7 @@ function UserTable({
   onChange: () => void;
   onToast: (t: Toast) => void;
 }) {
+  const { t } = useT(["admin", "common"]);
   const me = useAuth((s) => s.user);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
@@ -363,14 +368,26 @@ function UserTable({
     );
     if (targets.length === 0) {
       setBulkErr(
-        `No selected users need to be ${action === "lock" ? "disabled" : "enabled"}.`,
+        t("users.list.bulk_noop", {
+          state:
+            action === "lock"
+              ? t("users.list.bulk_noop_disabled")
+              : t("users.list.bulk_noop_enabled"),
+        }),
       );
       return;
     }
-    const verb = action === "lock" ? "Disable" : "Enable";
+    const verb =
+      action === "lock"
+        ? t("users.list.bulk_verb_disable")
+        : t("users.list.bulk_verb_enable");
     if (
       !window.confirm(
-        `${verb} ${targets.length} user${targets.length === 1 ? "" : "s"}?`,
+        t("users.list.bulk_confirm", {
+          verb,
+          count: targets.length,
+          plural: targets.length === 1 ? "" : "s",
+        }),
       )
     ) {
       return;
@@ -399,7 +416,7 @@ function UserTable({
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-subtle" />
           <TextInput
             type="search"
-            placeholder="search email…"
+            placeholder={t("users.list.search_placeholder")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-8"
@@ -409,33 +426,35 @@ function UserTable({
           value={roleFilter}
           onChange={(e) => setRoleFilter(e.target.value as RoleFilter)}
           className="rounded-md border border-border bg-panel px-3 py-2 text-sm focus:border-accent focus:outline-none"
-          aria-label="Role filter"
+          aria-label={t("users.list.role_filter_aria")}
         >
-          <option value="all">All roles</option>
-          <option value="admin">admin</option>
-          <option value="user">user</option>
+          <option value="all">{t("users.list.role_all")}</option>
+          <option value="admin">{t("users.list.role_admin")}</option>
+          <option value="user">{t("users.list.role_user")}</option>
         </select>
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
           className="rounded-md border border-border bg-panel px-3 py-2 text-sm focus:border-accent focus:outline-none"
-          aria-label="Status filter"
+          aria-label={t("users.list.status_filter_aria")}
         >
-          <option value="all">All statuses</option>
-          <option value="active">active</option>
-          <option value="disabled">disabled</option>
+          <option value="all">{t("users.list.status_all")}</option>
+          <option value="active">{t("users.list.status_active")}</option>
+          <option value="disabled">{t("users.list.status_disabled")}</option>
         </select>
         <span className="text-xs text-fg-subtle tabular-nums">
-          {visible.length} of {users.length}
+          {t("users.list.count", { visible: visible.length, total: users.length })}
         </span>
       </div>
 
       {selectedVisible.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded-md border border-accent/30 bg-panel-2 px-3 py-2 text-sm">
-          <span className="text-fg">{selectedVisible.length} selected</span>
+          <span className="text-fg">
+            {t("users.list.selected", { count: selectedVisible.length })}
+          </span>
           <div className="ml-auto flex gap-2">
             <Button size="sm" onClick={() => runBulk("unlock")} disabled={bulkBusy}>
-              Enable selected
+              {t("users.list.enable_selected")}
             </Button>
             <Button
               size="sm"
@@ -443,7 +462,7 @@ function UserTable({
               onClick={() => runBulk("lock")}
               disabled={bulkBusy}
             >
-              Disable selected
+              {t("users.list.disable_selected")}
             </Button>
             <Button
               size="sm"
@@ -451,7 +470,7 @@ function UserTable({
               onClick={() => setSelected(new Set())}
               disabled={bulkBusy}
             >
-              clear
+              {t("users.list.clear")}
             </Button>
           </div>
         </div>
@@ -464,7 +483,7 @@ function UserTable({
             <TH className="w-8">
               <input
                 type="checkbox"
-                aria-label="Select all visible"
+                aria-label={t("users.list.select_all_aria")}
                 checked={allChecked}
                 ref={(el) => {
                   if (el) el.indeterminate = someChecked;
@@ -473,19 +492,19 @@ function UserTable({
                 disabled={visible.length === 0}
               />
             </TH>
-            <TH>Email</TH>
-            <TH>Role</TH>
-            <TH>Status</TH>
-            <TH>2FA</TH>
-            <TH>Last login</TH>
-            <TH className="w-12 text-right">Actions</TH>
+            <TH>{t("users.list.col_email")}</TH>
+            <TH>{t("users.list.col_role")}</TH>
+            <TH>{t("users.list.col_status")}</TH>
+            <TH>{t("users.list.col_2fa")}</TH>
+            <TH>{t("users.list.col_last_login")}</TH>
+            <TH className="w-12 text-right">{t("users.list.col_actions")}</TH>
           </tr>
         </THead>
         <TBody>
           {visible.length === 0 ? (
             <tr>
               <td colSpan={7} className="px-3 py-4 text-sm text-fg-subtle">
-                No users match the current filters.
+                {t("users.list.no_match")}
               </td>
             </tr>
           ) : (
@@ -527,6 +546,7 @@ function UserRow({
   checked: boolean;
   onCheck: () => void;
 }) {
+  const { t } = useT(["admin", "common"]);
   // Modal state for the rare SMTP-failure fallback: the reset URL is shown
   // inline only when the server couldn't email it. Otherwise we never expose
   // the link in the UI.
@@ -565,12 +585,15 @@ function UserRow({
       } else if (data.invite_sent) {
         onToast({
           kind: "ok",
-          text: `Password reset link sent to ${user.email}.`,
+          text: t("users.toast.reset_link_sent", { email: user.email }),
         });
       } else {
         // Shouldn't happen with the current backend contract, but keep a
         // generic acknowledgement so the user gets feedback either way.
-        onToast({ kind: "ok", text: `Reset link issued for ${user.email}.` });
+        onToast({
+          kind: "ok",
+          text: t("users.toast.reset_link_issued", { email: user.email }),
+        });
       }
       onChange();
     },
@@ -581,7 +604,10 @@ function UserRow({
     mutationFn: () =>
       api<unknown>(`/v1/admin/users/${user.id}`, { method: "DELETE" }),
     onSuccess: () => {
-      onToast({ kind: "ok", text: `User ${user.email} deleted.` });
+      onToast({
+        kind: "ok",
+        text: t("users.toast.user_deleted", { email: user.email }),
+      });
       onChange();
     },
     onError: reportError,
@@ -594,34 +620,29 @@ function UserRow({
   const onResetPassword = () => reset.mutate();
 
   const onReset2FA = () => {
-    if (
-      !window.confirm(
-        `Wipes the user's TOTP enrollment. They will need to re-enroll on next login. Continue?`,
-      )
-    ) {
+    if (!window.confirm(t("users.confirm.reset_2fa"))) {
       return;
     }
     post.mutate(`/v1/admin/users/${user.id}/reset-2fa`, {
       onSuccess: () => {
-        onToast({ kind: "ok", text: `2FA reset for ${user.email}.` });
+        onToast({
+          kind: "ok",
+          text: t("users.toast.twofa_reset", { email: user.email }),
+        });
         onChange();
       },
     });
   };
 
   const onRevokeSessions = () => {
-    if (
-      !window.confirm(
-        `Force ${user.email} to re-authenticate immediately on every device?`,
-      )
-    ) {
+    if (!window.confirm(t("users.confirm.revoke_sessions", { email: user.email }))) {
       return;
     }
     post.mutate(`/v1/admin/users/${user.id}/revoke-sessions`, {
       onSuccess: () => {
         onToast({
           kind: "ok",
-          text: `All sessions revoked for ${user.email}.`,
+          text: t("users.toast.sessions_revoked", { email: user.email }),
         });
         onChange();
       },
@@ -634,7 +655,10 @@ function UserRow({
       onSuccess: () => {
         onToast({
           kind: "ok",
-          text: `${user.email} ${action === "lock" ? "locked" : "unlocked"}.`,
+          text:
+            action === "lock"
+              ? t("users.toast.locked", { email: user.email })
+              : t("users.toast.unlocked", { email: user.email }),
         });
         onChange();
       },
@@ -642,7 +666,7 @@ function UserRow({
   };
 
   const onDelete = () => {
-    if (!window.confirm(`Delete ${user.email}? This cannot be undone.`)) return;
+    if (!window.confirm(t("users.confirm.delete", { email: user.email }))) return;
     del.mutate();
   };
 
@@ -656,57 +680,57 @@ function UserRow({
   const items: DropdownItem[] = [
     {
       key: "reset-password",
-      label: "Reset password",
+      label: t("users.actions.reset_password"),
       icon: Mail,
       onClick: onResetPassword,
     },
     {
       key: "reset-2fa",
-      label: "Reset 2FA / MFA",
+      label: t("users.actions.reset_2fa"),
       icon: ShieldOff,
       destructive: true,
       onClick: onReset2FA,
       disabled: !user.totp_active,
       disabledReason: !user.totp_active
-        ? "This user has no TOTP enrollment to reset."
+        ? t("users.actions.reset_2fa_disabled")
         : undefined,
     },
     {
       key: "revoke-sessions",
-      label: "End all sessions",
+      label: t("users.actions.end_sessions"),
       icon: LogOut,
       destructive: true,
       onClick: onRevokeSessions,
       disabled: isSelf,
       disabledReason: isSelf
-        ? "Use the logout button for your own session."
+        ? t("users.actions.end_sessions_self_disabled")
         : undefined,
     },
     {
       key: "lock-unlock",
-      label: isDisabled ? "Unlock" : "Lock",
+      label: isDisabled ? t("users.actions.unlock") : t("users.actions.lock"),
       icon: isDisabled ? LockOpen : Lock,
       onClick: onLockToggle,
       // Locking yourself or the last enabled admin would brick the install.
       disabled: !isDisabled && (isSelf || isLastAdmin),
       disabledReason:
         !isDisabled && isSelf
-          ? "You can't lock yourself out."
+          ? t("users.actions.lock_self_disabled")
           : !isDisabled && isLastAdmin
-            ? "This is the only enabled admin — promote or unlock another first."
+            ? t("users.actions.lock_last_admin_disabled")
             : undefined,
     },
     {
       key: "delete",
-      label: "Delete",
+      label: t("users.actions.delete"),
       icon: Trash2,
       destructive: true,
       onClick: onDelete,
       disabled: isSelf || isLastAdmin,
       disabledReason: isSelf
-        ? "You can't delete your own account."
+        ? t("users.actions.delete_self_disabled")
         : isLastAdmin
-          ? "This is the only enabled admin — can't delete the last admin."
+          ? t("users.actions.delete_last_admin_disabled")
           : undefined,
     },
   ];
@@ -717,7 +741,7 @@ function UserRow({
         <TD>
           <input
             type="checkbox"
-            aria-label={`Select ${user.email}`}
+            aria-label={t("users.list.select_one_aria", { email: user.email })}
             checked={checked}
             onChange={onCheck}
           />
@@ -726,14 +750,18 @@ function UserRow({
         <TD className="text-fg-muted">{user.role}</TD>
         <TD>
           {isDisabled ? (
-            <StatusPill status="fail">locked</StatusPill>
+            <StatusPill status="fail">{t("users.list.status_locked")}</StatusPill>
           ) : (
-            <StatusPill status="ok">active</StatusPill>
+            <StatusPill status="ok">{t("users.list.status_active")}</StatusPill>
           )}
         </TD>
-        <TD className="text-fg-muted">{user.totp_active ? "yes" : "—"}</TD>
         <TD className="text-fg-muted">
-          {user.last_login_at ? new Date(user.last_login_at).toLocaleString() : "never"}
+          {user.totp_active ? t("users.list.totp_yes") : t("users.list.totp_none")}
+        </TD>
+        <TD className="text-fg-muted">
+          {user.last_login_at
+            ? new Date(user.last_login_at).toLocaleString()
+            : t("users.list.last_login_never")}
         </TD>
         <TD className="text-right">
           <DropdownMenu
@@ -741,7 +769,7 @@ function UserRow({
             trigger={
               <button
                 type="button"
-                aria-label={`Actions for ${user.email}`}
+                aria-label={t("users.list.actions_aria", { email: user.email })}
                 className="inline-flex h-8 w-8 items-center justify-center rounded-md text-fg-muted transition-colors duration-150 hover:bg-panel-2 hover:text-fg focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
               >
                 <MoreVertical className="h-4 w-4" />
@@ -780,6 +808,7 @@ function ResetURLDialog({
   url: string;
   onClose: () => void;
 }) {
+  const { t } = useT(["admin", "common"]);
   const [copied, setCopied] = useState(false);
   const fullURL = location.origin + url;
 
@@ -791,24 +820,24 @@ function ResetURLDialog({
     } catch {
       // Clipboard API can fail under HTTP/non-secure contexts — fall back
       // to a manual selection prompt so the admin can still grab the URL.
-      window.prompt("Copy the reset link:", fullURL);
+      window.prompt(t("users.reset_dialog.clipboard_fallback_prompt"), fullURL);
     }
   }
 
   return (
     <div className="my-2 mx-3 space-y-2 rounded-md border border-warn/40 bg-warn/5 p-3">
       <p className="text-sm font-medium text-warn">
-        SMTP not configured or send failed — hand this to {email} out-of-band.
+        {t("users.reset_dialog.warning", { email })}
       </p>
       <div className="flex items-center gap-2">
         <code className="flex-1 break-all rounded border border-border bg-panel-2 px-2 py-1 font-mono text-xs text-fg">
           {fullURL}
         </code>
         <Button size="sm" onClick={copy}>
-          {copied ? "Copied" : "Copy"}
+          {copied ? t("users.reset_dialog.copied") : t("users.reset_dialog.copy")}
         </Button>
         <Button size="sm" variant="ghost" onClick={onClose}>
-          Dismiss
+          {t("users.reset_dialog.dismiss")}
         </Button>
       </div>
     </div>

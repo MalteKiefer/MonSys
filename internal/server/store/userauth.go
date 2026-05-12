@@ -233,6 +233,9 @@ type User struct {
 	CreatedAt  time.Time
 	Disabled   bool
 	TOTPActive bool
+	// Language is the UI language preference: "auto" (default — follow the
+	// browser), "en", or "de". Stored on the users row and surfaced via /me.
+	Language string
 }
 
 // CreateUser inserts a new user with bcrypt-hashed password. role is "admin"
@@ -335,11 +338,11 @@ func (s *Store) GetUser(ctx context.Context, id uuid.UUID) (User, error) {
 		totpEnabled *time.Time
 	)
 	err := s.Pool.QueryRow(ctx, `
-		SELECT u.id, u.email, u.role, u.created_at, u.disabled_at, t.enabled_at
+		SELECT u.id, u.email, u.role, u.created_at, u.disabled_at, u.language, t.enabled_at
 		FROM users u
 		LEFT JOIN user_totp t ON t.user_id = u.id
 		WHERE u.id = $1`, id,
-	).Scan(&u.ID, &u.Email, &u.Role, &u.CreatedAt, &disabledAt, &totpEnabled)
+	).Scan(&u.ID, &u.Email, &u.Role, &u.CreatedAt, &disabledAt, &u.Language, &totpEnabled)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return User{}, ErrUserNotFound
 	}
@@ -349,6 +352,27 @@ func (s *Store) GetUser(ctx context.Context, id uuid.UUID) (User, error) {
 	u.Disabled = disabledAt != nil
 	u.TOTPActive = totpEnabled != nil
 	return u, nil
+}
+
+// SetLanguage updates the caller's UI language preference. Accepts "auto",
+// "en", or "de" — anything else is rejected at the application layer so the
+// 400 has a friendly message before pg's CHECK constraint fires. Returns
+// ErrUserNotFound when no row matches.
+func (s *Store) SetLanguage(ctx context.Context, userID uuid.UUID, language string) error {
+	switch language {
+	case "auto", "en", "de":
+	default:
+		return fmt.Errorf("invalid language %q (must be auto, en, or de)", language)
+	}
+	tag, err := s.Pool.Exec(ctx,
+		`UPDATE users SET language = $2 WHERE id = $1`, userID, language)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrUserNotFound
+	}
+	return nil
 }
 
 // GetUserByEmail mirrors GetUser but keys on email (case-insensitive).

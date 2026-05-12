@@ -1,0 +1,790 @@
+{
+  "mail": {
+    "title": "Mail (SMTP)",
+    "subtitle": "Ein globaler SMTP-Transport. Jeder E-Mail-Benachrichtigungskanal nutzt diese Einstellungen — Nutzer wählen nur die Empfängeradresse.",
+    "tabs": {
+      "server": "SMTP-Server",
+      "test": "Test senden",
+      "status": "Status"
+    },
+    "steps": {
+      "transport": "Transport",
+      "identity": "Identität",
+      "stepLabel": "{{index}}. {{label}}"
+    },
+    "wizard": {
+      "panelTitle": "SMTP-Transport",
+      "fields": {
+        "host": "Host",
+        "port": "Port",
+        "username": "Benutzername",
+        "usernameHint": "Optional, nur setzen wenn das Relay Auth verlangt.",
+        "password": "Passwort",
+        "passwordKeep": "Passwort (leer lassen, um gespeichertes zu behalten)",
+        "fromAddress": "Absenderadresse",
+        "wipePassword": "Gespeichertes Passwort löschen"
+      },
+      "security": {
+        "legend": "Sicherheitsmodus",
+        "starttls": "STARTTLS (Port 587)",
+        "tls": "Implizites TLS (Port 465)",
+        "none": "Unsicher (kein TLS)",
+        "skipVerify": "TLS-Zertifikatsprüfung überspringen",
+        "skipVerifyWarn": "(gefährlich; nur für selbstsignierte Dev-Mailserver)",
+        "hintTls": "Implizites TLS — vollständiger TLS-Handshake beim Verbinden (typischerweise Port 465).",
+        "hintStarttls": "STARTTLS — Klartext-Verbindung auf TLS hochstufen (typischerweise Port 587).",
+        "hintNone": "Unsicher — Klartext-SMTP. Nur für Cluster-interne Relays akzeptabel."
+      },
+      "testConn": {
+        "button": "Verbindung testen",
+        "testing": "Wird getestet…",
+        "hintNoHost": "Einstellungen zuerst speichern, bevor der Transport getestet werden kann.",
+        "hintNoEmail": "Dein Konto hat keine E-Mail hinterlegt.",
+        "hintReady": "Test-Mail an {{email}} über den gespeicherten Transport senden.",
+        "note": "Nutzt den gespeicherten Transport. Bei Erst-Setup zuerst speichern."
+      },
+      "review": {
+        "heading": "Übersicht",
+        "host": "Host",
+        "port": "Port",
+        "security": "Sicherheit",
+        "skipVerify": "skip-verify"
+      },
+      "buttons": {
+        "next": "Weiter: Identität",
+        "save": "Speichern",
+        "saving": "Wird gespeichert…"
+      },
+      "validation": {
+        "hostRequired": "Host ist erforderlich.",
+        "portRange": "Port muss zwischen 1 und 65535 liegen.",
+        "fromRequired": "Absenderadresse ist erforderlich.",
+        "fromEmail": "Absenderadresse muss wie eine E-Mail aussehen."
+      },
+      "confirmWipe": "Gespeichertes SMTP-Passwort löschen? Ausgehende Mails schlagen fehl, bis ein neues gesetzt ist.",
+      "saved": "Einstellungen gespeichert.",
+      "saveFailed": "Speichern fehlgeschlagen",
+      "lastUpdated": "Zuletzt aktualisiert {{when}}",
+      "lastUpdatedBy": " von {{user}}"
+    },
+    "test": {
+      "title": "Test-Nachricht senden",
+      "recipient": "Empfänger",
+      "send": "Test-Mail senden",
+      "sending": "Wird gesendet…",
+      "lockedHint": "SMTP-Server zuerst konfigurieren und speichern. Sobald ein Host hinterlegt ist, wird das Testformular freigeschaltet, um eine einmalige Probe-Nachricht an eine beliebige Adresse zu senden.",
+      "dispatched": "Test-Mail an {{to}} versendet.",
+      "transportDispatched": "Verbindung OK — Test-Mail an {{email}} versendet.",
+      "failed": "Test fehlgeschlagen",
+      "transportFailed": "Transport-Test fehlgeschlagen",
+      "recentResults": "Letzte Ergebnisse",
+      "outcomeOk": "ok",
+      "outcomeFail": "fehlgeschlagen"
+    },
+    "status": {
+      "title": "Mail-Status",
+      "ready": "bereit",
+      "notConfigured": "nicht konfiguriert",
+      "lastTestOk": "letzter Test OK",
+      "lastTestFailed": "letzter Test fehlgeschlagen",
+      "fields": {
+        "host": "Host",
+        "port": "Port",
+        "security": "Sicherheit",
+        "from": "Absender",
+        "password": "Passwort",
+        "skipVerify": "skip-verify",
+        "updated": "aktualisiert"
+      },
+      "stored": "gespeichert",
+      "yes": "ja",
+      "no": "nein",
+      "lastTestHeading": "Letzter Test ({{source}})",
+      "sourceTransport": "Transport-Probe",
+      "sourceSendTest": "Send-Test",
+      "troubleshooting": {
+        "heading": "Fehlersuche",
+        "connectionLabel": "Verbindung abgelehnt / Timeout",
+        "connection": " — Host, Port und ob das Relay eingehende Verbindungen aus diesem Netz akzeptiert prüfen.",
+        "tlsLabel": "TLS-Handshake schlägt fehl",
+        "tlsLead": " — zwischen STARTTLS (587) und implizitem TLS (465) wechseln; ",
+        "tlsEm": "skip verify",
+        "tlsTail": " nur für selbstsignierte Dev-Relays aktivieren.",
+        "authLabel": "535 Auth abgelehnt",
+        "auth": " — Benutzername/Passwort prüfen; mit ausgefülltem Passwortfeld erneut speichern, um zu überschreiben.",
+        "senderLabel": "550 Absender abgelehnt",
+        "sender": " — die Domain der Absenderadresse muss vom Relay weitergeleitet werden dürfen.",
+        "probeLead": "Eine Probe vom ",
+        "probeTab": "Test senden",
+        "probeTail": "-Tab ausführen, um den Live-Fehler des Servers zu erfassen."
+      }
+    }
+  },
+  "quietHours": {
+    "title": "Ruhezeiten",
+    "subtitle": "Wenn das konfigurierte Fenster aktiv ist, protokolliert die Alert-Engine jeden Alarm weiterhin in der Verlaufstabelle (für Audit), überspringt aber den Versand an Kanäle. Unabhängig von den agent-spezifischen Ruhezeiten — diese pausieren Telemetrie-Pushes.",
+    "tabs": {
+      "schedule": "Zeitplan",
+      "timeline": "Zeitachse"
+    },
+    "tz": {
+      "utc": "UTC (Server-Standard)"
+    },
+    "days": {
+      "mon": "Mo",
+      "tue": "Di",
+      "wed": "Mi",
+      "thu": "Do",
+      "fri": "Fr",
+      "sat": "Sa",
+      "sun": "So"
+    },
+    "window": {
+      "title": "Fenster",
+      "enable": "Ruhezeiten aktivieren",
+      "enableHint": "(Alarme innerhalb des Fensters werden protokolliert, aber nicht zugestellt)",
+      "start": "Start (HH:MM)",
+      "end": "Ende (HH:MM)",
+      "timezone": "Zeitzone",
+      "timezoneHint": "Fensterzeiten werden in dieser Zeitzone interpretiert. Unbekannte Namen fallen auf UTC zurück.",
+      "activeDays": "Aktive Tage",
+      "daysHint": "Leer = Ruhezeiten greifen nie. Standard ist jeder Tag.",
+      "save": "Ruhezeiten speichern",
+      "saved": "Ruhezeiten gespeichert.",
+      "saveFailed": "Speichern fehlgeschlagen",
+      "lastUpdated": "Zuletzt aktualisiert {{when}}",
+      "lastUpdatedBy": " von {{user}}"
+    },
+    "status": {
+      "enabled": "aktiviert",
+      "disabled": "deaktiviert",
+      "live": "live"
+    },
+    "timeline": {
+      "title": "Zeitachse",
+      "ariaLabel": "Wochenplan Ruhezeiten",
+      "legendQuiet": "Ruhefenster",
+      "legendDelivering": "zustellen",
+      "legendNow": "jetzt ({{tz}})",
+      "testNow": "Jetzt testen",
+      "testNowHintDisabled": "Ruhezeiten aktivieren, um das Fenster auszuwerten.",
+      "testNowHintReady": "Aktuelle Einstellungen gegen die Echtzeituhr auswerten.",
+      "previewHint": "Klicke ",
+      "previewHintAction": "Jetzt testen",
+      "previewHintTail": " um zu prüfen, ob der aktuelle Zeitpunkt stummgeschaltet ist.",
+      "muted": "stumm",
+      "mutedMsg": "Aktuell ({{when}} · {{tz}}) liegt im Ruhefenster — Kanäle würden übersprungen.",
+      "delivering": "zustellen",
+      "deliveringMsg": "Aktuell ({{when}} · {{tz}}) liegt außerhalb des Ruhefensters — Alarme würden zugestellt."
+    }
+  },
+  "enrollments": {
+    "title": "Agent-Enrollments",
+    "subtitleLead": "Einmal-Tokens für ",
+    "subtitleTail": " — ausstehende Tokens können widerrufen werden.",
+    "tabs": {
+      "active": "Aktive Tokens",
+      "history": "Verlauf",
+      "create": "Neu erstellen"
+    },
+    "lifecycle": {
+      "consumed": "verbraucht",
+      "expired": "abgelaufen",
+      "pending": "ausstehend"
+    },
+    "active": {
+      "title": "Aktive Tokens",
+      "countPending": "{{count}} ausstehend",
+      "columns": {
+        "created": "Erstellt",
+        "label": "Label",
+        "description": "Beschreibung",
+        "tags": "Tags",
+        "groups": "Gruppen",
+        "createdBy": "Erstellt von",
+        "expires": "Läuft ab",
+        "actions": "Aktionen"
+      },
+      "tableLabel": "Aktive Enrollment-Tokens",
+      "empty": "Keine aktiven Enrollment-Tokens.",
+      "emptyHint": "Im Tab „Neu erstellen“ einen neuen erzeugen; Tokens laufen nach ihrer TTL automatisch ab (max. 24h).",
+      "copyId": "ID kopieren",
+      "copyIdAria": "Enrollment-ID kopieren",
+      "copied": "Kopiert",
+      "revoke": "Widerrufen",
+      "revoking": "Wird widerrufen…",
+      "confirmRevoke": "Dieses Enrollment widerrufen?"
+    },
+    "history": {
+      "title": "Verlauf",
+      "countEntries": "{{count}} Einträge",
+      "columns": {
+        "created": "Erstellt",
+        "label": "Label",
+        "tags": "Tags",
+        "groups": "Gruppen",
+        "status": "Status",
+        "usedBy": "Verwendet von",
+        "createdBy": "Erstellt von",
+        "expires": "Läuft ab"
+      },
+      "tableLabel": "Verbrauchte Enrollment-Tokens",
+      "empty": "Keine verbrauchten oder abgelaufenen Tokens in den letzten 24 Stunden.",
+      "emptyHint": "Ausgestellte Tokens laufen nach ihrer TTL automatisch ab; der Server entfernt Einträge älter als 24h."
+    },
+    "create": {
+      "title": "Neues Bootstrap-Token erstellen",
+      "intro": "Erzeugt ein Einmal-Enrollment-Token. Der neue Agent beansprucht es beim ersten Check-in und erbt Label, Tags und Gruppen, die hier gesetzt werden.",
+      "fields": {
+        "label": "Anzeigelabel",
+        "labelHint": "Optional. Wird in der Hostliste angezeigt, bevor der erste Hostname gemeldet wurde.",
+        "labelPh": "z. B. db-replica-3",
+        "ttl": "Token-TTL (Minuten)",
+        "ttlHint": "Min 5, max 1440 (24h). Standard 30.",
+        "description": "Beschreibung",
+        "descriptionHint": "Optional, max. 200 Zeichen. ({{count}}/200)",
+        "descriptionPh": "Warum dieser Host hinzugefügt wird",
+        "tags": "Standard-Tags (kommagetrennt)",
+        "tagsExisting": "Vorhanden: {{list}}",
+        "tagsNone": "Noch keine Tags definiert.",
+        "tagsPh": "prod, db",
+        "groups": "Standard-Gruppen (Strg/⌘ für Mehrfachauswahl)"
+      },
+      "submit": "Install-Befehl erzeugen",
+      "submitting": "Wird erzeugt…",
+      "ttlError": "TTL muss zwischen 5 und 1440 Minuten liegen.",
+      "success": "Token erzeugt. Wird nur einmal angezeigt — Install-Befehl jetzt kopieren.",
+      "installLabel": "Install-Befehl",
+      "installHint": "Auf dem neuen Host als root ausführen.",
+      "copyCommand": "Befehl kopieren",
+      "copyCommandAria": "Install-Befehl kopieren",
+      "copyUrl": "URL kopieren",
+      "copyUrlAria": "Install-URL kopieren",
+      "copied": "Kopiert",
+      "mintAnother": "Weiteren erzeugen",
+      "viewActive": "Aktive Tokens anzeigen",
+      "failed": "fehlgeschlagen"
+    }
+  },
+  "groups": {
+    "headerTitle": "Host-Gruppen",
+    "headerSubtitleLead": "Hosts nach Zweck gruppieren (z. B. ",
+    "headerSubtitleExample": "prod-web",
+    "headerSubtitleTail": ") und aus Monitoren referenzieren.",
+    "tabs": {
+      "list": "Gruppen",
+      "create": "Neu erstellen"
+    },
+    "list": {
+      "title": "Alle Gruppen",
+      "empty": "Noch keine Gruppen.",
+      "columns": {
+        "name": "Name",
+        "description": "Beschreibung",
+        "members": "Mitglieder",
+        "actions": "Aktionen"
+      },
+      "membersBtn": "Mitglieder",
+      "editBtn": "Bearbeiten",
+      "confirmDelete": "Gruppe „{{name}}“ löschen?"
+    },
+    "form": {
+      "newTitle": "Neue Gruppe",
+      "editTitle": "{{name}} bearbeiten",
+      "name": "Name",
+      "description": "Beschreibung (optional)",
+      "save": "Speichern",
+      "saving": "Wird gespeichert…",
+      "create": "Erstellen",
+      "cancel": "Abbrechen",
+      "failed": "fehlgeschlagen"
+    },
+    "members": {
+      "title": "{{name}} — Mitglieder",
+      "selectedOf": "{{selected}} von {{total}} Hosts ausgewählt",
+      "save": "Speichern",
+      "saving": "Wird gespeichert…",
+      "cancel": "Abbrechen",
+      "columns": {
+        "host": "Host",
+        "distro": "Distro",
+        "tags": "Tags"
+      }
+    },
+    "create": {
+      "panelTitle": "Neue Gruppe",
+      "countSelected_one": "{{count}} Host ausgewählt",
+      "countSelected_other": "{{count}} Hosts ausgewählt",
+      "namePh": "prod-web",
+      "descriptionPh": "Produktions-Web-Tier",
+      "filterByTag": "Hosts nach Tag filtern",
+      "matchAny": "Match „beliebig“",
+      "matchAll": "Match „alle“",
+      "noTags": "Noch keine Tags auf einem Host definiert.",
+      "membersHeader": "Mitglieder ({{visibleSelected}} von {{visible}} sichtbar ausgewählt)",
+      "searchPh": "Hostname oder Tag suchen…",
+      "selectVisible": "Sichtbare auswählen",
+      "clearVisible": "Sichtbare abwählen",
+      "noMatches": "Keine Hosts entsprechen dem aktuellen Filter.",
+      "submit": "Gruppe erstellen",
+      "submitting": "Wird erstellt…",
+      "failed": "fehlgeschlagen",
+      "columns": {
+        "host": "Host",
+        "distro": "Distro",
+        "tags": "Tags"
+      }
+    }
+  },
+  "users": {
+    "page": {
+      "title": "Benutzer",
+      "subtitle": "Anlegen, sperren, Passwort zurücksetzen, 2FA zurücksetzen.",
+      "breadcrumb_admin": "Admin",
+      "breadcrumb_users": "Benutzer"
+    },
+    "tabs": {
+      "list": "Benutzer",
+      "invites": "Einladungen"
+    },
+    "list": {
+      "panel_title": "Alle Benutzer",
+      "search_placeholder": "E-Mail suchen…",
+      "role_filter_aria": "Rollen-Filter",
+      "status_filter_aria": "Status-Filter",
+      "role_all": "Alle Rollen",
+      "role_admin": "admin",
+      "role_user": "user",
+      "status_all": "Alle Status",
+      "status_active": "aktiv",
+      "status_disabled": "gesperrt",
+      "count": "{{visible}} von {{total}}",
+      "selected": "{{count}} ausgewählt",
+      "enable_selected": "Auswahl entsperren",
+      "disable_selected": "Auswahl sperren",
+      "clear": "leeren",
+      "select_all_aria": "Alle sichtbaren auswählen",
+      "select_one_aria": "{{email}} auswählen",
+      "actions_aria": "Aktionen für {{email}}",
+      "col_email": "E-Mail",
+      "col_role": "Rolle",
+      "col_status": "Status",
+      "col_2fa": "2FA",
+      "col_last_login": "Letzter Login",
+      "col_actions": "Aktionen",
+      "totp_yes": "ja",
+      "totp_none": "—",
+      "last_login_never": "nie",
+      "status_locked": "gesperrt",
+      "no_match": "Keine Benutzer entsprechen den aktuellen Filtern.",
+      "bulk_noop": "Keine ausgewählten Benutzer müssen {{state}} werden.",
+      "bulk_noop_disabled": "gesperrt",
+      "bulk_noop_enabled": "entsperrt",
+      "bulk_confirm": "{{count}} Benutzer {{verb}}?",
+      "bulk_verb_disable": "sperren",
+      "bulk_verb_enable": "entsperren"
+    },
+    "invites": {
+      "panel_title": "Offene Einladungen",
+      "empty": "Die API stellt noch keine Liste der Einladungs-Tokens bereit. Einladungen werden derzeit beim Anlegen eines Benutzers (Tab „Benutzer“) inline ausgestellt — der Einmal-Link wird einmal angezeigt und kann aus dem Erfolgs-Banner kopiert werden. Ein dedizierter Endpunkt zum Auflisten, erneuten Senden und Widerrufen offener Einladungen ist geplant."
+    },
+    "create": {
+      "panel_title": "Benutzer anlegen",
+      "email_label": "E-Mail",
+      "role_label": "Rolle",
+      "role_user": "user",
+      "role_admin": "admin",
+      "password_label": "Passwort (leer lassen für Einladung)",
+      "send_invite_label": "Einladungs-E-Mail senden (erfordert konfiguriertes SMTP unter Admin → Mail)",
+      "submit": "Benutzer anlegen",
+      "submitting": "Wird angelegt…",
+      "invite_mailed": "Einladung an {{email}} versendet.",
+      "created_with_password": "Benutzer {{email}} angelegt.",
+      "created_with_link": "Benutzer {{email}} angelegt. Kopiere den Einladungs-Link unten — er wird nur einmal angezeigt.",
+      "invite_link_label": "Einladungs-Link (einmalig, läuft in 7 Tagen ab):",
+      "generic_failure": "fehlgeschlagen"
+    },
+    "actions": {
+      "reset_password": "Passwort zurücksetzen",
+      "reset_2fa": "2FA / MFA zurücksetzen",
+      "reset_2fa_disabled": "Dieser Benutzer hat keine TOTP-Einrichtung zum Zurücksetzen.",
+      "end_sessions": "Alle Sessions beenden",
+      "end_sessions_self_disabled": "Benutze den Logout-Button für deine eigene Session.",
+      "lock": "Sperren",
+      "unlock": "Entsperren",
+      "lock_self_disabled": "Du kannst dich nicht selbst aussperren.",
+      "lock_last_admin_disabled": "Das ist der einzige aktive Admin — promote oder entsperre zuerst einen anderen.",
+      "delete": "Löschen",
+      "delete_self_disabled": "Du kannst dein eigenes Konto nicht löschen.",
+      "delete_last_admin_disabled": "Das ist der einzige aktive Admin — der letzte Admin kann nicht gelöscht werden."
+    },
+    "confirm": {
+      "reset_2fa": "Löscht die TOTP-Einrichtung des Benutzers. Er muss sich beim nächsten Login neu einrichten. Fortfahren?",
+      "revoke_sessions": "{{email}} zwingen, sich sofort auf allen Geräten neu zu authentifizieren?",
+      "delete": "{{email}} löschen? Dies kann nicht rückgängig gemacht werden."
+    },
+    "toast": {
+      "reset_link_sent": "Passwort-Reset-Link an {{email}} gesendet.",
+      "reset_link_issued": "Reset-Link für {{email}} ausgestellt.",
+      "user_deleted": "Benutzer {{email}} gelöscht.",
+      "twofa_reset": "2FA für {{email}} zurückgesetzt.",
+      "sessions_revoked": "Alle Sessions von {{email}} widerrufen.",
+      "locked": "{{email}} gesperrt.",
+      "unlocked": "{{email}} entsperrt."
+    },
+    "reset_dialog": {
+      "warning": "SMTP nicht konfiguriert oder Versand fehlgeschlagen — übergib diesen Link an {{email}} außerhalb des Systems.",
+      "copy": "Kopieren",
+      "copied": "Kopiert",
+      "dismiss": "Schließen",
+      "clipboard_fallback_prompt": "Reset-Link kopieren:"
+    }
+  },
+  "security": {
+    "page": {
+      "title": "Sicherheit",
+      "subtitle": "Passwortanforderungen, Authentifizierungs-Pflichten und Steuerung aktiver Sessions."
+    },
+    "tabs": {
+      "password": "Passwort-Richtlinie",
+      "auth": "Authentifizierung",
+      "sessions": "Aktive Sessions"
+    },
+    "password": {
+      "panel_title": "Passwort-Richtlinie",
+      "min_length": "Mindestlänge",
+      "require_upper": "Großbuchstabe",
+      "require_lower": "Kleinbuchstabe",
+      "require_digit": "Ziffer",
+      "require_symbol": "Sonderzeichen",
+      "max_age": "Maximales Alter (Tage, 0 = kein Ablauf)",
+      "submit": "Richtlinie speichern",
+      "submitting": "Wird gespeichert…",
+      "saved": "Richtlinie aktualisiert.",
+      "generic_failure": "fehlgeschlagen"
+    },
+    "auth": {
+      "panel_title": "Force-Modus & Session-Limits",
+      "force_mode_label": "Force-Modus",
+      "force_off": "Aus (kein Zwang)",
+      "force_2fa_any": "Passkey ODER TOTP für alle",
+      "force_passkey_required": "Passkey verpflichtend für alle",
+      "grace_label": "Grace-Period (Tage)",
+      "grace_0": "0 — sofort",
+      "grace_1": "1 Tag",
+      "grace_7": "7 Tage",
+      "grace_30": "30 Tage",
+      "max_session_label": "Max Session (Stunden, 1–720)",
+      "idle_timeout_label": "Idle-Timeout (Minuten, 0–10080)",
+      "idle_timeout_hint": "0 = aus",
+      "escalation_warning": "Achtung: alle Nutzer ohne Passkey werden nach Grace-Period gesperrt. Sicherstellen, dass mindestens du selbst einen Passkey eingerichtet hast.",
+      "submit": "Speichern",
+      "submitting": "Speichern…",
+      "saved": "Force-Modus aktualisiert.",
+      "generic_failure": "fehlgeschlagen",
+      "invalid_force_mode": "Ungültiger Force-Modus.",
+      "invalid_grace": "Grace-Period muss 0, 1, 7 oder 30 Tage sein.",
+      "invalid_max_session": "Max-Session muss zwischen 1 und 720 Stunden liegen.",
+      "invalid_idle_timeout": "Idle-Timeout muss zwischen 0 und 10080 Minuten liegen."
+    },
+    "sessions": {
+      "panel_title": "Aktive Sessions",
+      "description": "Invalidiert alle aktiven Sessions aller Nutzer. Deine eigene Session bleibt erhalten, alle anderen werden sofort ausgeloggt und müssen sich neu anmelden. Nützlich nach einer Policy-Verschärfung oder einem vermuteten Token-Leak.",
+      "danger": "Diese Aktion kann nicht rückgängig gemacht werden. Stelle sicher, dass du weißt, was du tust.",
+      "revoke_button": "Alle Sessions revoken",
+      "revoking": "Revoking…",
+      "revoke_confirm": "Alle aktiven Sessions (außer deiner eigenen) werden invalidiert. Fortfahren?",
+      "revoked_toast": "Revoked {{count}} sessions (your own session was preserved)"
+    }
+  },
+  "agentConfig": {
+    "title": "Agent-Konfiguration",
+    "subtitle": "Server-verwaltete Einstellungen, die der Agent nach dem ersten Start anwendet. Host-Overrides haben Vorrang vor Gruppen-Overrides, Gruppen-Overrides vor globalen. Fehlende Schlüssel fallen auf die einkompilierten Defaults des Agents zurück.",
+    "tabs": {
+      "global": "Globale Defaults",
+      "groups": "Gruppen-Overrides",
+      "hosts": "Host-Overrides",
+      "preview": "Vorschau"
+    },
+    "confirm": {
+      "delete_global": "Globale-Defaults-Zeile löschen? Der Agent fällt auf die einkompilierten Defaults zurück, bis eine neue erstellt wird.",
+      "delete_group": "Gruppen-Override ({{target}}) löschen?",
+      "delete_host": "Host-Override ({{target}}) löschen?"
+    },
+    "global": {
+      "heading": "Globale Defaults",
+      "heading_hint": "— Einzeleintrag, der jedem Agent vor Gruppen-/Host-Overrides angewendet wird",
+      "empty": "Keine globalen Defaults gesetzt. Der Agent fällt auf seine einkompilierten Defaults zurück.",
+      "pill_enabled": "aktiviert",
+      "pill_disabled": "deaktiviert"
+    },
+    "scope": {
+      "group_title": "Gruppen-Overrides",
+      "host_title": "Host-Overrides",
+      "group_subtitle": "Wird auf jeden Host in der Gruppe angewendet; nach den globalen, vor den Host-Overrides gemerged.",
+      "host_subtitle": "Wird auf einen einzelnen Host angewendet; wird zuletzt gemerged, gewinnt alle Kollisionen.",
+      "new_group": "Neue Gruppe",
+      "new_host": "Neuer Host",
+      "empty_group": "Noch keine Gruppen-Overrides.",
+      "empty_host": "Noch keine Host-Overrides.",
+      "col_group": "Gruppe",
+      "col_host": "Host",
+      "col_interval": "Intervall",
+      "col_quiet_hours": "Ruhezeiten",
+      "col_description": "Beschreibung",
+      "col_enabled": "Aktiviert",
+      "col_actions": "Aktionen",
+      "pill_on": "an",
+      "pill_off": "aus"
+    },
+    "preview": {
+      "heading": "Zusammengeführte Konfiguration auflösen",
+      "pick_host_placeholder": "Host auswählen…",
+      "preview_button": "Vorschau",
+      "intro": "Wähle einen Host, um die genaue Konfiguration zu sehen, die der Agent nach dem Zusammenführen der globalen Defaults, aller passenden Gruppen-Overrides und des host-spezifischen Overrides (falls vorhanden) erhält. Jedes Blatt ist mit der Ebene markiert, die es geliefert hat.",
+      "resolved_heading": "Aufgelöste Konfigurationsvorschau · {{host}}",
+      "sources_merged": "Zusammengeführte Quellen:",
+      "defaults_only": "(nur Defaults)",
+      "source_layers": "Quell-Ebenen",
+      "no_matching_layers": "Keine passenden Ebenen — der Agent nutzt einkompilierte Defaults.",
+      "final_config": "Endgültige Konfiguration",
+      "origin_tags": "Herkunfts-Tags:",
+      "no_keys_set": "Keine Schlüssel gesetzt. Der Agent wendet seine einkompilierten Defaults wörtlich an.",
+      "highlight_footnote_pre": "Host-stammige Felder sind in ",
+      "highlight_footnote_accent": "Akzentfarbe",
+      "highlight_footnote_post": " hervorgehoben; Gruppen-/Global-Tags erscheinen neben jedem Blatt.",
+      "layer_global": "global",
+      "layer_group_prefix": "Gruppe · ",
+      "layer_host_prefix": "Host · "
+    },
+    "form": {
+      "edit_title": "Konfiguration bearbeiten",
+      "new_title": "Neue Konfiguration",
+      "scope": "Scope",
+      "scope_global": "global (Einzeleintrag)",
+      "scope_group": "Gruppe",
+      "scope_host": "Host",
+      "target": "Ziel",
+      "pick_target_placeholder": "— {{scope}} wählen —",
+      "description": "Beschreibung (optional)",
+      "tick_rate": "Tick-Rate",
+      "interval_seconds": "Intervall (Sekunden)",
+      "interval_hint": "Leer lassen, um zu erben.",
+      "spool_buffer": "Spool-Puffer (MB)",
+      "spool_buffer_hint": "Leer lassen, um zu erben.",
+      "packages": "Pakete",
+      "pkg_enabled": "Aktiviert",
+      "pkg_inherit": "erben",
+      "pkg_yes": "ja",
+      "pkg_no": "nein",
+      "pkg_update_interval": "Update-Prüfintervall",
+      "pkg_update_interval_hint": "z. B. 30m, 2h",
+      "pkg_full_snapshot": "Voller Snapshot-Intervall",
+      "pkg_full_snapshot_hint": "z. B. 24h",
+      "quiet_hours": "Ruhezeiten",
+      "quiet_hours_pause": "Ingest während dieses Fensters pausieren",
+      "quiet_hours_start": "Start (HH:MM, Agent-lokal)",
+      "quiet_hours_end": "Ende (HH:MM)",
+      "quiet_hours_empty": "Leer = jeden Tag.",
+      "row_enabled": "Eintrag aktiviert",
+      "scope_requires_target": "scope={{scope}} erfordert ein Ziel",
+      "day_sun": "So",
+      "day_mon": "Mo",
+      "day_tue": "Di",
+      "day_wed": "Mi",
+      "day_thu": "Do",
+      "day_fri": "Fr",
+      "day_sat": "Sa"
+    }
+  },
+  "monitors": {
+    "title": "Monitore",
+    "subtitle": "Serverseitige periodische Probes: Zertifikatsablauf, DB-Erreichbarkeit, HTTP, rohes TCP.",
+    "tabs": {
+      "active": "Aktive Monitore",
+      "create": "Monitor erstellen",
+      "history": "Letzte Ergebnisse"
+    },
+    "slide_over": {
+      "new_title": "Neuer Monitor",
+      "close_aria": "Schließen",
+      "close_panel_aria": "Panel schließen"
+    },
+    "active": {
+      "heading": "Alle Monitore",
+      "total_count": "{{count}} insgesamt",
+      "create_button": "Monitor erstellen",
+      "empty": "Noch keine Monitore.",
+      "delete_confirm": "Monitor „{{name}}“ löschen?",
+      "col_type": "Typ",
+      "col_name": "Name",
+      "col_target": "Ziel",
+      "col_interval": "Intervall",
+      "col_status": "Status",
+      "col_latency": "Latenz",
+      "col_last_detail": "Letztes Detail",
+      "col_actions": "Aktionen"
+    },
+    "create": {
+      "heading": "Neuer Monitor",
+      "hint": "Probe-Typ wählen — Ziel-Syntax aktualisiert sich inline."
+    },
+    "history": {
+      "heading": "Letzte Ergebnisse",
+      "subheading": "neuestes Probe-Ergebnis pro Monitor",
+      "empty": "Noch keine Monitor-Ergebnisse.",
+      "fail_count": "{{count}} fail",
+      "warn_count": "{{count}} warn",
+      "unknown_count": "{{count}} unbekannt",
+      "ok_count": "{{count}} ok",
+      "col_status": "Status",
+      "col_name": "Name",
+      "col_type": "Typ",
+      "col_target": "Ziel",
+      "col_latency": "Latenz",
+      "col_detail": "Detail"
+    },
+    "detail": {
+      "type": "Typ",
+      "status": "Status",
+      "interval": "Intervall",
+      "latency": "Latenz",
+      "target": "Ziel",
+      "last_detail": "Letztes Detail",
+      "edit_heading": "Monitor bearbeiten"
+    },
+    "form": {
+      "type": "Typ",
+      "name": "Name",
+      "target": "Ziel",
+      "interval_seconds": "Intervall (Sekunden)",
+      "enabled": "Aktiviert",
+      "on": "An",
+      "tags_label": "Auf Tags anwenden (kommagetrennt)",
+      "tags_existing_hint": "Vorhanden: {{tags}}",
+      "tags_none_hint": "Noch keine Tags definiert.",
+      "tags_placeholder": "prod, db",
+      "groups_label": "Auf Gruppen anwenden (Strg/⌘ für Mehrfachauswahl)",
+      "failed": "fehlgeschlagen"
+    },
+    "target_hint": {
+      "cert": "host:port (z. B. example.com:443)",
+      "postgres": "DSN, z. B. postgres://user:pw@host:5432/db?sslmode=require",
+      "mysql": "host:port (nur Handshake, keine Auth)",
+      "mongodb": "host:port (Hello-Check)",
+      "http": "URL, z. B. https://example.com/health",
+      "tcp": "host:port"
+    },
+    "type_fields": {
+      "warn_days": "Warnung (Tage)",
+      "fail_days": "Fehler (Tage)",
+      "server_name": "SNI-Servername (optional)",
+      "expected_status": "Erwarteter Status",
+      "method": "Methode"
+    },
+    "results": {
+      "heading": "Ergebnisse",
+      "empty_range": "Keine Ergebnisse in diesem Bereich.",
+      "samples": "Samples",
+      "ok": "OK",
+      "warn": "Warn",
+      "fail": "Fail",
+      "uptime": "Effektive Uptime im Fenster: {{pct}} %",
+      "latency_series": "Latenz (ms)"
+    }
+  },
+  "logs": {
+    "title": "Server-Logs",
+    "subtitle": "In-Memory-Ringpuffer. Ältere Einträge rollen aus — den JSON-Stream für die Aufbewahrung extern wegschreiben.",
+    "breadcrumb_admin": "Admin",
+    "breadcrumb_server_logs": "Server-Logs",
+    "search_placeholder": "Msg / Attrs durchsuchen… (Groß-/Kleinschreibung egal)",
+    "any_level": "Beliebiger Level",
+    "all_hosts": "Alle Hosts",
+    "live_tail": "Live-Tail",
+    "pause_tail_title": "Live-Tail pausieren",
+    "start_tail_title": "Neue Einträge alle 2s streamen",
+    "chip_level": "Level",
+    "chip_op": "Op",
+    "chip_clear": "Chips leeren",
+    "meta": "{{total}} Treffer · seq {{seq}}",
+    "empty": "Keine passenden Log-Einträge.",
+    "col_time": "Zeit",
+    "col_level": "Level",
+    "col_msg": "Msg",
+    "col_attrs": "Attrs",
+    "pagination_range": "{{from}}–{{to}} von {{total}}",
+    "prev": "Zurück",
+    "next": "Weiter"
+  },
+  "ingests": {
+    "title": "Agent-Ingests",
+    "subtitle": "Erfasste Payloads vom Agent. Neu serialisiertes JSON; semantisch identisch zu dem, was der Agent gesendet hat.",
+    "breadcrumb_admin": "Admin",
+    "breadcrumb_agent_ingests": "Agent-Ingests",
+    "all_hosts": "Alle Hosts",
+    "recent_heading": "Aktuell",
+    "refresh": "Aktualisieren",
+    "recent_empty": "Noch keine Ingests erfasst.",
+    "col_when": "Wann",
+    "col_host": "Host",
+    "col_size": "Größe",
+    "pick_heading": "Ingest auswählen",
+    "payload_heading": "Payload",
+    "truncated": "gekürzt",
+    "copy": "Kopieren",
+    "pick_hint": "Eine Zeile anklicken, um das vom Agent gesendete JSON zu inspizieren.",
+    "tree_key_one": "Schlüssel",
+    "tree_key_other": "Schlüssel",
+    "tree_item_one": "Element",
+    "tree_item_other": "Elemente",
+    "tree_large": "groß",
+    "tree_big": "lang",
+    "tree_string_chars": "{{count}} Zeichen",
+    "tree_show_more": "mehr anzeigen (+{{count}})",
+    "tree_show_all": "alle anzeigen ({{count}})",
+    "rel_seconds_ago": "vor {{count}}s",
+    "rel_minutes_ago": "vor {{count}}m",
+    "rel_hours_ago": "vor {{count}}h",
+    "rel_days_ago": "vor {{count}}T"
+  },
+  "audit": {
+    "title": "Audit-Log",
+    "subtitle": "Serverseitige Aufzeichnung admin-spezifischer Aktionen: wer hat was wann geändert. Nach exakter Actor-E-Mail oder Action-Key filtern.",
+    "breadcrumb_admin": "Admin",
+    "breadcrumb_audit_log": "Audit-Log",
+    "meta": "{{count}} Einträge",
+    "filter_actor": "Actor",
+    "filter_actor_hint": "Exakte Übereinstimmung mit der E-Mail des Nutzers",
+    "filter_actor_placeholder": "admin@example.com",
+    "filter_action": "Aktion",
+    "filter_action_hint": "z. B. user.create, channel.delete",
+    "filter_action_placeholder": "user.create",
+    "empty_title": "Keine passenden Audit-Einträge.",
+    "empty_hint": "Versuche den Actor- oder Action-Filter zu leeren oder schaue später nach, sobald eine Admin-Aktion ausgeführt wurde.",
+    "table_label": "Audit-Log-Einträge",
+    "col_at": "Wann",
+    "col_actor": "Actor",
+    "col_action": "Aktion",
+    "col_target": "Ziel",
+    "col_detail": "Detail",
+    "pagination_range": "{{from}}–{{to}} von {{total}}",
+    "prev": "Zurück",
+    "next": "Weiter",
+    "prev_aria": "Vorherige Seite",
+    "next_aria": "Nächste Seite"
+  },
+  "logsPage": {
+    "tab_server": "Server",
+    "tab_ingest": "Ingest",
+    "tab_audit": "Audit",
+    "title_server": "Server-Logs",
+    "title_ingest": "Agent-Ingests",
+    "title_audit": "Audit-Log",
+    "subtitle_server": "In-Memory-Ringpuffer serverseitiger Log-Einträge. Ältere Einträge rollen aus — den JSON-Stream für die Aufbewahrung extern wegschreiben.",
+    "subtitle_ingest": "Aktuelle Agent-Ingest-Payloads. Neu serialisiertes JSON; semantisch identisch zu dem, was der Agent gesendet hat.",
+    "subtitle_audit": "Serverseitige Aufzeichnung admin-spezifischer Aktionen: wer hat was wann geändert. Nach exakter Actor-E-Mail oder Action-Key filtern.",
+    "breadcrumb_admin": "Admin",
+    "breadcrumb_logs": "Logs"
+  }
+}

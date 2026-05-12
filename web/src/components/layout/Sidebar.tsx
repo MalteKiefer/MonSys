@@ -27,35 +27,44 @@ import { Avatar, DropdownMenu } from "../ui";
 import { api } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 import { useLayoutStore } from "../../lib/layout-store";
+import { useT } from "../../i18n/useT";
 
 // Shared icon-bearing entry shape used by Sidebar, MobileDrawer, and the
 // admin sub-group accordions. We keep the shape narrow on purpose: every
 // item has a route (even disabled ones still need a stable key — but those
 // are intentionally excluded for now per the spec).
+//
+// `labelKey` is an i18n key resolved at render time against the `nav`
+// namespace; we keep a small `key` field on groups for stable React keys
+// and accordion ids (the resolved translated string is unsuitable for use
+// as a DOM id, so we keep an English-stable identifier).
 type NavItem = {
   to: string;
-  label: string;
+  labelKey: string;
   icon: typeof LayoutDashboard;
   end?: boolean;
 };
 
 type NavGroup = {
-  label: string;
+  key: string;
+  labelKey: string;
   items: NavItem[];
 };
 
 type AdminSubGroup = {
-  label: string;
+  key: string;
+  labelKey: string;
   icon: typeof LayoutDashboard;
   items: NavItem[];
 };
 
 export const NOTIFICATION_GROUP: NavGroup = {
-  label: "Notifications",
+  key: "notifications",
+  labelKey: "groups.notifications",
   items: [
-    { to: "/notifications", label: "Rules", icon: Bell, end: true },
-    { to: "/notifications/channels", label: "Channels", icon: MessageSquare },
-    { to: "/notifications/alerts", label: "Alerts", icon: AlertTriangle },
+    { to: "/notifications", labelKey: "items.rules", icon: Bell, end: true },
+    { to: "/notifications/channels", labelKey: "items.channels", icon: MessageSquare },
+    { to: "/notifications/alerts", labelKey: "items.alerts", icon: AlertTriangle },
   ],
 };
 
@@ -64,12 +73,13 @@ export const NOTIFICATION_GROUP: NavGroup = {
 // name stays WORKLOADS_GROUP for backwards compatibility with any future
 // importers that pick it up from the module surface.
 export const WORKLOADS_GROUP: NavGroup = {
-  label: "Overview",
+  key: "overview",
+  labelKey: "groups.overview",
   items: [
-    { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
-    { to: "/hosts", label: "Hosts", icon: Server },
-    { to: "/packages", label: "Packages", icon: Package },
-    { to: "/monitors", label: "Monitors", icon: Radio },
+    { to: "/", labelKey: "items.dashboard", icon: LayoutDashboard, end: true },
+    { to: "/hosts", labelKey: "items.hosts", icon: Server },
+    { to: "/packages", labelKey: "items.packages", icon: Package },
+    { to: "/monitors", labelKey: "items.monitors", icon: Radio },
   ],
 };
 
@@ -78,43 +88,48 @@ export const WORKLOADS_GROUP: NavGroup = {
 // named export so consumers that imported it don't break, but the sidebar
 // no longer renders it.
 export const ACCOUNT_GROUP: NavGroup = {
-  label: "Account",
+  key: "account",
+  labelKey: "groups.account",
   items: [],
 };
 
 export const ADMIN_SUBGROUPS: AdminSubGroup[] = [
   {
-    label: "Fleet",
+    key: "fleet",
+    labelKey: "groups.fleet",
     icon: Network,
     items: [
-      { to: "/admin/groups", label: "Groups", icon: Network },
-      { to: "/admin/agent-config", label: "Agent config", icon: Cog },
-      { to: "/admin/enrollments", label: "Enrollments", icon: Server },
+      { to: "/admin/groups", labelKey: "items.groups", icon: Network },
+      { to: "/admin/agent-config", labelKey: "items.agent_config", icon: Cog },
+      { to: "/admin/enrollments", labelKey: "items.enrollments", icon: Server },
     ],
   },
   {
-    label: "Identity",
+    key: "identity",
+    labelKey: "groups.identity",
     icon: Users,
     items: [
-      { to: "/admin/users", label: "Users", icon: Users },
-      { to: "/admin/mail", label: "Mail (SMTP)", icon: MessageSquare },
+      { to: "/admin/users", labelKey: "items.users", icon: Users },
+      { to: "/admin/mail", labelKey: "items.mail_smtp", icon: MessageSquare },
     ],
   },
   {
-    label: "Operations",
+    key: "operations",
+    labelKey: "groups.operations",
     icon: Activity,
     items: [
-      { to: "/admin/quiet-hours", label: "Quiet hours", icon: Bell },
-      { to: "/admin/security", label: "Security", icon: ShieldCheck },
+      { to: "/admin/quiet-hours", labelKey: "items.quiet_hours", icon: Bell },
+      { to: "/admin/security", labelKey: "items.security", icon: ShieldCheck },
     ],
   },
   {
-    label: "Diagnostics",
+    key: "diagnostics",
+    labelKey: "groups.diagnostics",
     icon: Stethoscope,
     items: [
       // Server logs, agent ingests, and audit log are consolidated under
       // /admin/logs as tabs — the page reads `?tab=` to pre-select one.
-      { to: "/admin/logs", label: "Logs", icon: FileSearch },
+      { to: "/admin/logs", labelKey: "items.logs", icon: FileSearch },
     ],
   },
 ];
@@ -128,14 +143,16 @@ type LinkProps = {
 };
 
 function NavItemLink({ item, collapsed, onNavigate }: LinkProps) {
+  const { t } = useT("nav");
   const Icon = item.icon;
+  const label = t(item.labelKey);
   return (
     <NavLink
       to={item.to}
       end={item.end}
       onClick={onNavigate}
-      title={collapsed ? item.label : undefined}
-      aria-label={collapsed ? item.label : undefined}
+      title={collapsed ? label : undefined}
+      aria-label={collapsed ? label : undefined}
       className={({ isActive }) =>
         [
           "group flex items-center gap-2.5 rounded-md py-1.5 text-sm transition-colors duration-150",
@@ -147,7 +164,7 @@ function NavItemLink({ item, collapsed, onNavigate }: LinkProps) {
       }
     >
       <Icon className="h-4 w-4 shrink-0" aria-hidden />
-      {!collapsed && <span className="truncate">{item.label}</span>}
+      {!collapsed && <span className="truncate">{label}</span>}
     </NavLink>
   );
 }
@@ -173,6 +190,7 @@ type AdminAccordionProps = {
 };
 
 function AdminAccordion({ group, collapsed, pathname, onNavigate }: AdminAccordionProps) {
+  const { t } = useT("nav");
   const childActive = useMemo(
     () => group.items.some((i) => pathname === i.to || pathname.startsWith(i.to + "/")),
     [group.items, pathname],
@@ -200,7 +218,7 @@ function AdminAccordion({ group, collapsed, pathname, onNavigate }: AdminAccordi
     );
   }
 
-  const buttonId = `admin-acc-${group.label.toLowerCase()}`;
+  const buttonId = `admin-acc-${group.key}`;
   const panelId = `${buttonId}-panel`;
 
   return (
@@ -217,7 +235,7 @@ function AdminAccordion({ group, collapsed, pathname, onNavigate }: AdminAccordi
         ].join(" ")}
       >
         <Icon className="h-4 w-4 shrink-0" aria-hidden />
-        <span className="flex-1 truncate text-left">{group.label}</span>
+        <span className="flex-1 truncate text-left">{t(group.labelKey)}</span>
         <ChevronDown
           className={["h-3.5 w-3.5 transition-transform duration-150", open ? "rotate-0" : "-rotate-90"].join(" ")}
           aria-hidden
@@ -240,6 +258,7 @@ function AdminAccordion({ group, collapsed, pathname, onNavigate }: AdminAccordi
 // for Profile and the standalone logout button on the topbar — both
 // affordances live here now so the user has a single recognizable target.
 function UserCard({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
+  const { t } = useT("nav");
   const user = useAuth((s) => s.user);
   const clear = useAuth((s) => s.clear);
   const navigate = useNavigate();
@@ -263,7 +282,7 @@ function UserCard({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: 
   const items = [
     {
       key: "profile",
-      label: "Profile",
+      label: t("items.profile"),
       icon: UserIcon,
       onClick: () => {
         onNavigate?.();
@@ -272,7 +291,7 @@ function UserCard({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: 
     },
     {
       key: "logout",
-      label: "Sign out",
+      label: t("actions.sign_out"),
       icon: LogOut,
       destructive: true,
       onClick: logout,
@@ -289,7 +308,7 @@ function UserCard({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: 
           trigger={
             <button
               type="button"
-              aria-label={`Account menu for ${user.email}`}
+              aria-label={t("actions.account_menu", { email: user.email })}
               title={user.email}
               className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
             >
@@ -315,7 +334,7 @@ function UserCard({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: 
         trigger={
           <button
             type="button"
-            aria-label={`Account menu for ${user.email}`}
+            aria-label={t("actions.account_menu", { email: user.email })}
             className="flex w-full min-w-0 items-center gap-2 rounded-md border border-border bg-panel/60 px-2 py-1.5 text-left transition-colors hover:bg-panel-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           >
             <Avatar
@@ -350,6 +369,7 @@ export function SidebarNav({
   collapsed: boolean;
   onNavigate?: () => void;
 }) {
+  const { t } = useT("nav");
   const user = useAuth((s) => s.user);
   const isAdmin = user?.role === "admin";
   const loc = useLocation();
@@ -358,14 +378,14 @@ export function SidebarNav({
     <nav aria-label="Primary" className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-3">
       <UserCard collapsed={collapsed} onNavigate={onNavigate} />
 
-      <GroupLabel collapsed={collapsed}>{WORKLOADS_GROUP.label}</GroupLabel>
+      <GroupLabel collapsed={collapsed}>{t(WORKLOADS_GROUP.labelKey)}</GroupLabel>
       <div className="space-y-0.5 px-1.5">
         {WORKLOADS_GROUP.items.map((item) => (
           <NavItemLink key={item.to} item={item} collapsed={collapsed} onNavigate={onNavigate} />
         ))}
       </div>
 
-      <GroupLabel collapsed={collapsed}>{NOTIFICATION_GROUP.label}</GroupLabel>
+      <GroupLabel collapsed={collapsed}>{t(NOTIFICATION_GROUP.labelKey)}</GroupLabel>
       <div className="space-y-0.5 px-1.5">
         {NOTIFICATION_GROUP.items.map((item) => (
           <NavItemLink key={item.to} item={item} collapsed={collapsed} onNavigate={onNavigate} />
@@ -374,11 +394,11 @@ export function SidebarNav({
 
       {isAdmin && (
         <>
-          <GroupLabel collapsed={collapsed}>Admin</GroupLabel>
+          <GroupLabel collapsed={collapsed}>{t("groups.admin")}</GroupLabel>
           <div className="space-y-0.5 px-1.5">
             {ADMIN_SUBGROUPS.map((g) => (
               <AdminAccordion
-                key={g.label}
+                key={g.key}
                 group={g}
                 collapsed={collapsed}
                 pathname={loc.pathname}
@@ -402,6 +422,7 @@ export function SidebarNav({
 // pure progressive enhancement and never traps pointer events when not
 // hovered.
 export function Sidebar({ forceCollapsed = false }: { forceCollapsed?: boolean }) {
+  const { t } = useT("nav");
   const collapsedPref = useLayoutStore((s) => s.sidebarCollapsed);
   const toggle = useLayoutStore((s) => s.toggleSidebar);
   const [hoverExpanded, setHoverExpanded] = useState(false);
@@ -447,7 +468,7 @@ export function Sidebar({ forceCollapsed = false }: { forceCollapsed?: boolean }
         <div className={["flex items-center border-b border-border", collapsed ? "justify-center px-0 py-2" : "justify-between px-3 py-2"].join(" ")}>
           {!collapsed && (
             <span className="text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">
-              Navigation
+              {t("sidebar.heading")}
             </span>
           )}
           <button
@@ -458,7 +479,7 @@ export function Sidebar({ forceCollapsed = false }: { forceCollapsed?: boolean }
             // toggle would let the user "expand" but the click would only
             // toggle the persisted preference, which has no effect when
             // forceCollapsed is true.
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-label={collapsed ? t("actions.expand_sidebar") : t("actions.collapse_sidebar")}
             aria-expanded={!collapsed}
             className={[
               "inline-flex h-7 w-7 items-center justify-center rounded-md border border-border bg-panel text-fg-muted transition-colors hover:bg-panel-2 hover:text-fg focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",

@@ -6,6 +6,7 @@
 import { useMemo, useState } from "react";
 
 import { TagChip } from "../../../components/notifications/FormParts";
+import { useT } from "../../../i18n/useT";
 import { hostDisplay } from "../../../lib/utils";
 import type { Host, HostGroup } from "../../../lib/types";
 
@@ -25,18 +26,19 @@ export function StepScope({
   hosts: Host[];
   groups: HostGroup[];
 }) {
+  const { t } = useT(["notifications", "common"]);
   const [tagSearch, setTagSearch] = useState("");
   const [groupSearch, setGroupSearch] = useState("");
   const [hostSearch, setHostSearch] = useState("");
 
   const tagOptions = useMemo(
     () =>
-      tags.map((t) => ({
-        id: t.tag,
-        label: t.tag,
-        sub: `${t.count} host${t.count === 1 ? "" : "s"}`,
+      tags.map((tg) => ({
+        id: tg.tag,
+        label: tg.tag,
+        sub: t("notifications:wizard.scope.tags_count", { count: tg.count }),
       })),
-    [tags],
+    [tags, t],
   );
 
   const hostOptions = useMemo(
@@ -44,9 +46,11 @@ export function StepScope({
       hosts.map((h) => ({
         id: h.id,
         label: hostDisplay(h),
-        sub: (h.tags ?? []).length > 0 ? (h.tags ?? []).map((t) => `#${t}`).join(" ") : "no tags",
+        sub: (h.tags ?? []).length > 0
+          ? (h.tags ?? []).map((tg) => `#${tg}`).join(" ")
+          : t("notifications:wizard.scope.host_no_tags"),
       })),
-    [hosts],
+    [hosts, t],
   );
 
   const groupOptions = useMemo(
@@ -54,23 +58,23 @@ export function StepScope({
       groups.map((g) => ({
         id: g.id,
         label: g.name,
-        sub: `${g.member_ids.length} member${g.member_ids.length === 1 ? "" : "s"}`,
+        sub: t("notifications:wizard.scope.groups_members", { count: g.member_ids.length }),
       })),
-    [groups],
+    [groups, t],
   );
 
   const choices: Array<{ value: RuleDraft["targetMode"]; label: string; hint: string }> = [
-    { value: "all", label: "All hosts", hint: "Every host that reports to MonSys." },
-    { value: "tags", label: "Hosts with tag…", hint: "Match any selected tag." },
-    { value: "groups", label: "Hosts in group…", hint: "Match any selected host group." },
-    { value: "hosts", label: "Specific hosts", hint: "Pick individual hosts." },
+    { value: "all", label: t("notifications:wizard.scope.choices.all_label"), hint: t("notifications:wizard.scope.choices.all_hint") },
+    { value: "tags", label: t("notifications:wizard.scope.choices.tags_label"), hint: t("notifications:wizard.scope.choices.tags_hint") },
+    { value: "groups", label: t("notifications:wizard.scope.choices.groups_label"), hint: t("notifications:wizard.scope.choices.groups_hint") },
+    { value: "hosts", label: t("notifications:wizard.scope.choices.hosts_label"), hint: t("notifications:wizard.scope.choices.hosts_hint") },
   ];
 
   return (
     <div className="space-y-4">
       <fieldset>
         <legend className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-fg-subtle">
-          Who does this rule watch?
+          {t("notifications:wizard.scope.legend")}
         </legend>
         <div className="space-y-1.5">
           {choices.map((c) => {
@@ -113,7 +117,7 @@ export function StepScope({
       {draft.targetMode === "tags" && (
         <section>
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-fg-subtle">
-            Tags ({draft.targetTags.length} selected)
+            {t("notifications:wizard.scope.tags_header", { count: draft.targetTags.length })}
           </p>
           <MultiSelectList
             items={tagOptions}
@@ -121,23 +125,25 @@ export function StepScope({
             onToggle={(id) =>
               patch({
                 targetTags: draft.targetTags.includes(id)
-                  ? draft.targetTags.filter((t) => t !== id)
+                  ? draft.targetTags.filter((tg) => tg !== id)
                   : [...draft.targetTags, id],
               })
             }
-            empty={tagOptions.length === 0 ? "No tags defined yet." : "No matching tags."}
+            empty={tagOptions.length === 0
+              ? t("notifications:wizard.scope.tags_empty_none")
+              : t("notifications:wizard.scope.tags_empty_match")}
             search={tagSearch}
             onSearch={setTagSearch}
-            placeholder="Search tags…"
+            placeholder={t("notifications:wizard.scope.tags_search_placeholder")}
           />
           {draft.targetTags.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1">
-              {draft.targetTags.map((t) => (
+              {draft.targetTags.map((tg) => (
                 <TagChip
-                  key={t}
-                  text={t}
+                  key={tg}
+                  text={tg}
                   onRemove={() =>
-                    patch({ targetTags: draft.targetTags.filter((x) => x !== t) })
+                    patch({ targetTags: draft.targetTags.filter((x) => x !== tg) })
                   }
                 />
               ))}
@@ -149,7 +155,7 @@ export function StepScope({
       {draft.targetMode === "groups" && (
         <section>
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-fg-subtle">
-            Groups ({draft.targetGroupIds.length} selected)
+            {t("notifications:wizard.scope.groups_header", { count: draft.targetGroupIds.length })}
           </p>
           <MultiSelectList
             items={groupOptions}
@@ -161,10 +167,12 @@ export function StepScope({
                   : [...draft.targetGroupIds, id],
               })
             }
-            empty={groupOptions.length === 0 ? "No groups defined yet." : "No matching groups."}
+            empty={groupOptions.length === 0
+              ? t("notifications:wizard.scope.groups_empty_none")
+              : t("notifications:wizard.scope.groups_empty_match")}
             search={groupSearch}
             onSearch={setGroupSearch}
-            placeholder="Search groups…"
+            placeholder={t("notifications:wizard.scope.groups_search_placeholder")}
           />
         </section>
       )}
@@ -172,7 +180,7 @@ export function StepScope({
       {draft.targetMode === "hosts" && (
         <section>
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-fg-subtle">
-            Hosts ({draft.targetHostIds.length} selected)
+            {t("notifications:wizard.scope.hosts_header", { count: draft.targetHostIds.length })}
           </p>
           <MultiSelectList
             items={hostOptions}
@@ -184,10 +192,12 @@ export function StepScope({
                   : [...draft.targetHostIds, id],
               })
             }
-            empty={hostOptions.length === 0 ? "No hosts known yet." : "No matching hosts."}
+            empty={hostOptions.length === 0
+              ? t("notifications:wizard.scope.hosts_empty_none")
+              : t("notifications:wizard.scope.hosts_empty_match")}
             search={hostSearch}
             onSearch={setHostSearch}
-            placeholder="Search hosts…"
+            placeholder={t("notifications:wizard.scope.hosts_search_placeholder")}
           />
         </section>
       )}

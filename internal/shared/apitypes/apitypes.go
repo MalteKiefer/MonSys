@@ -761,6 +761,13 @@ type CurrentUser struct {
 	GraceUntil      *time.Time `json:"grace_until,omitempty"`
 	HasAvatar       bool       `json:"has_avatar"`
 	AvatarUpdatedAt *time.Time `json:"avatar_updated_at,omitempty" readOnly:"true"`
+	Language        string     `json:"language"       enum:"auto,en,de" doc:"UI language preference; 'auto' follows the browser/system locale"`
+}
+
+// SetLanguageRequest changes the caller's UI language preference. The SPA
+// stores the choice server-side so it follows the user across devices.
+type SetLanguageRequest struct {
+	Language string `json:"language" enum:"auto,en,de" doc:"new language preference"`
 }
 
 // AvatarUploadRequest carries a base64-encoded image. The caller (the SPA)

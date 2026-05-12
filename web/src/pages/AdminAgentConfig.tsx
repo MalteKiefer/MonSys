@@ -22,6 +22,7 @@ import {
   Table,
   TextInput,
 } from "../components/ui";
+import { useT } from "../i18n/useT";
 import { api, ApiError } from "../lib/api";
 import {
   AgentConfig,
@@ -33,7 +34,15 @@ import {
 } from "../lib/types";
 import { hostDisplay } from "../lib/utils";
 
-const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const DAY_KEYS = [
+  "agentConfig.form.day_sun",
+  "agentConfig.form.day_mon",
+  "agentConfig.form.day_tue",
+  "agentConfig.form.day_wed",
+  "agentConfig.form.day_thu",
+  "agentConfig.form.day_fri",
+  "agentConfig.form.day_sat",
+] as const;
 
 // Tabs split by scope axis. The original page mixed global/group/host rows in
 // a single table with a Scope column; that conflated the singleton "global
@@ -46,6 +55,7 @@ const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 type TabKey = "global" | "groups" | "hosts" | "preview";
 
 export function AdminAgentConfig() {
+  const { t } = useT(["admin", "common"]);
   const qc = useQueryClient();
   const list = useQuery({
     queryKey: ["agent-configs"],
@@ -72,10 +82,10 @@ export function AdminAgentConfig() {
   const hostCfgs = useMemo(() => configs.filter((c) => c.scope === "host"), [configs]);
 
   const tabs: ReadonlyArray<TabItem<TabKey>> = [
-    { key: "global", label: "Global defaults", icon: Settings, badge: globalCfg ? "1" : "0" },
-    { key: "groups", label: "Group overrides", icon: Users, badge: String(groupCfgs.length) },
-    { key: "hosts", label: "Host overrides", icon: Server, badge: String(hostCfgs.length) },
-    { key: "preview", label: "Preview", icon: Eye },
+    { key: "global", label: t("admin:agentConfig.tabs.global"), icon: Settings, badge: globalCfg ? "1" : "0" },
+    { key: "groups", label: t("admin:agentConfig.tabs.groups"), icon: Users, badge: String(groupCfgs.length) },
+    { key: "hosts", label: t("admin:agentConfig.tabs.hosts"), icon: Server, badge: String(hostCfgs.length) },
+    { key: "preview", label: t("admin:agentConfig.tabs.preview"), icon: Eye },
   ];
 
   const closeForm = () => {
@@ -96,8 +106,8 @@ export function AdminAgentConfig() {
 
   return (
     <Page
-      title="Agent configuration"
-      subtitle="Server-managed knobs the agent applies after first start. Host overrides take precedence over group overrides, group overrides over global. Missing keys fall back to the agent's compiled defaults."
+      title={t("admin:agentConfig.title")}
+      subtitle={t("admin:agentConfig.subtitle")}
     >
       <Tabs items={tabs} value={tab} onChange={setTab} />
 
@@ -121,7 +131,7 @@ export function AdminAgentConfig() {
           onCreate={() => setCreating("global")}
           onDelete={() => {
             if (!globalCfg) return;
-            if (confirm("Delete the global defaults row? Agent will fall back to compiled defaults until a new one is created."))
+            if (confirm(t("admin:agentConfig.confirm.delete_global")))
               api(`/v1/admin/agent-config/${globalCfg.id}`, { method: "DELETE" }).then(() =>
                 qc.invalidateQueries({ queryKey: ["agent-configs"] }),
               );
@@ -137,7 +147,13 @@ export function AdminAgentConfig() {
           onNew={() => setCreating("group")}
           onEdit={(c) => setEditing(c)}
           onDelete={(c) => {
-            if (confirm(`Delete group override (${c.target_name ?? c.target_id?.slice(0, 8)})?`))
+            if (
+              confirm(
+                t("admin:agentConfig.confirm.delete_group", {
+                  target: c.target_name ?? c.target_id?.slice(0, 8),
+                }),
+              )
+            )
               api(`/v1/admin/agent-config/${c.id}`, { method: "DELETE" }).then(() =>
                 qc.invalidateQueries({ queryKey: ["agent-configs"] }),
               );
@@ -153,7 +169,13 @@ export function AdminAgentConfig() {
           onNew={() => setCreating("host")}
           onEdit={(c) => setEditing(c)}
           onDelete={(c) => {
-            if (confirm(`Delete host override (${c.target_name ?? c.target_id?.slice(0, 8)})?`))
+            if (
+              confirm(
+                t("admin:agentConfig.confirm.delete_host", {
+                  target: c.target_name ?? c.target_id?.slice(0, 8),
+                }),
+              )
+            )
               api(`/v1/admin/agent-config/${c.id}`, { method: "DELETE" }).then(() =>
                 qc.invalidateQueries({ queryKey: ["agent-configs"] }),
               );
@@ -167,7 +189,7 @@ export function AdminAgentConfig() {
             <PanelHeader>
               <div className="flex items-center gap-2">
                 <Eye className="h-4 w-4 text-fg-muted" />
-                <h3 className="text-sm font-semibold">Resolve merged config</h3>
+                <h3 className="text-sm font-semibold">{t("admin:agentConfig.preview.heading")}</h3>
               </div>
               <div className="flex items-center gap-2">
                 <select
@@ -175,7 +197,7 @@ export function AdminAgentConfig() {
                   onChange={(e) => setSelectedHostID(e.target.value)}
                   className="rounded-md border border-border bg-panel px-2 py-1 text-xs"
                 >
-                  <option value="">Pick a host…</option>
+                  <option value="">{t("admin:agentConfig.preview.pick_host_placeholder")}</option>
                   {(hosts.data?.hosts ?? []).map((h) => (
                     <option key={h.id} value={h.id}>{hostDisplay(h)}</option>
                   ))}
@@ -188,15 +210,13 @@ export function AdminAgentConfig() {
                     if (h) setPreviewHost(h);
                   }}
                 >
-                  <Eye className="h-3.5 w-3.5" /> Preview
+                  <Eye className="h-3.5 w-3.5" /> {t("admin:agentConfig.preview.preview_button")}
                 </Button>
               </div>
             </PanelHeader>
             <PanelBody>
               <p className="text-xs text-fg-subtle">
-                Pick a host to see the exact config the agent will receive after merging the global defaults, any
-                matching group overrides, and the host-specific override (if any). Each leaf is tagged with the
-                layer that supplied it.
+                {t("admin:agentConfig.preview.intro")}
               </p>
             </PanelBody>
           </Panel>
@@ -228,19 +248,20 @@ function GlobalTab({
   onCreate: () => void;
   onDelete: () => void;
 }) {
+  const { t } = useT(["admin", "common"]);
   return (
     <Panel>
       <PanelHeader>
         <div className="flex items-center gap-2">
           <Settings className="h-4 w-4 text-fg-muted" />
-          <h3 className="text-sm font-semibold">Global defaults</h3>
-          <span className="text-[11px] text-fg-subtle">— singleton row applied to every agent before group/host overrides</span>
+          <h3 className="text-sm font-semibold">{t("admin:agentConfig.global.heading")}</h3>
+          <span className="text-[11px] text-fg-subtle">{t("admin:agentConfig.global.heading_hint")}</span>
         </div>
         <div className="flex items-center gap-2">
           {cfg ? (
             <>
               <Button onClick={onEdit}>
-                <PencilLine className="h-3.5 w-3.5" /> Edit
+                <PencilLine className="h-3.5 w-3.5" /> {t("common:actions.edit")}
               </Button>
               <Button variant="danger" onClick={onDelete}>
                 <Trash2 className="h-3.5 w-3.5" />
@@ -248,7 +269,7 @@ function GlobalTab({
             </>
           ) : (
             <Button variant="primary" onClick={onCreate}>
-              <Plus className="h-3.5 w-3.5" /> Create
+              <Plus className="h-3.5 w-3.5" /> {t("common:actions.create")}
             </Button>
           )}
         </div>
@@ -257,11 +278,15 @@ function GlobalTab({
         {loading ? (
           <Skeleton className="h-32" />
         ) : !cfg ? (
-          <Empty>No global defaults set. The agent falls back to its compiled defaults.</Empty>
+          <Empty>{t("admin:agentConfig.global.empty")}</Empty>
         ) : (
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-2 text-xs">
-              <StatusPill status={cfg.enabled ? "ok" : "offline"}>{cfg.enabled ? "enabled" : "disabled"}</StatusPill>
+              <StatusPill status={cfg.enabled ? "ok" : "offline"}>
+                {cfg.enabled
+                  ? t("admin:agentConfig.global.pill_enabled")
+                  : t("admin:agentConfig.global.pill_disabled")}
+              </StatusPill>
               {cfg.description && <span className="text-fg-muted">{cfg.description}</span>}
             </div>
             <pre className="overflow-auto rounded-md border border-border bg-bg p-3 font-mono text-[11px] leading-relaxed text-fg">
@@ -289,12 +314,16 @@ function ScopeTable({
   onEdit: (c: AgentConfigEntry) => void;
   onDelete: (c: AgentConfigEntry) => void;
 }) {
+  const { t } = useT(["admin", "common"]);
   const Icon = scope === "group" ? Users : Server;
-  const title = scope === "group" ? "Group overrides" : "Host overrides";
+  const title =
+    scope === "group"
+      ? t("admin:agentConfig.scope.group_title")
+      : t("admin:agentConfig.scope.host_title");
   const subtitle =
     scope === "group"
-      ? "Applied to every host in the group; merged after globals, before host overrides."
-      : "Applied to a single host; merged last, wins all collisions.";
+      ? t("admin:agentConfig.scope.group_subtitle")
+      : t("admin:agentConfig.scope.host_subtitle");
   return (
     <Panel>
       <PanelHeader>
@@ -304,7 +333,10 @@ function ScopeTable({
           <span className="text-[11px] text-fg-subtle">— {subtitle}</span>
         </div>
         <Button variant="primary" onClick={onNew}>
-          <Plus className="h-3.5 w-3.5" /> New {scope}
+          <Plus className="h-3.5 w-3.5" />{" "}
+          {scope === "group"
+            ? t("admin:agentConfig.scope.new_group")
+            : t("admin:agentConfig.scope.new_host")}
         </Button>
       </PanelHeader>
       <PanelBody className="p-0 overflow-x-auto">
@@ -313,17 +345,25 @@ function ScopeTable({
             <Skeleton className="h-32" />
           </div>
         ) : rows.length === 0 ? (
-          <Empty>No {scope} overrides yet.</Empty>
+          <Empty>
+            {scope === "group"
+              ? t("admin:agentConfig.scope.empty_group")
+              : t("admin:agentConfig.scope.empty_host")}
+          </Empty>
         ) : (
           <Table>
             <THead>
               <tr>
-                <TH>{scope === "group" ? "Group" : "Host"}</TH>
-                <TH>Interval</TH>
-                <TH>Quiet hours</TH>
-                <TH>Description</TH>
-                <TH>Enabled</TH>
-                <TH className="text-right">Actions</TH>
+                <TH>
+                  {scope === "group"
+                    ? t("admin:agentConfig.scope.col_group")
+                    : t("admin:agentConfig.scope.col_host")}
+                </TH>
+                <TH>{t("admin:agentConfig.scope.col_interval")}</TH>
+                <TH>{t("admin:agentConfig.scope.col_quiet_hours")}</TH>
+                <TH>{t("admin:agentConfig.scope.col_description")}</TH>
+                <TH>{t("admin:agentConfig.scope.col_enabled")}</TH>
+                <TH className="text-right">{t("admin:agentConfig.scope.col_actions")}</TH>
               </tr>
             </THead>
             <TBody>
@@ -342,12 +382,16 @@ function ScopeTable({
                   </TD>
                   <TD className="text-fg-muted truncate max-w-xs">{c.description || "—"}</TD>
                   <TD>
-                    <StatusPill status={c.enabled ? "ok" : "offline"}>{c.enabled ? "on" : "off"}</StatusPill>
+                    <StatusPill status={c.enabled ? "ok" : "offline"}>
+                      {c.enabled
+                        ? t("admin:agentConfig.scope.pill_on")
+                        : t("admin:agentConfig.scope.pill_off")}
+                    </StatusPill>
                   </TD>
                   <TD className="text-right">
                     <div className="inline-flex items-center gap-1">
                       <Button onClick={() => onEdit(c)}>
-                        <PencilLine className="h-3.5 w-3.5" /> Edit
+                        <PencilLine className="h-3.5 w-3.5" /> {t("common:actions.edit")}
                       </Button>
                       <Button variant="danger" onClick={() => onDelete(c)}>
                         <Trash2 className="h-3.5 w-3.5" />
@@ -521,6 +565,7 @@ function PreviewPanel({
   allConfigs: AgentConfigEntry[];
   onClose: () => void;
 }) {
+  const { t } = useT(["admin", "common"]);
   const preview = useQuery({
     queryKey: ["agent-config-preview", host.id],
     queryFn: () => api<AgentConfigResolved>(`/v1/admin/agent-config/preview/${host.id}`),
@@ -544,18 +589,30 @@ function PreviewPanel({
       entry?: AgentConfigEntry;
       cfg: AgentConfig;
     }[] = [];
-    if (globalCfg) list.push({ scope: "global", label: "global", entry: globalCfg, cfg: globalCfg.config });
+    if (globalCfg)
+      list.push({
+        scope: "global",
+        label: t("admin:agentConfig.preview.layer_global"),
+        entry: globalCfg,
+        cfg: globalCfg.config,
+      });
     for (const g of groupCfgs) {
       list.push({
         scope: "group",
-        label: `group · ${g.target_name ?? g.target_id?.slice(0, 8) ?? ""}`,
+        label: `${t("admin:agentConfig.preview.layer_group_prefix")}${g.target_name ?? g.target_id?.slice(0, 8) ?? ""}`,
         entry: g,
         cfg: g.config,
       });
     }
-    if (hostCfg) list.push({ scope: "host", label: `host · ${hostDisplay(host)}`, entry: hostCfg, cfg: hostCfg.config });
+    if (hostCfg)
+      list.push({
+        scope: "host",
+        label: `${t("admin:agentConfig.preview.layer_host_prefix")}${hostDisplay(host)}`,
+        entry: hostCfg,
+        cfg: hostCfg.config,
+      });
     return list;
-  }, [allConfigs, host]);
+  }, [allConfigs, host, t]);
 
   const origins = useMemo(() => {
     const cfg = preview.data?.config ?? {};
@@ -567,9 +624,11 @@ function PreviewPanel({
       <PanelHeader>
         <div className="flex items-center gap-2">
           <Eye className="h-4 w-4 text-fg-muted" />
-          <h3 className="text-sm font-semibold">Resolved config preview · {hostDisplay(host)}</h3>
+          <h3 className="text-sm font-semibold">
+            {t("admin:agentConfig.preview.resolved_heading", { host: hostDisplay(host) })}
+          </h3>
         </div>
-        <Button onClick={onClose}>Close</Button>
+        <Button onClick={onClose}>{t("common:actions.close")}</Button>
       </PanelHeader>
       <PanelBody>
         {preview.isLoading ? (
@@ -579,9 +638,9 @@ function PreviewPanel({
         ) : (
           <>
             <p className="mb-3 text-xs text-fg-subtle">
-              Sources merged:{" "}
+              {t("admin:agentConfig.preview.sources_merged")}{" "}
               <span className="font-mono text-fg-muted">
-                {preview.data?.source_scopes.join(" → ") || "(defaults only)"}
+                {preview.data?.source_scopes.join(" → ") || t("admin:agentConfig.preview.defaults_only")}
               </span>
             </p>
 
@@ -589,11 +648,11 @@ function PreviewPanel({
               {/* Left — source layers */}
               <section className="space-y-3">
                 <h4 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">
-                  <Layers className="h-3 w-3" /> Source layers
+                  <Layers className="h-3 w-3" /> {t("admin:agentConfig.preview.source_layers")}
                 </h4>
                 {layers.length === 0 ? (
                   <p className="rounded-md border border-dashed border-border p-3 text-xs text-fg-subtle">
-                    No matching layers — agent uses compiled defaults.
+                    {t("admin:agentConfig.preview.no_matching_layers")}
                   </p>
                 ) : (
                   layers.map((layer, i) => (
@@ -621,26 +680,29 @@ function PreviewPanel({
               {/* Right — final merged */}
               <section className="space-y-3">
                 <h4 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">
-                  <Eye className="h-3 w-3" /> Final config
+                  <Eye className="h-3 w-3" /> {t("admin:agentConfig.preview.final_config")}
                   <span className="ml-auto inline-flex items-center gap-2 text-[10px] font-normal normal-case tracking-normal text-fg-subtle">
-                    origin tags:
-                    <StatusPill status="info">global</StatusPill>
-                    <StatusPill status="warn">group</StatusPill>
-                    <StatusPill status="ok">host</StatusPill>
+                    {t("admin:agentConfig.preview.origin_tags")}
+                    <StatusPill status="info">{t("admin:agentConfig.preview.layer_global")}</StatusPill>
+                    <StatusPill status="warn">{t("admin:agentConfig.form.scope_group")}</StatusPill>
+                    <StatusPill status="ok">{t("admin:agentConfig.form.scope_host")}</StatusPill>
                   </span>
                 </h4>
                 <div className="rounded-md border border-border bg-bg p-3">
                   {Object.keys(preview.data?.config ?? {}).length === 0 ? (
                     <p className="text-xs text-fg-subtle">
-                      No keys set. Agent applies its compiled defaults verbatim.
+                      {t("admin:agentConfig.preview.no_keys_set")}
                     </p>
                   ) : (
                     <JsonTree value={preview.data?.config ?? {}} origins={origins} />
                   )}
                 </div>
                 <p className="text-[11px] text-fg-subtle">
-                  Host-sourced fields are highlighted in <span className="text-accent">accent</span>;
-                  group / global tags appear next to each leaf.
+                  {t("admin:agentConfig.preview.highlight_footnote_pre")}
+                  <span className="text-accent">
+                    {t("admin:agentConfig.preview.highlight_footnote_accent")}
+                  </span>
+                  {t("admin:agentConfig.preview.highlight_footnote_post")}
                 </p>
               </section>
             </div>
@@ -671,6 +733,7 @@ function ConfigForm({
   onCancel: () => void;
   onSaved: () => void;
 }) {
+  const { t } = useT(["admin", "common"]);
   const [scope, setScope] = useState<AgentConfigEntry["scope"]>(initial?.scope ?? initialScope);
   const [targetID, setTargetID] = useState<string>(initial?.target_id ?? "");
   const [enabled, setEnabled] = useState(initial?.enabled ?? true);
@@ -700,7 +763,7 @@ function ConfigForm({
   const save = useMutation({
     mutationFn: () => {
       if (scope !== "global" && !targetID) {
-        throw new Error(`scope=${scope} requires a target`);
+        throw new Error(t("admin:agentConfig.form.scope_requires_target", { scope }));
       }
       const cfg: AgentConfig = {};
       if (intervalSec !== "") cfg.interval_seconds = parseInt(intervalSec, 10);
@@ -748,12 +811,14 @@ function ConfigForm({
   return (
     <Panel>
       <PanelHeader>
-        <h3 className="text-sm font-semibold">{initial ? "Edit config" : "New config"}</h3>
+        <h3 className="text-sm font-semibold">
+          {initial ? t("admin:agentConfig.form.edit_title") : t("admin:agentConfig.form.new_title")}
+        </h3>
       </PanelHeader>
       <PanelBody>
         <form onSubmit={submit} className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Scope">
+            <Field label={t("admin:agentConfig.form.scope")}>
               <select
                 value={scope}
                 disabled={lockScope}
@@ -763,20 +828,20 @@ function ConfigForm({
                 }}
                 className="w-full rounded-md border border-border bg-panel px-3 py-2 text-sm disabled:opacity-60"
               >
-                <option value="global">global (single row)</option>
-                <option value="group">group</option>
-                <option value="host">host</option>
+                <option value="global">{t("admin:agentConfig.form.scope_global")}</option>
+                <option value="group">{t("admin:agentConfig.form.scope_group")}</option>
+                <option value="host">{t("admin:agentConfig.form.scope_host")}</option>
               </select>
             </Field>
             {scope !== "global" && (
-              <Field label="Target">
+              <Field label={t("admin:agentConfig.form.target")}>
                 <select
                   required
                   value={targetID}
                   onChange={(e) => setTargetID(e.target.value)}
                   className="w-full rounded-md border border-border bg-panel px-3 py-2 text-sm"
                 >
-                  <option value="">— pick {scope} —</option>
+                  <option value="">{t("admin:agentConfig.form.pick_target_placeholder", { scope })}</option>
                   {scope === "group"
                     ? groups.map((g) => (
                         <option key={g.id} value={g.id}>{g.name} ({g.member_ids.length})</option>
@@ -789,65 +854,84 @@ function ConfigForm({
             )}
           </div>
 
-          <Field label="Description (optional)">
+          <Field label={t("admin:agentConfig.form.description")}>
             <TextInput value={description} onChange={(e) => setDescription(e.target.value)} />
           </Field>
 
           <fieldset className="rounded-md border border-border p-3">
-            <legend className="px-1 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">Tick rate</legend>
+            <legend className="px-1 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">
+              {t("admin:agentConfig.form.tick_rate")}
+            </legend>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Interval (seconds)" hint="Leave empty to inherit.">
+              <Field
+                label={t("admin:agentConfig.form.interval_seconds")}
+                hint={t("admin:agentConfig.form.interval_hint")}
+              >
                 <TextInput type="number" min={5} max={3600} value={intervalSec} onChange={(e) => setIntervalSec(e.target.value)} />
               </Field>
-              <Field label="Spool buffer (MB)" hint="Leave empty to inherit.">
+              <Field
+                label={t("admin:agentConfig.form.spool_buffer")}
+                hint={t("admin:agentConfig.form.spool_buffer_hint")}
+              >
                 <TextInput type="number" min={1} max={4096} value={bufferMB} onChange={(e) => setBufferMB(e.target.value)} />
               </Field>
             </div>
           </fieldset>
 
           <fieldset className="rounded-md border border-border p-3">
-            <legend className="px-1 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">Packages</legend>
+            <legend className="px-1 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">
+              {t("admin:agentConfig.form.packages")}
+            </legend>
             <div className="grid grid-cols-3 gap-3">
-              <Field label="Enabled">
+              <Field label={t("admin:agentConfig.form.pkg_enabled")}>
                 <select
                   value={pkgEnabled}
                   onChange={(e) => setPkgEnabled(e.target.value as "" | "yes" | "no")}
                   className="w-full rounded-md border border-border bg-panel px-3 py-2 text-sm"
                 >
-                  <option value="">inherit</option>
-                  <option value="yes">yes</option>
-                  <option value="no">no</option>
+                  <option value="">{t("admin:agentConfig.form.pkg_inherit")}</option>
+                  <option value="yes">{t("admin:agentConfig.form.pkg_yes")}</option>
+                  <option value="no">{t("admin:agentConfig.form.pkg_no")}</option>
                 </select>
               </Field>
-              <Field label="Update check interval" hint="e.g. 30m, 2h">
+              <Field
+                label={t("admin:agentConfig.form.pkg_update_interval")}
+                hint={t("admin:agentConfig.form.pkg_update_interval_hint")}
+              >
                 <TextInput value={pkgUpdateInterval} onChange={(e) => setPkgUpdateInterval(e.target.value)} placeholder="30m" />
               </Field>
-              <Field label="Full snapshot interval" hint="e.g. 24h">
+              <Field
+                label={t("admin:agentConfig.form.pkg_full_snapshot")}
+                hint={t("admin:agentConfig.form.pkg_full_snapshot_hint")}
+              >
                 <TextInput value={pkgFullSnapshot} onChange={(e) => setPkgFullSnapshot(e.target.value)} placeholder="24h" />
               </Field>
             </div>
           </fieldset>
 
           <fieldset className="rounded-md border border-border p-3">
-            <legend className="px-1 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">Quiet hours</legend>
+            <legend className="px-1 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">
+              {t("admin:agentConfig.form.quiet_hours")}
+            </legend>
             <label className="flex items-center gap-2 text-sm text-fg-muted">
               <input type="checkbox" checked={qhEnabled} onChange={(e) => setQhEnabled(e.target.checked)} />
-              Pause ingest during this window
+              {t("admin:agentConfig.form.quiet_hours_pause")}
             </label>
             <div className="mt-3 grid grid-cols-2 gap-3">
-              <Field label="Start (HH:MM, agent local)">
+              <Field label={t("admin:agentConfig.form.quiet_hours_start")}>
                 <TextInput value={qhStart} onChange={(e) => setQhStart(e.target.value)} placeholder="22:00" />
               </Field>
-              <Field label="End (HH:MM)">
+              <Field label={t("admin:agentConfig.form.quiet_hours_end")}>
                 <TextInput value={qhEnd} onChange={(e) => setQhEnd(e.target.value)} placeholder="06:00" />
               </Field>
             </div>
             <div className="mt-3 flex flex-wrap gap-1.5">
-              {DAYS.map((d, i) => {
+              {DAY_KEYS.map((dayKey, i) => {
                 const active = qhDays.includes(i);
+                const label = t(dayKey);
                 return (
                   <button
-                    key={d}
+                    key={dayKey}
                     type="button"
                     onClick={() => toggleDay(i)}
                     className={`rounded-md px-2 py-1 text-xs font-mono transition-colors ${
@@ -856,26 +940,30 @@ function ConfigForm({
                         : "bg-panel-2 text-fg-subtle hover:text-fg"
                     }`}
                   >
-                    {d}
+                    {label}
                   </button>
                 );
               })}
-              <span className="text-[11px] text-fg-subtle">Empty = every day.</span>
+              <span className="text-[11px] text-fg-subtle">{t("admin:agentConfig.form.quiet_hours_empty")}</span>
             </div>
           </fieldset>
 
           <label className="flex items-center gap-2 text-sm text-fg-muted">
             <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-            Row enabled
+            {t("admin:agentConfig.form.row_enabled")}
           </label>
 
           {error && <ErrorBox>{error}</ErrorBox>}
 
           <div className="flex items-center gap-2">
             <Button variant="primary" type="submit" disabled={save.isPending}>
-              {save.isPending ? "Saving…" : initial ? "Save" : "Create"}
+              {save.isPending
+                ? t("common:actions.saving")
+                : initial
+                  ? t("common:actions.save")
+                  : t("common:actions.create")}
             </Button>
-            <Button type="button" onClick={onCancel}>Cancel</Button>
+            <Button type="button" onClick={onCancel}>{t("common:actions.cancel")}</Button>
           </div>
         </form>
       </PanelBody>

@@ -17,6 +17,7 @@ import {
   THead,
   Table,
 } from "../../components/ui";
+import { useT } from "../../i18n/useT";
 import { api, ApiError } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 import { NotificationChannel } from "../../lib/types";
@@ -30,6 +31,7 @@ import { NotificationsTabs } from "./NotificationsTabs";
 // driven by the row's owner check below.
 
 export function ChannelsPage() {
+  const { t } = useT(["notifications", "common"]);
   const user = useAuth((s) => s.user);
   const isAdmin = user?.role === "admin";
   const myID = user?.id ?? "";
@@ -45,8 +47,8 @@ export function ChannelsPage() {
 
   return (
     <Page
-      title="Notification channels"
-      subtitle="Outbound destinations: email, Slack, Mattermost, Discord, ntfy."
+      title={t("notifications:channels.page_title")}
+      subtitle={t("notifications:channels.page_subtitle")}
       actions={<NotificationsTabs />}
     >
       {(creating || editing) && (
@@ -67,29 +69,29 @@ export function ChannelsPage() {
 
       <Panel>
         <PanelHeader>
-          <h3 className="text-sm font-semibold">Channels</h3>
+          <h3 className="text-sm font-semibold">{t("notifications:channels.panel_title")}</h3>
           <Button variant="primary" onClick={() => setCreating(true)}>
-            <Plus className="h-3.5 w-3.5" /> New channel
+            <Plus className="h-3.5 w-3.5" /> {t("notifications:channels.new_channel")}
           </Button>
         </PanelHeader>
         <PanelBody className="p-0 overflow-x-auto">
           {list.isLoading ? (
-            <p className="px-5 py-4 text-sm text-fg-subtle">Loading…</p>
+            <p className="px-5 py-4 text-sm text-fg-subtle">{t("common:actions.loading")}</p>
           ) : list.error ? (
             <ErrorBox>{(list.error as Error).message}</ErrorBox>
           ) : (list.data?.channels ?? []).length === 0 ? (
-            <p className="px-5 py-8 text-center text-sm text-fg-subtle">No channels yet.</p>
+            <p className="px-5 py-8 text-center text-sm text-fg-subtle">{t("notifications:channels.empty")}</p>
           ) : (
             <Table>
               <THead>
                 <tr>
-                  <TH>Type</TH>
-                  <TH>Name</TH>
-                  <TH>Owner</TH>
-                  <TH>Enabled</TH>
-                  <TH>Last used</TH>
-                  <TH>Last error</TH>
-                  <TH className="text-right">Actions</TH>
+                  <TH>{t("notifications:channels.table.type")}</TH>
+                  <TH>{t("notifications:channels.table.name")}</TH>
+                  <TH>{t("notifications:channels.table.owner")}</TH>
+                  <TH>{t("notifications:channels.table.enabled")}</TH>
+                  <TH>{t("notifications:channels.table.last_used")}</TH>
+                  <TH>{t("notifications:channels.table.last_error")}</TH>
+                  <TH className="text-right">{t("notifications:channels.table.actions")}</TH>
                 </tr>
               </THead>
               <TBody>
@@ -125,6 +127,7 @@ function ChannelRow({
   onEdit: () => void;
   onChange: () => void;
 }) {
+  const { t } = useT(["notifications", "common"]);
   const ownedByMe = channel.owner_user_id === myID;
   const canEdit = isAdmin || ownedByMe;
   const ownerLabel = !channel.owner_user_id
@@ -132,6 +135,11 @@ function ChannelRow({
     : ownedByMe
       ? "you"
       : "other";
+  const ownerText = ownerLabel === "shared"
+    ? t("notifications:channels.owner.shared")
+    : ownerLabel === "you"
+      ? t("notifications:channels.owner.you")
+      : t("notifications:channels.owner.other");
   const [testMsg, setTestMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
   const sendTest = useMutation({
@@ -141,10 +149,10 @@ function ChannelRow({
         body: JSON.stringify({}),
       }),
     onSuccess: (data) => {
-      if (data.ok) setTestMsg({ kind: "ok", text: "Test message sent." });
-      else setTestMsg({ kind: "err", text: data.error ?? "Test failed." });
+      if (data.ok) setTestMsg({ kind: "ok", text: t("notifications:channels.test_success") });
+      else setTestMsg({ kind: "err", text: data.error ?? t("notifications:channels.test_failed") });
     },
-    onError: (err) => setTestMsg({ kind: "err", text: err instanceof ApiError ? err.detail : "failed" }),
+    onError: (err) => setTestMsg({ kind: "err", text: err instanceof ApiError ? err.detail : t("notifications:channels.test_generic_failed") }),
   });
 
   const del = useMutation({
@@ -164,11 +172,11 @@ function ChannelRow({
               : ownerLabel === "you"
                 ? "bg-accent/10 text-accent ring-1 ring-inset ring-accent/30"
                 : "bg-panel-2 text-fg-subtle ring-1 ring-inset ring-border"
-          }`}>{ownerLabel}</span>
+          }`}>{ownerText}</span>
         </TD>
         <TD>
           <StatusPill status={channel.enabled ? "ok" : "offline"}>
-            {channel.enabled ? "on" : "off"}
+            {channel.enabled ? t("notifications:channels.state_on") : t("notifications:channels.state_off")}
           </StatusPill>
         </TD>
         <TD className="text-fg-muted">
@@ -180,16 +188,16 @@ function ChannelRow({
         <TD className="text-right">
           <div className="inline-flex items-center gap-1">
             <Button onClick={() => sendTest.mutate()} disabled={sendTest.isPending || !canEdit}>
-              <Send className="h-3.5 w-3.5" /> Test
+              <Send className="h-3.5 w-3.5" /> {t("notifications:channels.actions.test")}
             </Button>
             <Button onClick={onEdit} disabled={!canEdit}>
-              <PencilLine className="h-3.5 w-3.5" /> Edit
+              <PencilLine className="h-3.5 w-3.5" /> {t("notifications:channels.actions.edit")}
             </Button>
             <Button
               variant="danger"
               disabled={!canEdit}
               onClick={() => {
-                if (confirm(`Delete channel "${channel.name}"?`)) del.mutate();
+                if (confirm(t("notifications:channels.confirm_delete", { name: channel.name }))) del.mutate();
               }}
             >
               <Trash2 className="h-3.5 w-3.5" />

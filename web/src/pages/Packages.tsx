@@ -17,18 +17,19 @@ import {
   Table,
   TextInput,
 } from "../components/ui";
+import { useT } from "../i18n/useT";
 import { api } from "../lib/api";
 import { GlobalPackageRow, Host } from "../lib/types";
 import { hostDisplay } from "../lib/utils";
 
 // Manager option list. Internally the API uses dpkg/rpm/pacman/apk; the spec
 // asks for human-friendly labels (apt/dnf/pacman/apk) — we map between them.
-const MANAGERS: Array<{ value: string; label: string }> = [
-  { value: "", label: "All managers" },
-  { value: "dpkg", label: "apt (dpkg)" },
-  { value: "rpm", label: "dnf (rpm)" },
-  { value: "pacman", label: "pacman" },
-  { value: "apk", label: "apk" },
+const MANAGER_KEYS: Array<{ value: string; labelKey: string }> = [
+  { value: "", labelKey: "packages:managers.all" },
+  { value: "dpkg", labelKey: "packages:managers.dpkg" },
+  { value: "rpm", labelKey: "packages:managers.rpm" },
+  { value: "pacman", labelKey: "packages:managers.pacman" },
+  { value: "apk", labelKey: "packages:managers.apk" },
 ];
 
 const PAGE_SIZE = 200;
@@ -48,6 +49,7 @@ function isSecurityRow(p: GlobalPackageRow): boolean {
 }
 
 export function Packages() {
+  const { t } = useT(["packages", "common"]);
   const [q, setQ] = useState("");
   const [debounced, setDebounced] = useState("");
   const [manager, setManager] = useState<string>("");
@@ -135,13 +137,13 @@ export function Packages() {
 
   const subtitle = (
     <span className="tabular-nums">
-      {securityOnly ? `${rows.length} security · ` : ""}
-      {total} total matches
+      {securityOnly ? t("packages:subtitleSecurity", { count: rows.length }) : ""}
+      {t("packages:subtitleTotal", { count: total })}
     </span>
   );
 
   return (
-    <Page title="Packages" subtitle={subtitle}>
+    <Page title={t("packages:title")} subtitle={subtitle}>
       <Panel>
         <PanelHeader>
           <div className="flex w-full flex-wrap items-center gap-3">
@@ -149,7 +151,7 @@ export function Packages() {
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-subtle" />
               <TextInput
                 type="search"
-                placeholder="Search by name or version… (case-insensitive)"
+                placeholder={t("packages:filters.searchPlaceholder")}
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 className="pl-8 font-mono"
@@ -160,11 +162,11 @@ export function Packages() {
               value={manager}
               onChange={(e) => setManager(e.target.value)}
               className="rounded-md border border-border bg-panel px-3 py-2 text-sm text-fg focus:border-accent focus:outline-none"
-              aria-label="Filter by package manager"
+              aria-label={t("packages:filters.managerAria")}
             >
-              {MANAGERS.map((m) => (
+              {MANAGER_KEYS.map((m) => (
                 <option key={m.value} value={m.value}>
-                  {m.label}
+                  {t(m.labelKey)}
                 </option>
               ))}
             </select>
@@ -172,9 +174,9 @@ export function Packages() {
               value={hostID}
               onChange={(e) => setHostID(e.target.value)}
               className="max-w-[220px] truncate rounded-md border border-border bg-panel px-3 py-2 text-sm text-fg focus:border-accent focus:outline-none"
-              aria-label="Filter by host"
+              aria-label={t("packages:filters.hostAria")}
             >
-              <option value="">All hosts</option>
+              <option value="">{t("packages:filters.allHosts")}</option>
               {hosts.data?.hosts?.map((h) => (
                 <option key={h.id} value={h.id}>
                   {hostDisplay(h)}
@@ -189,7 +191,7 @@ export function Packages() {
                 className="h-3.5 w-3.5 accent-accent"
               />
               <ShieldAlert className={`h-3.5 w-3.5 ${securityOnly ? "text-warn" : "text-fg-subtle"}`} />
-              Security only
+              {t("packages:filters.securityOnly")}
             </label>
           </div>
         </PanelHeader>
@@ -199,7 +201,7 @@ export function Packages() {
               <Skeleton className="h-48" />
             </div>
           ) : groups.length === 0 ? (
-            <Empty>No packages match.</Empty>
+            <Empty>{t("packages:empty")}</Empty>
           ) : (
             <ul className="divide-y divide-border">
               {groups.map((g) => {
@@ -229,7 +231,7 @@ export function Packages() {
                         {display}
                       </Link>
                       <span className="ml-auto text-xs tabular-nums text-fg-subtle">
-                        {g.rows.length} {g.rows.length === 1 ? "package" : "packages"}
+                        {g.rows.length} {g.rows.length === 1 ? t("packages:group.packageOne") : t("packages:group.packageOther")}
                       </span>
                     </button>
                     {(isOpen || preview.length > 0) && (
@@ -237,11 +239,11 @@ export function Packages() {
                         <Table>
                           <THead>
                             <tr>
-                              <TH>Manager</TH>
-                              <TH>Name</TH>
-                              <TH>Version</TH>
-                              <TH>Arch</TH>
-                              <TH>Source</TH>
+                              <TH>{t("packages:table.manager")}</TH>
+                              <TH>{t("packages:table.name")}</TH>
+                              <TH>{t("packages:table.version")}</TH>
+                              <TH>{t("packages:table.arch")}</TH>
+                              <TH>{t("packages:table.source")}</TH>
                             </tr>
                           </THead>
                           <TBody>
@@ -273,7 +275,7 @@ export function Packages() {
                         onClick={() => toggle(g.hostID)}
                         className="block w-full px-5 py-2 text-left text-xs text-accent hover:bg-panel-2 hover:underline"
                       >
-                        View all {g.rows.length} packages →
+                        {t("packages:group.viewAll", { count: g.rows.length })}
                       </button>
                     )}
                   </li>
@@ -285,7 +287,7 @@ export function Packages() {
         {total > PAGE_SIZE && (
           <div className="flex items-center justify-between border-t border-border px-5 py-3 text-xs text-fg-muted">
             <span className="tabular-nums">
-              {offset + 1}–{Math.min(offset + allRows.length, total)} of {total}
+              {t("packages:pagination.range", { from: offset + 1, to: Math.min(offset + allRows.length, total), total })}
             </span>
             <div className="flex items-center gap-2">
               <button
@@ -293,14 +295,14 @@ export function Packages() {
                 onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
                 className="rounded-md border border-border px-2 py-1 hover:bg-panel-2 disabled:opacity-40"
               >
-                Prev
+                {t("packages:pagination.prev")}
               </button>
               <button
                 disabled={offset + PAGE_SIZE >= total}
                 onClick={() => setOffset(offset + PAGE_SIZE)}
                 className="rounded-md border border-border px-2 py-1 hover:bg-panel-2 disabled:opacity-40"
               >
-                Next
+                {t("packages:pagination.next")}
               </button>
             </div>
           </div>

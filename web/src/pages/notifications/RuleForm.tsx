@@ -34,6 +34,7 @@ import {
   PanelBody,
   PanelHeader,
 } from "../../components/ui";
+import { useT } from "../../i18n/useT";
 import { api, ApiError } from "../../lib/api";
 import {
   Host,
@@ -60,7 +61,7 @@ import { LivePreview } from "./RuleWizard/LivePreview";
 import { StepDetect } from "./RuleWizard/StepDetect";
 import { StepNotify } from "./RuleWizard/StepNotify";
 import { StepScope } from "./RuleWizard/StepScope";
-import { STEP_LABELS, Stepper, type StepperItem } from "./RuleWizard/Stepper";
+import { Stepper, type StepperItem } from "./RuleWizard/Stepper";
 
 export function RuleForm({
   initial,
@@ -78,6 +79,13 @@ export function RuleForm({
   onCancel: () => void;
   onSaved: () => void;
 }) {
+  const { t } = useT(["notifications", "common"]);
+  // Translated step labels override STEP_LABELS for display purposes.
+  const stepLabels: Record<Step, string> = {
+    1: t("notifications:wizard.steps.detect"),
+    2: t("notifications:wizard.steps.scope"),
+    3: t("notifications:wizard.steps.notify"),
+  };
   const tagsQuery = useQuery({
     queryKey: ["tags"],
     queryFn: () => api<{ tags: Array<{ tag: string; count: number }> }>("/v1/tags"),
@@ -145,18 +153,16 @@ export function RuleForm({
   const save = useMutation({
     mutationFn: async () => {
       if (draft.conditions.length === 0) {
-        throw new Error("Add at least one condition");
+        throw new Error(t("notifications:rules.form.error_add_condition"));
       }
       if (draft.channelIds.length === 0) {
-        throw new Error("Pick at least one channel");
+        throw new Error(t("notifications:rules.form.error_pick_channel"));
       }
       if (
         draft.repeatIntervalSec !== 0 &&
         (draft.repeatIntervalSec < 60 || draft.repeatIntervalSec > 86400)
       ) {
-        throw new Error(
-          "Repeat interval must be 0 or between 60 and 86400 seconds",
-        );
+        throw new Error(t("notifications:rules.form.error_repeat_range"));
       }
 
       // Round-trip every leg's params through JSON so we fail early on
@@ -167,11 +173,14 @@ export function RuleForm({
           params = JSON.parse(JSON.stringify(c.conditionParams ?? {})) as Params;
         } catch (e) {
           throw new Error(
-            `condition_params for ${c.conditionType} is not serialisable JSON: ${(e as Error).message}`,
+            t("notifications:rules.form.error_params_not_serialisable", {
+              type: c.conditionType,
+              message: (e as Error).message,
+            }),
           );
         }
         if (!c.conditionType) {
-          throw new Error("A condition has no type — finish or remove it");
+          throw new Error(t("notifications:rules.form.error_condition_no_type"));
         }
         return {
           condition_type: c.conditionType,
@@ -271,9 +280,9 @@ export function RuleForm({
   // index API. `completed` lists future steps the user has already validated
   // (so they remain jumpable forward); past steps are always reachable.
   const stepperItems: StepperItem[] = [
-    { key: "detect", label: STEP_LABELS[1] },
-    { key: "scope", label: STEP_LABELS[2] },
-    { key: "notify", label: STEP_LABELS[3] },
+    { key: "detect", label: stepLabels[1] },
+    { key: "scope", label: stepLabels[2] },
+    { key: "notify", label: stepLabels[3] },
   ];
   const currentIdx = draft.step - 1;
   const completedIdx: number[] = [];
@@ -289,7 +298,9 @@ export function RuleForm({
       <PanelHeader>
         <div className="flex w-full items-center gap-3">
           <h3 className="text-sm font-semibold">
-            {initial ? `Edit ${initial.name}` : "New rule"}
+            {initial
+              ? t("notifications:rules.form.title_edit", { name: initial.name })
+              : t("notifications:rules.form.title_new")}
           </h3>
           <div className="hidden flex-1 px-4 md:block">
             <Stepper
@@ -312,8 +323,8 @@ export function RuleForm({
             }`}
             title={
               editorOpen
-                ? "Toggle expert / raw JSON mode for the open condition"
-                : "Open a condition editor to toggle expert mode"
+                ? t("notifications:rules.form.expert_tooltip_open")
+                : t("notifications:rules.form.expert_tooltip_closed")
             }
           >
             {expertOn ? (
@@ -321,12 +332,12 @@ export function RuleForm({
             ) : (
               <Sliders className="h-3.5 w-3.5" />
             )}
-            Expert JSON
+            {t("notifications:rules.form.expert_toggle")}
           </button>
           <button
             type="button"
             onClick={onCancel}
-            aria-label="Close"
+            aria-label={t("notifications:rules.form.close")}
             className="rounded-md p-1 text-fg-subtle hover:bg-panel-2 hover:text-fg"
           >
             <X className="h-4 w-4" />
@@ -376,14 +387,14 @@ export function RuleForm({
           <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
             {draft.step === 1 ? (
               <Button type="button" onClick={onCancel}>
-                Cancel
+                {t("notifications:rules.form.cancel")}
               </Button>
             ) : (
               <Button
                 type="button"
                 onClick={() => goTo((draft.step - 1) as Step)}
               >
-                <ArrowLeft className="h-3.5 w-3.5" /> Back
+                <ArrowLeft className="h-3.5 w-3.5" /> {t("notifications:rules.form.back")}
               </Button>
             )}
             {/* Hide the global Next/Save when Step 1's inline editor is
@@ -391,7 +402,7 @@ export function RuleForm({
                 can't skip committing a half-edited leg. */}
             {draft.step === 1 && editorOpen ? (
               <span className="text-[11px] text-fg-subtle">
-                Finish the condition above to continue.
+                {t("notifications:rules.form.finish_condition_hint")}
               </span>
             ) : draft.step < 3 ? (
               <Button
@@ -403,7 +414,7 @@ export function RuleForm({
                 }
                 onClick={() => goTo((draft.step + 1) as Step)}
               >
-                Next: {STEP_LABELS[(draft.step + 1) as Step]}{" "}
+                {t("notifications:rules.form.next", { step: stepLabels[(draft.step + 1) as Step] })}{" "}
                 <ArrowRight className="h-3.5 w-3.5" />
               </Button>
             ) : (
@@ -414,12 +425,12 @@ export function RuleForm({
               >
                 <Save className="h-3.5 w-3.5" />
                 {save.isPending
-                  ? "Saving…"
+                  ? t("notifications:rules.form.saving")
                   : initial
-                    ? "Save rule"
+                    ? t("notifications:rules.form.save_rule")
                     : draft.conditions.length > 1
-                      ? `Create ${draft.conditions.length} rules`
-                      : "Create rule"}
+                      ? t("notifications:rules.form.create_rules_n", { count: draft.conditions.length })
+                      : t("notifications:rules.form.create_rule")}
               </Button>
             )}
           </div>

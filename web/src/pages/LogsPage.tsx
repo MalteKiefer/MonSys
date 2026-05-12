@@ -4,6 +4,7 @@ import { useSearchParams } from "react-router-dom";
 
 import { Page } from "../components/page";
 import { Tabs, TabItem } from "../components/ui";
+import { useT } from "../i18n/useT";
 import { AdminAuditContent } from "./AdminAudit";
 import { AdminIngestsContent } from "./AdminIngests";
 import { AdminLogsContent } from "./AdminLogs";
@@ -19,35 +20,33 @@ import { AdminLogsContent } from "./AdminLogs";
 
 type TabKey = "server" | "ingest" | "audit";
 
-const TABS: ReadonlyArray<TabItem<TabKey>> = [
-  { key: "server", label: "Server", icon: FileSearch },
-  { key: "ingest", label: "Ingest", icon: FileJson },
-  { key: "audit", label: "Audit", icon: AlertTriangle },
-];
-
-const SUBTITLES: Record<TabKey, string> = {
-  server:
-    "In-memory ring buffer of server-side log entries. Older entries roll off — ship the JSON stream off-host for retention.",
-  ingest:
-    "Recent agent ingest payloads. Re-marshalled JSON; semantically identical to what the agent sent.",
-  audit:
-    "Server-side record of admin-only actions: who changed what, when. Filter by exact actor email or action key.",
-};
-
-const TITLES: Record<TabKey, string> = {
-  server: "Server logs",
-  ingest: "Agent ingests",
-  audit: "Audit log",
-};
-
 function isTabKey(v: string | null): v is TabKey {
   return v === "server" || v === "ingest" || v === "audit";
 }
 
 export function LogsPage() {
+  const { t } = useT(["admin", "common"]);
   const [search, setSearch] = useSearchParams();
   const raw = search.get("tab");
   const tab: TabKey = isTabKey(raw) ? raw : "server";
+
+  const TABS: ReadonlyArray<TabItem<TabKey>> = [
+    { key: "server", label: t("admin:logsPage.tab_server"), icon: FileSearch },
+    { key: "ingest", label: t("admin:logsPage.tab_ingest"), icon: FileJson },
+    { key: "audit", label: t("admin:logsPage.tab_audit"), icon: AlertTriangle },
+  ];
+
+  const SUBTITLES: Record<TabKey, string> = {
+    server: t("admin:logsPage.subtitle_server"),
+    ingest: t("admin:logsPage.subtitle_ingest"),
+    audit: t("admin:logsPage.subtitle_audit"),
+  };
+
+  const TITLES: Record<TabKey, string> = {
+    server: t("admin:logsPage.title_server"),
+    ingest: t("admin:logsPage.title_ingest"),
+    audit: t("admin:logsPage.title_audit"),
+  };
 
   // Each inner content component publishes a small "meta" node (count
   // badge, toolbar) via this callback so the consolidated page header can
@@ -84,7 +83,11 @@ export function LogsPage() {
     <Page
       title={TITLES[tab]}
       subtitle={SUBTITLES[tab]}
-      breadcrumb={[{ label: "Admin" }, { label: "Logs" }, { label: TITLES[tab] }]}
+      breadcrumb={[
+        { label: t("admin:logsPage.breadcrumb_admin") },
+        { label: t("admin:logsPage.breadcrumb_logs") },
+        { label: TITLES[tab] },
+      ]}
       actions={meta}
     >
       <Tabs items={TABS} value={tab} onChange={setTab} />

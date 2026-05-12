@@ -17,29 +17,42 @@ import {
   Tabs,
   TextInput,
 } from "../components/ui";
+import { useT } from "../i18n/useT";
 import { api, ApiError } from "../lib/api";
 import type { NotificationSettings, NotificationSettingsInput } from "../lib/types";
 
 // Operator-facing list of accepted timezone names. The server validates with
 // time.LoadLocation, so anything in /usr/share/zoneinfo would also work; this
 // is just a curated short list to keep the UI tidy.
-const TZ_OPTIONS: { value: string; label: string }[] = [
-  { value: "UTC", label: "UTC (server-local default)" },
-  { value: "Europe/Berlin", label: "Europe/Berlin" },
-  { value: "Europe/London", label: "Europe/London" },
-  { value: "America/New_York", label: "America/New_York" },
-  { value: "America/Los_Angeles", label: "America/Los_Angeles" },
-];
+function useTzOptions() {
+  const { t } = useT(["admin"]);
+  return useMemo(
+    () => [
+      { value: "UTC", label: t("admin:quietHours.tz.utc") },
+      { value: "Europe/Berlin", label: "Europe/Berlin" },
+      { value: "Europe/London", label: "Europe/London" },
+      { value: "America/New_York", label: "America/New_York" },
+      { value: "America/Los_Angeles", label: "America/Los_Angeles" },
+    ],
+    [t],
+  );
+}
 
-const DAYS: { value: number; label: string; short: string }[] = [
-  { value: 1, label: "Monday", short: "Mon" },
-  { value: 2, label: "Tuesday", short: "Tue" },
-  { value: 3, label: "Wednesday", short: "Wed" },
-  { value: 4, label: "Thursday", short: "Thu" },
-  { value: 5, label: "Friday", short: "Fri" },
-  { value: 6, label: "Saturday", short: "Sat" },
-  { value: 0, label: "Sunday", short: "Sun" },
-];
+function useDays() {
+  const { t } = useT(["admin"]);
+  return useMemo(
+    () => [
+      { value: 1, label: "Monday", short: t("admin:quietHours.days.mon") },
+      { value: 2, label: "Tuesday", short: t("admin:quietHours.days.tue") },
+      { value: 3, label: "Wednesday", short: t("admin:quietHours.days.wed") },
+      { value: 4, label: "Thursday", short: t("admin:quietHours.days.thu") },
+      { value: 5, label: "Friday", short: t("admin:quietHours.days.fri") },
+      { value: 6, label: "Saturday", short: t("admin:quietHours.days.sat") },
+      { value: 0, label: "Sunday", short: t("admin:quietHours.days.sun") },
+    ],
+    [t],
+  );
+}
 
 // The page exposes a single global quiet-hours singleton (the server has no
 // per-channel override and no silenced-alert history endpoint), so the tabs
@@ -48,12 +61,8 @@ const DAYS: { value: number; label: string; short: string }[] = [
 // the runtime evaluator ("Test now").
 type TabKey = "schedule" | "timeline";
 
-const TAB_ITEMS: ReadonlyArray<TabItem<TabKey>> = [
-  { key: "schedule", label: "Schedule", icon: Clock },
-  { key: "timeline", label: "Timeline", icon: Activity },
-];
-
 export function AdminQuietHours() {
+  const { t } = useT(["admin", "common"]);
   const qc = useQueryClient();
   const settings = useQuery({
     queryKey: ["admin-quiet-hours"],
@@ -64,10 +73,10 @@ export function AdminQuietHours() {
     <Page
       title={
         <span className="flex items-center gap-2">
-          <Moon className="h-5 w-5 text-accent" /> Quiet hours
+          <Moon className="h-5 w-5 text-accent" /> {t("admin:quietHours.title")}
         </span>
       }
-      subtitle="When the configured window is active, the alert engine still records every alert in the history table (for audit) but skips dispatching to channels. This is independent of the per-agent quiet-hour setting — that one pauses telemetry pushes."
+      subtitle={t("admin:quietHours.subtitle")}
     >
       {settings.isLoading ? (
         <Skeleton className="h-64" />
@@ -90,6 +99,18 @@ function SettingsForm({
   initial: NotificationSettings;
   onSaved: () => void;
 }) {
+  const { t } = useT(["admin", "common"]);
+  const TZ_OPTIONS = useTzOptions();
+  const DAYS = useDays();
+
+  const tabItems: ReadonlyArray<TabItem<TabKey>> = useMemo(
+    () => [
+      { key: "schedule", label: t("admin:quietHours.tabs.schedule"), icon: Clock },
+      { key: "timeline", label: t("admin:quietHours.tabs.timeline"), icon: Activity },
+    ],
+    [t],
+  );
+
   const [tab, setTab] = useState<TabKey>("schedule");
   const [enabled, setEnabled] = useState(initial.quiet_enabled);
   const [start, setStart] = useState(initial.quiet_start);
@@ -121,11 +142,14 @@ function SettingsForm({
       });
     },
     onSuccess: () => {
-      setMsg({ kind: "ok", text: "Quiet hours saved." });
+      setMsg({ kind: "ok", text: t("admin:quietHours.window.saved") });
       onSaved();
     },
     onError: (err) =>
-      setMsg({ kind: "err", text: err instanceof ApiError ? err.detail : "save failed" }),
+      setMsg({
+        kind: "err",
+        text: err instanceof ApiError ? err.detail : t("admin:quietHours.window.saveFailed"),
+      }),
   });
 
   function submit(e: FormEvent) {
@@ -140,14 +164,14 @@ function SettingsForm({
 
   // Tz dropdown should always include the currently saved value, even if it
   // was set to something outside our short curated list (e.g. via API).
-  const tzOptions = TZ_OPTIONS.some((t) => t.value === tz)
+  const tzOptions = TZ_OPTIONS.some((tt) => tt.value === tz)
     ? TZ_OPTIONS
     : [{ value: tz, label: tz }, ...TZ_OPTIONS];
 
   return (
     <div className="space-y-4">
       <Tabs
-        items={TAB_ITEMS}
+        items={tabItems}
         value={tab}
         onChange={setTab}
         idPrefix="qh-tab"
@@ -163,11 +187,11 @@ function SettingsForm({
         >
           <Panel>
             <PanelHeader>
-              <h3 className="text-sm font-semibold">Window</h3>
+              <h3 className="text-sm font-semibold">{t("admin:quietHours.window.title")}</h3>
               {enabled ? (
-                <StatusPill status="info">enabled</StatusPill>
+                <StatusPill status="info">{t("admin:quietHours.status.enabled")}</StatusPill>
               ) : (
-                <StatusPill status="offline">disabled</StatusPill>
+                <StatusPill status="offline">{t("admin:quietHours.status.disabled")}</StatusPill>
               )}
             </PanelHeader>
             <PanelBody>
@@ -179,15 +203,15 @@ function SettingsForm({
                     onChange={(e) => setEnabled(e.target.checked)}
                   />
                   <span>
-                    Enable quiet hours
+                    {t("admin:quietHours.window.enable")}
                     <span className="ml-2 text-xs text-fg-subtle">
-                      (alerts triggered inside the window are recorded but not delivered)
+                      {t("admin:quietHours.window.enableHint")}
                     </span>
                   </span>
                 </label>
 
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <Field label="Start (HH:MM)">
+                  <Field label={t("admin:quietHours.window.start")}>
                     <TextInput
                       type="time"
                       required
@@ -196,7 +220,7 @@ function SettingsForm({
                       disabled={!enabled}
                     />
                   </Field>
-                  <Field label="End (HH:MM)">
+                  <Field label={t("admin:quietHours.window.end")}>
                     <TextInput
                       type="time"
                       required
@@ -206,8 +230,8 @@ function SettingsForm({
                     />
                   </Field>
                   <Field
-                    label="Timezone"
-                    hint="Window times are interpreted in this timezone. Unknown names fall back to UTC."
+                    label={t("admin:quietHours.window.timezone")}
+                    hint={t("admin:quietHours.window.timezoneHint")}
                   >
                     <select
                       value={tz}
@@ -227,7 +251,7 @@ function SettingsForm({
 
                 <fieldset className="space-y-2 rounded-md border border-border bg-panel-2 p-3 text-sm">
                   <legend className="px-1 text-xs uppercase tracking-wide text-fg-subtle">
-                    Active days
+                    {t("admin:quietHours.window.activeDays")}
                   </legend>
                   <div className="flex flex-wrap gap-3">
                     {DAYS.map((d) => (
@@ -243,7 +267,7 @@ function SettingsForm({
                     ))}
                   </div>
                   <p className="text-xs text-fg-subtle">
-                    Empty = quiet hours never trigger. The default is every day.
+                    {t("admin:quietHours.window.daysHint")}
                   </p>
                 </fieldset>
 
@@ -252,12 +276,18 @@ function SettingsForm({
 
                 <div className="flex items-center gap-3">
                   <Button type="submit" variant="primary" disabled={save.isPending}>
-                    {save.isPending ? "Saving…" : "Save quiet hours"}
+                    {save.isPending
+                      ? t("common:actions.saving")
+                      : t("admin:quietHours.window.save")}
                   </Button>
                   {initial.updated_at && (
                     <span className="text-xs text-fg-subtle">
-                      Last updated {new Date(initial.updated_at).toLocaleString()}
-                      {initial.updated_by ? ` by ${initial.updated_by}` : ""}
+                      {t("admin:quietHours.window.lastUpdated", {
+                        when: new Date(initial.updated_at).toLocaleString(),
+                      })}
+                      {initial.updated_by
+                        ? t("admin:quietHours.window.lastUpdatedBy", { user: initial.updated_by })
+                        : ""}
                     </span>
                   )}
                 </div>
@@ -382,6 +412,8 @@ function TimelinePanel({
   days: number[];
   tz: string;
 }) {
+  const { t } = useT(["admin"]);
+  const DAYS = useDays();
   const startH = parseHHMM(start);
   const endH = parseHHMM(end);
 
@@ -393,7 +425,7 @@ function TimelinePanel({
         ...d,
         ranges: rangesForDay(enabled, days, startH, endH, d.value),
       })),
-    [enabled, days, startH, endH],
+    [enabled, days, startH, endH, DAYS],
   );
 
   // "Test now" preview state. The snapshot is stable until the user clicks
@@ -433,11 +465,11 @@ function TimelinePanel({
   return (
     <Panel>
       <PanelHeader>
-        <h3 className="text-sm font-semibold">Timeline</h3>
+        <h3 className="text-sm font-semibold">{t("admin:quietHours.timeline.title")}</h3>
         {enabled ? (
-          <StatusPill status="info">live</StatusPill>
+          <StatusPill status="info">{t("admin:quietHours.status.live")}</StatusPill>
         ) : (
-          <StatusPill status="offline">disabled</StatusPill>
+          <StatusPill status="offline">{t("admin:quietHours.status.disabled")}</StatusPill>
         )}
       </PanelHeader>
       <PanelBody className="space-y-3">
@@ -446,7 +478,7 @@ function TimelinePanel({
             viewBox={`0 0 ${VB_W} ${VB_H}`}
             preserveAspectRatio="none"
             role="img"
-            aria-label="Quiet hours weekly schedule"
+            aria-label={t("admin:quietHours.timeline.ariaLabel")}
             className="block h-[180px] w-full min-w-[420px]"
           >
             {/* Hour ticks header */}
@@ -530,14 +562,15 @@ function TimelinePanel({
         <div className="flex flex-wrap items-center gap-3 text-xs text-fg-subtle">
           <span className="inline-flex items-center gap-1.5">
             <span className="inline-block h-3 w-3 rounded-sm bg-accent/40 ring-1 ring-inset ring-accent/30" />
-            quiet window
+            {t("admin:quietHours.timeline.legendQuiet")}
           </span>
           <span className="inline-flex items-center gap-1.5">
             <span className="inline-block h-3 w-3 rounded-sm bg-panel-2 ring-1 ring-inset ring-border" />
-            delivering
+            {t("admin:quietHours.timeline.legendDelivering")}
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="inline-block h-3 w-px bg-accent" /> now ({tz})
+            <span className="inline-block h-3 w-px bg-accent" />{" "}
+            {t("admin:quietHours.timeline.legendNow", { tz })}
           </span>
         </div>
 
@@ -548,29 +581,39 @@ function TimelinePanel({
             disabled={!enabled}
             title={
               !enabled
-                ? "Enable quiet hours to evaluate the window."
-                : "Evaluate the current settings against the live clock."
+                ? t("admin:quietHours.timeline.testNowHintDisabled")
+                : t("admin:quietHours.timeline.testNowHintReady")
             }
           >
             <PlayCircle className="h-3.5 w-3.5" />
-            Test now
+            {t("admin:quietHours.timeline.testNow")}
           </Button>
           {previewQuiet === null ? (
             <span className="text-xs text-fg-subtle">
-              Click <span className="font-medium text-fg">Test now</span> to preview whether the current moment is muted.
+              {t("admin:quietHours.timeline.previewHint")}
+              <span className="font-medium text-fg">
+                {t("admin:quietHours.timeline.previewHintAction")}
+              </span>
+              {t("admin:quietHours.timeline.previewHintTail")}
             </span>
           ) : previewQuiet ? (
             <span className="inline-flex flex-wrap items-center gap-2 text-sm">
-              <StatusPill status="info">muted</StatusPill>
+              <StatusPill status="info">{t("admin:quietHours.timeline.muted")}</StatusPill>
               <span className="text-fg-muted">
-                Right now ({previewAt!.toLocaleString()} · {tz}) falls inside the quiet window — channels would be skipped.
+                {t("admin:quietHours.timeline.mutedMsg", {
+                  when: previewAt!.toLocaleString(),
+                  tz,
+                })}
               </span>
             </span>
           ) : (
             <span className="inline-flex flex-wrap items-center gap-2 text-sm">
-              <StatusPill status="ok">delivering</StatusPill>
+              <StatusPill status="ok">{t("admin:quietHours.timeline.delivering")}</StatusPill>
               <span className="text-fg-muted">
-                Right now ({previewAt!.toLocaleString()} · {tz}) is outside the quiet window — alerts would dispatch.
+                {t("admin:quietHours.timeline.deliveringMsg", {
+                  when: previewAt!.toLocaleString(),
+                  tz,
+                })}
               </span>
             </span>
           )}

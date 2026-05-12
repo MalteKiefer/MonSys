@@ -682,6 +682,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/auth/me/language": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set the caller's UI language preference */
+        put: operations["auth-me-set-language"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/auth/me/passkeys": {
         parameters: {
             query?: never;
@@ -1709,6 +1726,11 @@ export interface components {
             has_avatar: boolean;
             /** Format: uuid */
             readonly id: string;
+            /**
+             * @description UI language preference; 'auto' follows the browser/system locale
+             * @enum {string}
+             */
+            language: "auto" | "en" | "de";
             must_enroll?: boolean;
             /** Format: int64 */
             passkey_count: number;
@@ -2844,6 +2866,19 @@ export interface components {
             firewalls?: components["schemas"]["FirewallStatus"][] | null;
             /** Format: date-time */
             time: string;
+        };
+        SetLanguageRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://mon.kiefer-networks.de/schemas/SetLanguageRequest.json
+             */
+            readonly $schema?: string;
+            /**
+             * @description new language preference
+             * @enum {string}
+             */
+            language: "auto" | "en" | "de";
         };
         SmtpSettings: {
             /**
@@ -4675,6 +4710,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["RequestEmailChangeRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmptyOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "auth-me-set-language": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetLanguageRequest"];
             };
         };
         responses: {

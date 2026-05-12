@@ -12,6 +12,7 @@ import {
   THead,
   Table,
 } from "../../components/ui";
+import { useT } from "../../i18n/useT";
 import { VMRow } from "../../lib/types";
 
 import { useHostDetail } from "./HostLayout";
@@ -20,12 +21,13 @@ import { useHostDetail } from "./HostLayout";
 // the host treats as full VMs rather than application workloads).
 export function VMs() {
   const { detail } = useHostDetail();
+  const { t } = useT(["hostDetail", "common"]);
   return (
     <Panel>
       <PanelHeader>
         <div className="flex items-center gap-2">
           <Boxes className="h-4 w-4 text-fg-muted" />
-          <h3 className="text-sm font-semibold">Virtual machines / system LXC ({detail.vms.length})</h3>
+          <h3 className="text-sm font-semibold">{t("hostDetail:vms.title", { count: detail.vms.length })}</h3>
         </div>
       </PanelHeader>
       <PanelBody className="p-0 overflow-x-auto"><VMsTable rows={detail.vms} /></PanelBody>
@@ -34,11 +36,12 @@ export function VMs() {
 }
 
 function VMsTable({ rows }: { rows: VMRow[] }) {
-  if (rows.length === 0) return <Empty>No VMs detected.</Empty>;
+  const { t } = useT(["hostDetail", "common"]);
+  if (rows.length === 0) return <Empty>{t("hostDetail:vms.noVMs")}</Empty>;
   return (
     <Table>
       <THead>
-        <tr><TH>Kind</TH><TH>Name</TH><TH>State</TH><TH>vCPU</TH><TH>Memory</TH><TH>Autostart</TH></tr>
+        <tr><TH>{t("hostDetail:vms.colKind")}</TH><TH>{t("hostDetail:vms.colName")}</TH><TH>{t("hostDetail:vms.colState")}</TH><TH>{t("hostDetail:vms.colVcpu")}</TH><TH>{t("hostDetail:vms.colMemory")}</TH><TH>{t("hostDetail:vms.colAutostart")}</TH></tr>
       </THead>
       <TBody>
         {rows.map((v) => (
@@ -48,7 +51,7 @@ function VMsTable({ rows }: { rows: VMRow[] }) {
             <TD className="text-fg-muted">{v.state}</TD>
             <TD className="tabular-nums text-fg-muted">{v.vcpu}</TD>
             <TD className="tabular-nums text-fg-muted">{formatBytes(v.mem_bytes)}</TD>
-            <TD className="text-fg-muted">{v.autostart ? "yes" : "no"}</TD>
+            <TD className="text-fg-muted">{v.autostart ? t("hostDetail:vms.yes") : t("hostDetail:vms.no")}</TD>
           </tr>
         ))}
       </TBody>

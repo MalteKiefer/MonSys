@@ -2,12 +2,14 @@ import { Moon, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { applyTheme, persistTheme, resolveInitialTheme, Theme } from "../lib/theme";
+import { useT } from "../i18n/useT";
 
 // Small icon button that flips the app palette between dark and light.
 // State lives on <html class="dark">; this component owns its mirror copy
 // only so the rendered icon stays in sync. localStorage persistence is
 // handled in lib/theme so the early bootstrap and the toggle agree.
 export function ThemeToggle() {
+  const { t } = useT("nav");
   const [theme, setTheme] = useState<Theme>(() => resolveInitialTheme());
 
   useEffect(() => {
@@ -21,7 +23,7 @@ export function ThemeToggle() {
   }
 
   const isDark = theme === "dark";
-  const label = isDark ? "Switch to light theme" : "Switch to dark theme";
+  const label = isDark ? t("actions.switch_to_light") : t("actions.switch_to_dark");
   const Icon = isDark ? Sun : Moon;
 
   return (

@@ -3,6 +3,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { Button, ErrorBox, Field, Panel, TextInput } from "../components/ui";
+import { useT } from "../i18n/useT";
 import { api, ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { LoginResponse } from "../lib/types";
@@ -15,6 +16,7 @@ import {
 type Stage = { kind: "password" } | { kind: "totp"; challengeToken: string };
 
 export function Login() {
+  const { t } = useT("auth");
   const navigate = useNavigate();
   const setSession = useAuth((s) => s.setSession);
   const [email, setEmail] = useState("");
@@ -55,20 +57,18 @@ export function Login() {
         body: JSON.stringify({ email, password }),
       });
       if (resp.needs_passkey) {
-        setError(
-          "Administrator requires a passkey. Please sign in with your passkey.",
-        );
+        setError(t("login.error_needs_passkey"));
         return;
       }
       if (resp.needs_totp && resp.challenge_token) {
         setStage({ kind: "totp", challengeToken: resp.challenge_token });
         return;
       }
-      if (!resp.token) throw new Error("server did not return a session");
+      if (!resp.token) throw new Error(t("login.error_no_session"));
       setSession(resp.token, resp.user);
       navigate("/", { replace: true });
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "network error");
+      setError(err instanceof ApiError ? err.detail : t("login.error_network"));
     } finally {
       setSubmitting(false);
     }
@@ -85,11 +85,11 @@ export function Login() {
         skipAuth: true,
         body: JSON.stringify({ challenge_token: stage.challengeToken, code }),
       });
-      if (!resp.token) throw new Error("missing token");
+      if (!resp.token) throw new Error(t("login.totp_missing_token"));
       setSession(resp.token, resp.user);
       navigate("/", { replace: true });
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "network error");
+      setError(err instanceof ApiError ? err.detail : t("login.error_network"));
     } finally {
       setSubmitting(false);
     }
@@ -106,27 +106,27 @@ export function Login() {
               <KeyRound className="h-5 w-5 text-accent" />
             )}
             <h1 className="text-lg font-semibold">
-              {stage.kind === "password" ? "Sign in" : "Two-factor"}
+              {stage.kind === "password" ? t("login.title") : t("login.totp_title")}
             </h1>
           </div>
 
           {stage.kind === "password" ? (
             <form onSubmit={handlePassword} className="space-y-4">
-              <Field label="Email">
+              <Field label={t("login.email")}>
                 <TextInput type="email" autoComplete="username webauthn" required value={email} onChange={(e) => setEmail(e.target.value)} />
               </Field>
-              <Field label="Password">
+              <Field label={t("login.password")}>
                 <TextInput type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
               </Field>
               {error && <ErrorBox>{error}</ErrorBox>}
               <Button type="submit" variant="primary" disabled={submitting} className="w-full">
-                {submitting ? "Signing in…" : "Sign in"}
+                {submitting ? t("login.submitting") : t("login.submit")}
               </Button>
               {webauthnSupported() && (
                 <>
                   <div className="my-3 flex items-center gap-2 text-xs text-fg-muted">
                     <span className="h-px flex-1 bg-border" />
-                    <span>or</span>
+                    <span>{t("login.or")}</span>
                     <span className="h-px flex-1 bg-border" />
                   </div>
                   <Button
@@ -142,14 +142,14 @@ export function Login() {
                         // some browsers raise when both calls are pending.
                         abortRef.current?.abort();
                         const resp = await loginWithPasskey();
-                        if (!resp.token) throw new Error("server did not return a session");
+                        if (!resp.token) throw new Error(t("login.error_no_session"));
                         setSession(resp.token, resp.user);
                         navigate("/", { replace: true });
                       } catch (err: any) {
                         if (err?.name === "NotAllowedError") {
                           // User cancelled — silent.
                         } else {
-                          setError(err?.message ?? "passkey login failed");
+                          setError(err?.message ?? t("login.error_passkey_failed"));
                         }
                       } finally {
                         setSubmitting(false);
@@ -158,7 +158,7 @@ export function Login() {
                     className="w-full"
                   >
                     <Fingerprint className="mr-2 inline h-4 w-4" />
-                    Mit Passkey anmelden
+                    {t("login.passkey_button")}
                   </Button>
                 </>
               )}
@@ -166,9 +166,9 @@ export function Login() {
           ) : (
             <form onSubmit={handleTOTP} className="space-y-4">
               <p className="text-sm text-fg-muted">
-                Enter the 6-digit code from your authenticator (or a backup code).
+                {t("login.totp_hint")}
               </p>
-              <Field label="Code">
+              <Field label={t("login.totp_code")}>
                 <TextInput
                   type="text"
                   autoComplete="one-time-code"
@@ -180,7 +180,7 @@ export function Login() {
               </Field>
               {error && <ErrorBox>{error}</ErrorBox>}
               <Button type="submit" variant="primary" disabled={submitting} className="w-full">
-                {submitting ? "Verifying…" : "Verify"}
+                {submitting ? t("login.totp_verifying") : t("login.totp_verify")}
               </Button>
               <button
                 type="button"
@@ -191,7 +191,7 @@ export function Login() {
                 }}
                 className="block w-full text-center text-xs text-fg-muted hover:text-fg"
               >
-                Cancel
+                {t("login.totp_cancel")}
               </button>
             </form>
           )}

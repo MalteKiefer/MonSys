@@ -1,0 +1,790 @@
+{
+  "mail": {
+    "title": "Mail (SMTP)",
+    "subtitle": "One global SMTP transport. Every email-typed notification channel reuses these settings — users only choose a recipient address.",
+    "tabs": {
+      "server": "SMTP server",
+      "test": "Send test",
+      "status": "Status"
+    },
+    "steps": {
+      "transport": "Transport",
+      "identity": "Identity",
+      "stepLabel": "{{index}}. {{label}}"
+    },
+    "wizard": {
+      "panelTitle": "SMTP transport",
+      "fields": {
+        "host": "Host",
+        "port": "Port",
+        "username": "Username",
+        "usernameHint": "Optional, only set if your relay needs auth.",
+        "password": "Password",
+        "passwordKeep": "Password (leave blank to keep stored)",
+        "fromAddress": "From address",
+        "wipePassword": "Wipe stored password"
+      },
+      "security": {
+        "legend": "Security mode",
+        "starttls": "STARTTLS (port 587)",
+        "tls": "Implicit TLS (port 465)",
+        "none": "Insecure (no TLS)",
+        "skipVerify": "Skip TLS certificate verification",
+        "skipVerifyWarn": "(dangerous; only for self-signed dev mailservers)",
+        "hintTls": "Implicit TLS — full TLS handshake on connect (typically port 465).",
+        "hintStarttls": "STARTTLS — upgrade plain connection to TLS (typically port 587).",
+        "hintNone": "Insecure — clear-text SMTP. Only acceptable for in-cluster relays."
+      },
+      "testConn": {
+        "button": "Test connection",
+        "testing": "Testing…",
+        "hintNoHost": "Save settings once before running a transport test.",
+        "hintNoEmail": "Your account has no email on file.",
+        "hintReady": "Send a probe mail to {{email}} using the saved transport.",
+        "note": "Uses the persisted transport. Save first if this is the initial setup."
+      },
+      "review": {
+        "heading": "Review",
+        "host": "host",
+        "port": "port",
+        "security": "security",
+        "skipVerify": "skip-verify"
+      },
+      "buttons": {
+        "next": "Next: Identity",
+        "save": "Save",
+        "saving": "Saving…"
+      },
+      "validation": {
+        "hostRequired": "Host is required.",
+        "portRange": "Port must be between 1 and 65535.",
+        "fromRequired": "From-address is required.",
+        "fromEmail": "From-address must look like an email."
+      },
+      "confirmWipe": "Wipe the stored SMTP password? Outbound mail will fail until you set a new one.",
+      "saved": "Settings saved.",
+      "saveFailed": "save failed",
+      "lastUpdated": "Last updated {{when}}",
+      "lastUpdatedBy": " by {{user}}"
+    },
+    "test": {
+      "title": "Send test message",
+      "recipient": "Recipient",
+      "send": "Send test mail",
+      "sending": "Sending…",
+      "lockedHint": "Configure and save the SMTP server first. Once a host is on file the test form unlocks here so you can send a one-off probe message to any address.",
+      "dispatched": "Test mail dispatched to {{to}}.",
+      "transportDispatched": "Connection OK — test mail dispatched to {{email}}.",
+      "failed": "test failed",
+      "transportFailed": "transport test failed",
+      "recentResults": "Recent results",
+      "outcomeOk": "ok",
+      "outcomeFail": "fail"
+    },
+    "status": {
+      "title": "Mail status",
+      "ready": "ready",
+      "notConfigured": "not configured",
+      "lastTestOk": "last test OK",
+      "lastTestFailed": "last test failed",
+      "fields": {
+        "host": "host",
+        "port": "port",
+        "security": "security",
+        "from": "from",
+        "password": "password",
+        "skipVerify": "skip-verify",
+        "updated": "updated"
+      },
+      "stored": "stored",
+      "yes": "yes",
+      "no": "no",
+      "lastTestHeading": "Last test ({{source}})",
+      "sourceTransport": "transport probe",
+      "sourceSendTest": "send-test",
+      "troubleshooting": {
+        "heading": "Troubleshooting",
+        "connectionLabel": "Connection refused / timeout",
+        "connection": " — check host, port, and that the relay accepts inbound from this network.",
+        "tlsLabel": "TLS handshake fails",
+        "tlsLead": " — switch between STARTTLS (587) and implicit TLS (465); only enable ",
+        "tlsEm": "skip verify",
+        "tlsTail": " for self-signed dev relays.",
+        "authLabel": "535 auth rejected",
+        "auth": " — verify username/password; re-save with the password field filled to overwrite.",
+        "senderLabel": "550 sender rejected",
+        "sender": " — the From-address domain must be one your relay is willing to forward.",
+        "probeLead": "Run a probe from the ",
+        "probeTab": "Send test",
+        "probeTail": " tab to capture the live error returned by the server."
+      }
+    }
+  },
+  "quietHours": {
+    "title": "Quiet hours",
+    "subtitle": "When the configured window is active, the alert engine still records every alert in the history table (for audit) but skips dispatching to channels. This is independent of the per-agent quiet-hour setting — that one pauses telemetry pushes.",
+    "tabs": {
+      "schedule": "Schedule",
+      "timeline": "Timeline"
+    },
+    "tz": {
+      "utc": "UTC (server-local default)"
+    },
+    "days": {
+      "mon": "Mon",
+      "tue": "Tue",
+      "wed": "Wed",
+      "thu": "Thu",
+      "fri": "Fri",
+      "sat": "Sat",
+      "sun": "Sun"
+    },
+    "window": {
+      "title": "Window",
+      "enable": "Enable quiet hours",
+      "enableHint": "(alerts triggered inside the window are recorded but not delivered)",
+      "start": "Start (HH:MM)",
+      "end": "End (HH:MM)",
+      "timezone": "Timezone",
+      "timezoneHint": "Window times are interpreted in this timezone. Unknown names fall back to UTC.",
+      "activeDays": "Active days",
+      "daysHint": "Empty = quiet hours never trigger. The default is every day.",
+      "save": "Save quiet hours",
+      "saved": "Quiet hours saved.",
+      "saveFailed": "save failed",
+      "lastUpdated": "Last updated {{when}}",
+      "lastUpdatedBy": " by {{user}}"
+    },
+    "status": {
+      "enabled": "enabled",
+      "disabled": "disabled",
+      "live": "live"
+    },
+    "timeline": {
+      "title": "Timeline",
+      "ariaLabel": "Quiet hours weekly schedule",
+      "legendQuiet": "quiet window",
+      "legendDelivering": "delivering",
+      "legendNow": "now ({{tz}})",
+      "testNow": "Test now",
+      "testNowHintDisabled": "Enable quiet hours to evaluate the window.",
+      "testNowHintReady": "Evaluate the current settings against the live clock.",
+      "previewHint": "Click ",
+      "previewHintAction": "Test now",
+      "previewHintTail": " to preview whether the current moment is muted.",
+      "muted": "muted",
+      "mutedMsg": "Right now ({{when}} · {{tz}}) falls inside the quiet window — channels would be skipped.",
+      "delivering": "delivering",
+      "deliveringMsg": "Right now ({{when}} · {{tz}}) is outside the quiet window — alerts would dispatch."
+    }
+  },
+  "enrollments": {
+    "title": "Agent enrollments",
+    "subtitleLead": "One-shot tokens for ",
+    "subtitleTail": " — pending tokens can be revoked.",
+    "tabs": {
+      "active": "Active tokens",
+      "history": "History",
+      "create": "Create new"
+    },
+    "lifecycle": {
+      "consumed": "consumed",
+      "expired": "expired",
+      "pending": "pending"
+    },
+    "active": {
+      "title": "Active tokens",
+      "countPending": "{{count}} pending",
+      "columns": {
+        "created": "Created",
+        "label": "Label",
+        "description": "Description",
+        "tags": "Tags",
+        "groups": "Groups",
+        "createdBy": "Created by",
+        "expires": "Expires",
+        "actions": "Actions"
+      },
+      "tableLabel": "Active enrollment tokens",
+      "empty": "No active enrollment tokens.",
+      "emptyHint": "Mint a new one from the Create tab; tokens auto-expire after their TTL (max 24h).",
+      "copyId": "Copy ID",
+      "copyIdAria": "Copy enrollment ID",
+      "copied": "Copied",
+      "revoke": "Revoke",
+      "revoking": "Revoking…",
+      "confirmRevoke": "Revoke this enrollment?"
+    },
+    "history": {
+      "title": "History",
+      "countEntries": "{{count}} entries",
+      "columns": {
+        "created": "Created",
+        "label": "Label",
+        "tags": "Tags",
+        "groups": "Groups",
+        "status": "Status",
+        "usedBy": "Used by",
+        "createdBy": "Created by",
+        "expires": "Expires"
+      },
+      "tableLabel": "Consumed enrollment tokens",
+      "empty": "No consumed or expired tokens in the last 24 hours.",
+      "emptyHint": "Issued tokens auto-expire after their TTL; the server prunes records older than 24h."
+    },
+    "create": {
+      "title": "Create new bootstrap token",
+      "intro": "Generates a single-use enrollment token. The new agent claims it on its first check-in and inherits the label, tags, and groups you set here.",
+      "fields": {
+        "label": "Display label",
+        "labelHint": "Optional. Shown in the host list before the first hostname is reported.",
+        "labelPh": "e.g. db-replica-3",
+        "ttl": "Token TTL (minutes)",
+        "ttlHint": "Min 5, max 1440 (24h). Default 30.",
+        "description": "Description",
+        "descriptionHint": "Optional, max 200 chars. ({{count}}/200)",
+        "descriptionPh": "Why this host is being added",
+        "tags": "Default tags (comma-separated)",
+        "tagsExisting": "Existing: {{list}}",
+        "tagsNone": "No tags defined yet.",
+        "tagsPh": "prod, db",
+        "groups": "Default groups (Ctrl/⌘ to multi-select)"
+      },
+      "submit": "Generate install command",
+      "submitting": "Generating…",
+      "ttlError": "TTL must be between 5 and 1440 minutes.",
+      "success": "Token generated. Shown once — copy the install command now.",
+      "installLabel": "Install command",
+      "installHint": "Run on the new host as root.",
+      "copyCommand": "Copy command",
+      "copyCommandAria": "Copy install command",
+      "copyUrl": "Copy URL",
+      "copyUrlAria": "Copy install URL",
+      "copied": "Copied",
+      "mintAnother": "Mint another",
+      "viewActive": "View active tokens",
+      "failed": "failed"
+    }
+  },
+  "groups": {
+    "headerTitle": "Host groups",
+    "headerSubtitleLead": "Group hosts by purpose (e.g. ",
+    "headerSubtitleExample": "prod-web",
+    "headerSubtitleTail": ") and reference them from monitors.",
+    "tabs": {
+      "list": "Groups",
+      "create": "Create new"
+    },
+    "list": {
+      "title": "All groups",
+      "empty": "No groups yet.",
+      "columns": {
+        "name": "Name",
+        "description": "Description",
+        "members": "Members",
+        "actions": "Actions"
+      },
+      "membersBtn": "Members",
+      "editBtn": "Edit",
+      "confirmDelete": "Delete group \"{{name}}\"?"
+    },
+    "form": {
+      "newTitle": "New group",
+      "editTitle": "Edit {{name}}",
+      "name": "Name",
+      "description": "Description (optional)",
+      "save": "Save",
+      "saving": "Saving…",
+      "create": "Create",
+      "cancel": "Cancel",
+      "failed": "failed"
+    },
+    "members": {
+      "title": "{{name}} — members",
+      "selectedOf": "{{selected}} of {{total}} hosts selected",
+      "save": "Save",
+      "saving": "Saving…",
+      "cancel": "Cancel",
+      "columns": {
+        "host": "Host",
+        "distro": "Distro",
+        "tags": "Tags"
+      }
+    },
+    "create": {
+      "panelTitle": "New group",
+      "countSelected_one": "{{count}} host selected",
+      "countSelected_other": "{{count}} hosts selected",
+      "namePh": "prod-web",
+      "descriptionPh": "Production web tier",
+      "filterByTag": "Filter hosts by tag",
+      "matchAny": "match any",
+      "matchAll": "match all",
+      "noTags": "No tags defined on any host yet.",
+      "membersHeader": "Members ({{visibleSelected}} of {{visible}} visible selected)",
+      "searchPh": "Search hostname or tag…",
+      "selectVisible": "Select visible",
+      "clearVisible": "Clear visible",
+      "noMatches": "No hosts match the current filter.",
+      "submit": "Create group",
+      "submitting": "Creating…",
+      "failed": "failed",
+      "columns": {
+        "host": "Host",
+        "distro": "Distro",
+        "tags": "Tags"
+      }
+    }
+  },
+  "users": {
+    "page": {
+      "title": "Users",
+      "subtitle": "Create, lock, reset password, reset 2FA.",
+      "breadcrumb_admin": "Admin",
+      "breadcrumb_users": "Users"
+    },
+    "tabs": {
+      "list": "Users",
+      "invites": "Invites"
+    },
+    "list": {
+      "panel_title": "All users",
+      "search_placeholder": "search email…",
+      "role_filter_aria": "Role filter",
+      "status_filter_aria": "Status filter",
+      "role_all": "All roles",
+      "role_admin": "admin",
+      "role_user": "user",
+      "status_all": "All statuses",
+      "status_active": "active",
+      "status_disabled": "disabled",
+      "count": "{{visible}} of {{total}}",
+      "selected": "{{count}} selected",
+      "enable_selected": "Enable selected",
+      "disable_selected": "Disable selected",
+      "clear": "clear",
+      "select_all_aria": "Select all visible",
+      "select_one_aria": "Select {{email}}",
+      "actions_aria": "Actions for {{email}}",
+      "col_email": "Email",
+      "col_role": "Role",
+      "col_status": "Status",
+      "col_2fa": "2FA",
+      "col_last_login": "Last login",
+      "col_actions": "Actions",
+      "totp_yes": "yes",
+      "totp_none": "—",
+      "last_login_never": "never",
+      "status_locked": "locked",
+      "no_match": "No users match the current filters.",
+      "bulk_noop": "No selected users need to be {{state}}.",
+      "bulk_noop_disabled": "disabled",
+      "bulk_noop_enabled": "enabled",
+      "bulk_confirm": "{{verb}} {{count}} user{{plural}}?",
+      "bulk_verb_disable": "Disable",
+      "bulk_verb_enable": "Enable"
+    },
+    "invites": {
+      "panel_title": "Pending invites",
+      "empty": "Invite-token listing is not yet exposed by the API. Invites are currently issued inline when creating a user (Users tab) — the one-time link is shown once and can be copied from the success banner. A dedicated endpoint to list, re-send, and revoke pending invites is planned."
+    },
+    "create": {
+      "panel_title": "Create user",
+      "email_label": "Email",
+      "role_label": "Role",
+      "role_user": "user",
+      "role_admin": "admin",
+      "password_label": "Password (leave empty to invite)",
+      "send_invite_label": "Send invite email (requires SMTP configured under Admin → Mail)",
+      "submit": "Create user",
+      "submitting": "Creating…",
+      "invite_mailed": "Invite mailed to {{email}}.",
+      "created_with_password": "User {{email}} created.",
+      "created_with_link": "User {{email}} created. Copy the invite link below — it is shown only once.",
+      "invite_link_label": "Invite link (one-time, expires in 7 days):",
+      "generic_failure": "failed"
+    },
+    "actions": {
+      "reset_password": "Reset password",
+      "reset_2fa": "Reset 2FA / MFA",
+      "reset_2fa_disabled": "This user has no TOTP enrollment to reset.",
+      "end_sessions": "End all sessions",
+      "end_sessions_self_disabled": "Use the logout button for your own session.",
+      "lock": "Lock",
+      "unlock": "Unlock",
+      "lock_self_disabled": "You can't lock yourself out.",
+      "lock_last_admin_disabled": "This is the only enabled admin — promote or unlock another first.",
+      "delete": "Delete",
+      "delete_self_disabled": "You can't delete your own account.",
+      "delete_last_admin_disabled": "This is the only enabled admin — can't delete the last admin."
+    },
+    "confirm": {
+      "reset_2fa": "Wipes the user's TOTP enrollment. They will need to re-enroll on next login. Continue?",
+      "revoke_sessions": "Force {{email}} to re-authenticate immediately on every device?",
+      "delete": "Delete {{email}}? This cannot be undone."
+    },
+    "toast": {
+      "reset_link_sent": "Password reset link sent to {{email}}.",
+      "reset_link_issued": "Reset link issued for {{email}}.",
+      "user_deleted": "User {{email}} deleted.",
+      "twofa_reset": "2FA reset for {{email}}.",
+      "sessions_revoked": "All sessions revoked for {{email}}.",
+      "locked": "{{email}} locked.",
+      "unlocked": "{{email}} unlocked."
+    },
+    "reset_dialog": {
+      "warning": "SMTP not configured or send failed — hand this to {{email}} out-of-band.",
+      "copy": "Copy",
+      "copied": "Copied",
+      "dismiss": "Dismiss",
+      "clipboard_fallback_prompt": "Copy the reset link:"
+    }
+  },
+  "security": {
+    "page": {
+      "title": "Security",
+      "subtitle": "Password requirements, authentication enforcement, and active session controls."
+    },
+    "tabs": {
+      "password": "Password policy",
+      "auth": "Authentication",
+      "sessions": "Active sessions"
+    },
+    "password": {
+      "panel_title": "Password policy",
+      "min_length": "Minimum length",
+      "require_upper": "Uppercase letter",
+      "require_lower": "Lowercase letter",
+      "require_digit": "Digit",
+      "require_symbol": "Symbol",
+      "max_age": "Max age (days, 0 = no expiry)",
+      "submit": "Save policy",
+      "submitting": "Saving…",
+      "saved": "Policy updated.",
+      "generic_failure": "failed"
+    },
+    "auth": {
+      "panel_title": "Force mode & session limits",
+      "force_mode_label": "Force mode",
+      "force_off": "Off (no enforcement)",
+      "force_2fa_any": "Passkey OR TOTP for everyone",
+      "force_passkey_required": "Passkey required for everyone",
+      "grace_label": "Grace period (days)",
+      "grace_0": "0 — immediate",
+      "grace_1": "1 day",
+      "grace_7": "7 days",
+      "grace_30": "30 days",
+      "max_session_label": "Max session (hours, 1–720)",
+      "idle_timeout_label": "Idle timeout (minutes, 0–10080)",
+      "idle_timeout_hint": "0 = off",
+      "escalation_warning": "Warning: all users without a passkey will be locked out after the grace period. Make sure at least you have a passkey set up.",
+      "submit": "Save",
+      "submitting": "Saving…",
+      "saved": "Force mode updated.",
+      "generic_failure": "failed",
+      "invalid_force_mode": "Invalid force mode.",
+      "invalid_grace": "Grace period must be 0, 1, 7 or 30 days.",
+      "invalid_max_session": "Max session must be between 1 and 720 hours.",
+      "invalid_idle_timeout": "Idle timeout must be between 0 and 10080 minutes."
+    },
+    "sessions": {
+      "panel_title": "Active sessions",
+      "description": "Invalidates all active sessions of all users. Your own session is preserved; everyone else is logged out immediately and must sign in again. Useful after a policy tightening or a suspected token leak.",
+      "danger": "This action cannot be undone. Make sure you know what you're doing.",
+      "revoke_button": "Revoke all sessions",
+      "revoking": "Revoking…",
+      "revoke_confirm": "All active sessions (except your own) will be invalidated. Continue?",
+      "revoked_toast": "Revoked {{count}} sessions (your own session was preserved)"
+    }
+  },
+  "agentConfig": {
+    "title": "Agent configuration",
+    "subtitle": "Server-managed knobs the agent applies after first start. Host overrides take precedence over group overrides, group overrides over global. Missing keys fall back to the agent's compiled defaults.",
+    "tabs": {
+      "global": "Global defaults",
+      "groups": "Group overrides",
+      "hosts": "Host overrides",
+      "preview": "Preview"
+    },
+    "confirm": {
+      "delete_global": "Delete the global defaults row? Agent will fall back to compiled defaults until a new one is created.",
+      "delete_group": "Delete group override ({{target}})?",
+      "delete_host": "Delete host override ({{target}})?"
+    },
+    "global": {
+      "heading": "Global defaults",
+      "heading_hint": "— singleton row applied to every agent before group/host overrides",
+      "empty": "No global defaults set. The agent falls back to its compiled defaults.",
+      "pill_enabled": "enabled",
+      "pill_disabled": "disabled"
+    },
+    "scope": {
+      "group_title": "Group overrides",
+      "host_title": "Host overrides",
+      "group_subtitle": "Applied to every host in the group; merged after globals, before host overrides.",
+      "host_subtitle": "Applied to a single host; merged last, wins all collisions.",
+      "new_group": "New group",
+      "new_host": "New host",
+      "empty_group": "No group overrides yet.",
+      "empty_host": "No host overrides yet.",
+      "col_group": "Group",
+      "col_host": "Host",
+      "col_interval": "Interval",
+      "col_quiet_hours": "Quiet hours",
+      "col_description": "Description",
+      "col_enabled": "Enabled",
+      "col_actions": "Actions",
+      "pill_on": "on",
+      "pill_off": "off"
+    },
+    "preview": {
+      "heading": "Resolve merged config",
+      "pick_host_placeholder": "Pick a host…",
+      "preview_button": "Preview",
+      "intro": "Pick a host to see the exact config the agent will receive after merging the global defaults, any matching group overrides, and the host-specific override (if any). Each leaf is tagged with the layer that supplied it.",
+      "resolved_heading": "Resolved config preview · {{host}}",
+      "sources_merged": "Sources merged:",
+      "defaults_only": "(defaults only)",
+      "source_layers": "Source layers",
+      "no_matching_layers": "No matching layers — agent uses compiled defaults.",
+      "final_config": "Final config",
+      "origin_tags": "origin tags:",
+      "no_keys_set": "No keys set. Agent applies its compiled defaults verbatim.",
+      "highlight_footnote_pre": "Host-sourced fields are highlighted in ",
+      "highlight_footnote_accent": "accent",
+      "highlight_footnote_post": "; group / global tags appear next to each leaf.",
+      "layer_global": "global",
+      "layer_group_prefix": "group · ",
+      "layer_host_prefix": "host · "
+    },
+    "form": {
+      "edit_title": "Edit config",
+      "new_title": "New config",
+      "scope": "Scope",
+      "scope_global": "global (single row)",
+      "scope_group": "group",
+      "scope_host": "host",
+      "target": "Target",
+      "pick_target_placeholder": "— pick {{scope}} —",
+      "description": "Description (optional)",
+      "tick_rate": "Tick rate",
+      "interval_seconds": "Interval (seconds)",
+      "interval_hint": "Leave empty to inherit.",
+      "spool_buffer": "Spool buffer (MB)",
+      "spool_buffer_hint": "Leave empty to inherit.",
+      "packages": "Packages",
+      "pkg_enabled": "Enabled",
+      "pkg_inherit": "inherit",
+      "pkg_yes": "yes",
+      "pkg_no": "no",
+      "pkg_update_interval": "Update check interval",
+      "pkg_update_interval_hint": "e.g. 30m, 2h",
+      "pkg_full_snapshot": "Full snapshot interval",
+      "pkg_full_snapshot_hint": "e.g. 24h",
+      "quiet_hours": "Quiet hours",
+      "quiet_hours_pause": "Pause ingest during this window",
+      "quiet_hours_start": "Start (HH:MM, agent local)",
+      "quiet_hours_end": "End (HH:MM)",
+      "quiet_hours_empty": "Empty = every day.",
+      "row_enabled": "Row enabled",
+      "scope_requires_target": "scope={{scope}} requires a target",
+      "day_sun": "Sun",
+      "day_mon": "Mon",
+      "day_tue": "Tue",
+      "day_wed": "Wed",
+      "day_thu": "Thu",
+      "day_fri": "Fri",
+      "day_sat": "Sat"
+    }
+  },
+  "monitors": {
+    "title": "Monitors",
+    "subtitle": "Server-side periodic probes: cert expiry, DB reachability, HTTP, raw TCP.",
+    "tabs": {
+      "active": "Active monitors",
+      "create": "Create monitor",
+      "history": "Recent results"
+    },
+    "slide_over": {
+      "new_title": "New monitor",
+      "close_aria": "Close",
+      "close_panel_aria": "Close panel"
+    },
+    "active": {
+      "heading": "All monitors",
+      "total_count": "{{count}} total",
+      "create_button": "Create monitor",
+      "empty": "No monitors yet.",
+      "delete_confirm": "Delete monitor \"{{name}}\"?",
+      "col_type": "Type",
+      "col_name": "Name",
+      "col_target": "Target",
+      "col_interval": "Interval",
+      "col_status": "Status",
+      "col_latency": "Latency",
+      "col_last_detail": "Last detail",
+      "col_actions": "Actions"
+    },
+    "create": {
+      "heading": "New monitor",
+      "hint": "Pick a probe type — target syntax updates inline."
+    },
+    "history": {
+      "heading": "Recent results",
+      "subheading": "latest probe outcome per monitor",
+      "empty": "No monitor results yet.",
+      "fail_count": "{{count}} fail",
+      "warn_count": "{{count}} warn",
+      "unknown_count": "{{count}} unknown",
+      "ok_count": "{{count}} ok",
+      "col_status": "Status",
+      "col_name": "Name",
+      "col_type": "Type",
+      "col_target": "Target",
+      "col_latency": "Latency",
+      "col_detail": "Detail"
+    },
+    "detail": {
+      "type": "Type",
+      "status": "Status",
+      "interval": "Interval",
+      "latency": "Latency",
+      "target": "Target",
+      "last_detail": "Last detail",
+      "edit_heading": "Edit monitor"
+    },
+    "form": {
+      "type": "Type",
+      "name": "Name",
+      "target": "Target",
+      "interval_seconds": "Interval (seconds)",
+      "enabled": "Enabled",
+      "on": "On",
+      "tags_label": "Apply to tags (comma-separated)",
+      "tags_existing_hint": "Existing: {{tags}}",
+      "tags_none_hint": "No tags defined yet.",
+      "tags_placeholder": "prod, db",
+      "groups_label": "Apply to groups (Ctrl/⌘ to multi-select)",
+      "failed": "failed"
+    },
+    "target_hint": {
+      "cert": "host:port (e.g. example.com:443)",
+      "postgres": "DSN, e.g. postgres://user:pw@host:5432/db?sslmode=require",
+      "mysql": "host:port (handshake-only, no auth)",
+      "mongodb": "host:port (hello check)",
+      "http": "URL, e.g. https://example.com/health",
+      "tcp": "host:port"
+    },
+    "type_fields": {
+      "warn_days": "Warn (days)",
+      "fail_days": "Fail (days)",
+      "server_name": "SNI server name (optional)",
+      "expected_status": "Expected status",
+      "method": "Method"
+    },
+    "results": {
+      "heading": "Results",
+      "empty_range": "No results in this range.",
+      "samples": "Samples",
+      "ok": "OK",
+      "warn": "Warn",
+      "fail": "Fail",
+      "uptime": "Effective uptime in window: {{pct}} %",
+      "latency_series": "latency (ms)"
+    }
+  },
+  "logs": {
+    "title": "Server logs",
+    "subtitle": "In-memory ring buffer. Older entries roll off — ship the JSON stream off-host for retention.",
+    "breadcrumb_admin": "Admin",
+    "breadcrumb_server_logs": "Server logs",
+    "search_placeholder": "search msg / attrs… (case-insensitive)",
+    "any_level": "Any level",
+    "all_hosts": "All hosts",
+    "live_tail": "Live tail",
+    "pause_tail_title": "Pause live tail",
+    "start_tail_title": "Stream new entries every 2s",
+    "chip_level": "Level",
+    "chip_op": "Op",
+    "chip_clear": "clear chips",
+    "meta": "{{total}} matching · seq {{seq}}",
+    "empty": "No log entries match.",
+    "col_time": "Time",
+    "col_level": "Level",
+    "col_msg": "Msg",
+    "col_attrs": "Attrs",
+    "pagination_range": "{{from}}–{{to}} of {{total}}",
+    "prev": "Prev",
+    "next": "Next"
+  },
+  "ingests": {
+    "title": "Agent ingests",
+    "subtitle": "Captured payloads from the agent. Re-marshalled JSON; semantically identical to what the agent sent.",
+    "breadcrumb_admin": "Admin",
+    "breadcrumb_agent_ingests": "Agent ingests",
+    "all_hosts": "All hosts",
+    "recent_heading": "Recent",
+    "refresh": "Refresh",
+    "recent_empty": "No ingests captured yet.",
+    "col_when": "When",
+    "col_host": "Host",
+    "col_size": "Size",
+    "pick_heading": "Pick an ingest",
+    "payload_heading": "Payload",
+    "truncated": "truncated",
+    "copy": "Copy",
+    "pick_hint": "Click a row to inspect the JSON the agent sent.",
+    "tree_key_one": "key",
+    "tree_key_other": "keys",
+    "tree_item_one": "item",
+    "tree_item_other": "items",
+    "tree_large": "large",
+    "tree_big": "big",
+    "tree_string_chars": "{{count}} chars",
+    "tree_show_more": "show more (+{{count}})",
+    "tree_show_all": "show all ({{count}})",
+    "rel_seconds_ago": "{{count}}s ago",
+    "rel_minutes_ago": "{{count}}m ago",
+    "rel_hours_ago": "{{count}}h ago",
+    "rel_days_ago": "{{count}}d ago"
+  },
+  "audit": {
+    "title": "Audit log",
+    "subtitle": "Server-side record of admin-only actions: who changed what, when. Filter by exact actor email or action key.",
+    "breadcrumb_admin": "Admin",
+    "breadcrumb_audit_log": "Audit log",
+    "meta": "{{count}} entries",
+    "filter_actor": "Actor",
+    "filter_actor_hint": "Exact match on the user's email",
+    "filter_actor_placeholder": "admin@example.com",
+    "filter_action": "Action",
+    "filter_action_hint": "e.g. user.create, channel.delete",
+    "filter_action_placeholder": "user.create",
+    "empty_title": "No audit entries match.",
+    "empty_hint": "Try clearing the actor or action filter, or check back after an admin action runs.",
+    "table_label": "Audit log entries",
+    "col_at": "At",
+    "col_actor": "Actor",
+    "col_action": "Action",
+    "col_target": "Target",
+    "col_detail": "Detail",
+    "pagination_range": "{{from}}–{{to}} of {{total}}",
+    "prev": "Prev",
+    "next": "Next",
+    "prev_aria": "Previous page",
+    "next_aria": "Next page"
+  },
+  "logsPage": {
+    "tab_server": "Server",
+    "tab_ingest": "Ingest",
+    "tab_audit": "Audit",
+    "title_server": "Server logs",
+    "title_ingest": "Agent ingests",
+    "title_audit": "Audit log",
+    "subtitle_server": "In-memory ring buffer of server-side log entries. Older entries roll off — ship the JSON stream off-host for retention.",
+    "subtitle_ingest": "Recent agent ingest payloads. Re-marshalled JSON; semantically identical to what the agent sent.",
+    "subtitle_audit": "Server-side record of admin-only actions: who changed what, when. Filter by exact actor email or action key.",
+    "breadcrumb_admin": "Admin",
+    "breadcrumb_logs": "Logs"
+  }
+}

@@ -270,11 +270,19 @@ func (s *Server) sessionExpiresAt(ctx context.Context) time.Time {
 // populated. Used by every endpoint that returns CurrentUser so the UI
 // can render "you must enroll a passkey" banners consistently.
 func (s *Server) currentUserWithSecurity(ctx context.Context, u store.User) apitypes.CurrentUser {
+	lang := u.Language
+	if lang == "" {
+		// Defensive fallback: older code paths or migration races might
+		// leave Language blank. Treat that the same as the DB default so
+		// the SPA never sees an empty value through the API.
+		lang = "auto"
+	}
 	out := apitypes.CurrentUser{
 		ID:         u.ID.String(),
 		Email:      u.Email,
 		Role:       u.Role,
 		TOTPActive: u.TOTPActive,
+		Language:   lang,
 	}
 	pks, _ := s.Store.ListPasskeys(ctx, u.ID)
 	out.PasskeyCount = len(pks)
@@ -848,6 +856,16 @@ func (s *Server) registerRoutes() {
 		Tags:        []string{"auth"},
 		Middlewares: openProtected,
 	}, s.handleDeleteAvatar)
+
+	// Self-service UI language preference.
+	huma.Register(s.API, huma.Operation{
+		OperationID: "auth-me-set-language",
+		Method:      http.MethodPut,
+		Path:        "/v1/auth/me/language",
+		Summary:     "Set the caller's UI language preference",
+		Tags:        []string{"auth"},
+		Middlewares: openProtected,
+	}, s.handleSetLanguage)
 
 	// Avatar fetch by user id. Wired on chi directly so we can stream raw
 	// image bytes (huma's content negotiation always wraps replies in a
@@ -2404,6 +2422,31 @@ func (s *Server) handleChangeEmail(ctx context.Context, in *changeEmailInput) (*
 		}
 		return nil, huma.Error400BadRequest(err.Error())
 	}
+	out := &emptyOutput{}
+	out.Body.OK = true
+	return out, nil
+}
+
+// --- Self-service UI language preference -----------------------------------
+
+type setLanguageInput struct {
+	Body apitypes.SetLanguageRequest
+}
+
+func (s *Server) handleSetLanguage(ctx context.Context, in *setLanguageInput) (*emptyOutput, error) {
+	u, ok := userFromContext(ctx)
+	if !ok {
+		return nil, huma.Error401Unauthorized("no session")
+	}
+	if err := s.Store.SetLanguage(ctx, u.ID, in.Body.Language); err != nil {
+		if errors.Is(err, store.ErrUserNotFound) {
+			return nil, huma.Error404NotFound("user not found")
+		}
+		// Invalid language value (or other validation error) — surface the
+		// store's message to the caller so the SPA can display it verbatim.
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	s.audit(ctx, "user.language.set", u.ID.String(), in.Body.Language)
 	out := &emptyOutput{}
 	out.Body.OK = true
 	return out, nil

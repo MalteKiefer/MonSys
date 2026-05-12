@@ -1,0 +1,58 @@
+{
+  "groups": {
+    "overview": "Overview",
+    "notifications": "Notifications",
+    "account": "Account",
+    "admin": "Admin",
+    "fleet": "Fleet",
+    "identity": "Identity",
+    "operations": "Operations",
+    "diagnostics": "Diagnostics"
+  },
+  "items": {
+    "dashboard": "Dashboard",
+    "hosts": "Hosts",
+    "packages": "Packages",
+    "monitors": "Monitors",
+    "rules": "Rules",
+    "channels": "Channels",
+    "alerts": "Alerts",
+    "profile": "Profile",
+    "groups": "Groups",
+    "agent_config": "Agent config",
+    "enrollments": "Enrollments",
+    "users": "Users",
+    "mail_smtp": "Mail (SMTP)",
+    "quiet_hours": "Quiet hours",
+    "security": "Security",
+    "logs": "Logs",
+    "audit": "Audit"
+  },
+  "actions": {
+    "sign_out": "Sign out",
+    "expand_sidebar": "Expand sidebar",
+    "collapse_sidebar": "Collapse sidebar",
+    "open_navigation": "Navigation",
+    "close_navigation": "Close navigation",
+    "account_menu": "Account menu for {{email}}",
+    "switch_to_light": "Switch to light theme",
+    "switch_to_dark": "Switch to dark theme"
+  },
+  "sidebar": {
+    "heading": "Navigation"
+  },
+  "appshell": {
+    "connection_lost": "Connection to mon-server lost — retrying…",
+    "loading": "Loading…"
+  },
+  "palette": {
+    "placeholder": "Search hosts, pages, monitors, rules…",
+    "empty_prompt": "Start typing to search…",
+    "empty_results": "No results.",
+    "dialog_label": "Quick command palette",
+    "results_label": "Palette results",
+    "brand": "MonSys palette",
+    "hint_navigate": "navigate",
+    "hint_open": "open"
+  }
+}

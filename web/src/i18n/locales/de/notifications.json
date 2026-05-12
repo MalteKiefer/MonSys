@@ -1,0 +1,404 @@
+{
+  "tabs": {
+    "rules": "Regeln",
+    "channels": "Kanäle",
+    "alerts": "Alarme"
+  },
+  "rules": {
+    "page_title": "Benachrichtigungsregeln",
+    "page_subtitle": "Alarme auslösen, wenn sich Host-Status, Monitor-Ergebnis oder Login-Muster ändert.",
+    "panel_title": "Regeln",
+    "new_rule": "Neue Regel",
+    "empty_no_channels": "Erst einen Kanal anlegen, dann Regeln hinzufügen.",
+    "empty_no_rules": "Noch keine Regeln vorhanden.",
+    "card": {
+      "conditions_count": "{{count}} Bedingungen",
+      "state_on": "an",
+      "state_off": "aus",
+      "state_mixed": "gemischt",
+      "channels_label": "Kanäle:",
+      "channels_none": "—",
+      "throttle_label": "Drosselung:",
+      "throttle_value": "{{seconds}}s",
+      "repeat_label": "Wiederholung:",
+      "repeat_value": "{{seconds}}s",
+      "edit": "Bearbeiten",
+      "enable": "Aktivieren",
+      "disable": "Deaktivieren"
+    },
+    "confirm_delete_group": "Gruppe „{{name}}“ ({{count}} Regeln) löschen?",
+    "confirm_delete_rule": "Regel „{{name}}“ löschen?",
+    "form": {
+      "title_new": "Neue Regel",
+      "title_edit": "{{name}} bearbeiten",
+      "expert_toggle": "Experten-JSON",
+      "expert_tooltip_open": "Experten- / Roh-JSON-Modus für die geöffnete Bedingung umschalten",
+      "expert_tooltip_closed": "Bedingungseditor öffnen, um den Expertenmodus zu aktivieren",
+      "close": "Schließen",
+      "back": "Zurück",
+      "cancel": "Abbrechen",
+      "next": "Weiter: {{step}}",
+      "save_rule": "Regel speichern",
+      "create_rule": "Regel erstellen",
+      "create_rules_n": "{{count}} Regeln erstellen",
+      "saving": "Wird gespeichert…",
+      "finish_condition_hint": "Bedingung oben abschließen, um fortzufahren.",
+      "error_add_condition": "Mindestens eine Bedingung hinzufügen",
+      "error_pick_channel": "Mindestens einen Kanal auswählen",
+      "error_repeat_range": "Wiederholungsintervall muss 0 oder zwischen 60 und 86400 Sekunden liegen",
+      "error_params_not_serialisable": "condition_params für {{type}} ist kein serialisierbares JSON: {{message}}",
+      "error_condition_no_type": "Eine Bedingung hat keinen Typ — fertigstellen oder entfernen"
+    }
+  },
+  "channels": {
+    "page_title": "Benachrichtigungskanäle",
+    "page_subtitle": "Ausgehende Ziele: E-Mail, Slack, Mattermost, Discord, ntfy.",
+    "panel_title": "Kanäle",
+    "new_channel": "Neuer Kanal",
+    "empty": "Noch keine Kanäle vorhanden.",
+    "table": {
+      "type": "Typ",
+      "name": "Name",
+      "owner": "Eigentümer",
+      "enabled": "Aktiviert",
+      "last_used": "Zuletzt verwendet",
+      "last_error": "Letzter Fehler",
+      "actions": "Aktionen"
+    },
+    "owner": {
+      "shared": "geteilt",
+      "you": "du",
+      "other": "andere"
+    },
+    "state_on": "an",
+    "state_off": "aus",
+    "actions": {
+      "test": "Testen",
+      "edit": "Bearbeiten"
+    },
+    "test_success": "Testnachricht gesendet.",
+    "test_failed": "Test fehlgeschlagen.",
+    "test_generic_failed": "fehlgeschlagen",
+    "confirm_delete": "Kanal „{{name}}“ löschen?",
+    "form": {
+      "title_new": "Neuer Kanal",
+      "title_edit": "{{name}} bearbeiten",
+      "type_section": "Kanaltyp",
+      "type_locked_hint": "Typ kann nach der Erstellung nicht geändert werden.",
+      "identification_section": "Identifikation",
+      "name_label": "Name",
+      "name_placeholder": "z. B. ops-oncall",
+      "smtp_warning": "Ausgehende Mail ist noch nicht konfiguriert — bitte einen Admin, SMTP unter Admin → Mail einzurichten, bevor dieser Kanal Nachrichten zustellen kann.",
+      "recipient_email_label": "Empfänger-E-Mail",
+      "recipient_email_hint": "Standardmäßig deine Konto-E-Mail. Der ausgehende Transport (SMTP-Host, Authentifizierung, Absenderadresse) wird von einem Admin unter Admin → Mail (SMTP) konfiguriert.",
+      "config_section_suffix": "Konfiguration",
+      "enabled_label": "Aktiviert",
+      "enabled_hint": "Deaktivieren, um den Kanal konfiguriert zu lassen, aber Zustellungen zu überspringen.",
+      "save": "Speichern",
+      "create": "Erstellen",
+      "saving": "Wird gespeichert…",
+      "cancel": "Abbrechen",
+      "error_generic": "fehlgeschlagen",
+      "types": {
+        "email": {
+          "label": "E-Mail",
+          "description": "Eine vorlagenbasierte E-Mail senden"
+        },
+        "slack": {
+          "label": "Slack",
+          "description": "Per Webhook in einen Slack-Kanal posten"
+        },
+        "mattermost": {
+          "label": "Mattermost",
+          "description": "Per Webhook in einen Mattermost-Kanal posten"
+        },
+        "discord": {
+          "label": "Discord",
+          "description": "Per Webhook in einen Discord-Kanal posten"
+        },
+        "ntfy": {
+          "label": "ntfy",
+          "description": "Push an ein ntfy-Topic"
+        }
+      },
+      "fields": {
+        "webhook_url": "Incoming-Webhook-URL",
+        "discord_webhook_url": "Webhook-URL",
+        "username_optional": "Anzeigename (optional)",
+        "server_url": "Server-URL",
+        "topic": "Topic",
+        "auth_token_optional": "Bearer-Token (optional)",
+        "basic_user_optional": "Basic-Auth-Benutzer (optional)",
+        "basic_pass_optional": "Basic-Auth-Passwort (optional)"
+      }
+    }
+  },
+  "alerts": {
+    "page_title": "Alarmverlauf",
+    "page_subtitle": "Aktuelle Alarme, die über die oben genannten Regeln und Kanäle zugestellt wurden.",
+    "panel_title": "Alarmverlauf",
+    "windows": {
+      "1h": "1 Std.",
+      "24h": "24 Std.",
+      "7d": "7 T.",
+      "30d": "30 T."
+    },
+    "filter_label": "Nach Host filtern",
+    "filter_hint": "Nur host-bezogene Alarme (offline, Login-fehlgeschlagen) treffen zu.",
+    "all_hosts": "Alle Hosts",
+    "count_filtered": "{{filtered}} von {{total}}",
+    "count_total_one": "{{count}} Alarm",
+    "count_total_other": "{{count}} Alarme",
+    "empty_window": "Keine Alarme in diesem Zeitraum.",
+    "empty_filter": "Keine Alarme für den ausgewählten Host.",
+    "table": {
+      "when": "Wann",
+      "severity": "Schweregrad",
+      "rule": "Regel",
+      "subject": "Betreff",
+      "delivered": "Zugestellt"
+    },
+    "rel_time": {
+      "seconds_ago": "vor {{count}}s",
+      "minutes_ago": "vor {{count}}m",
+      "hours_ago": "vor {{count}}h",
+      "days_ago": "vor {{count}}T"
+    }
+  },
+  "wizard": {
+    "steps": {
+      "detect": "Erkennen",
+      "scope": "Geltungsbereich",
+      "notify": "Benachrichtigen"
+    },
+    "detect": {
+      "conditions_label": "Bedingungen",
+      "conditions_hint": "(Regel löst bei ANY Auslöser aus)",
+      "configured_count": "{{count}} konfiguriert",
+      "no_type": "(kein Typ)",
+      "no_summary": "—",
+      "edit_condition_aria": "Bedingung {{index}} bearbeiten",
+      "remove_condition_aria": "Bedingung {{index}} entfernen",
+      "add_another": "Weitere Bedingung hinzufügen",
+      "editor_title_new": "Bedingung hinzufügen",
+      "editor_title_edit": "Bedingung bearbeiten",
+      "expert_toggle": "Experten-JSON",
+      "expert_tooltip": "Experten- / Roh-JSON-Modus für diesen Zweig umschalten",
+      "section_condition_type": "Bedingungstyp",
+      "select_placeholder": "— bitte wählen —",
+      "step1_heading": "1. Welche Art von Signal?",
+      "step2_heading": "2. Bedingung auswählen",
+      "step3_heading": "3. {{label}} konfigurieren",
+      "back_to_categories": "← Zurück zu den Kategorien",
+      "cancel": "Abbrechen",
+      "save_condition": "Bedingung speichern",
+      "update_condition": "Bedingung aktualisieren"
+    },
+    "scope": {
+      "legend": "Wen überwacht diese Regel?",
+      "choices": {
+        "all_label": "Alle Hosts",
+        "all_hint": "Jeder Host, der an MonSys meldet.",
+        "tags_label": "Hosts mit Tag…",
+        "tags_hint": "Trifft auf jeden ausgewählten Tag zu.",
+        "groups_label": "Hosts in Gruppe…",
+        "groups_hint": "Trifft auf jede ausgewählte Host-Gruppe zu.",
+        "hosts_label": "Bestimmte Hosts",
+        "hosts_hint": "Einzelne Hosts auswählen."
+      },
+      "tags_header": "Tags ({{count}} ausgewählt)",
+      "groups_header": "Gruppen ({{count}} ausgewählt)",
+      "hosts_header": "Hosts ({{count}} ausgewählt)",
+      "tags_empty_none": "Noch keine Tags definiert.",
+      "tags_empty_match": "Keine passenden Tags.",
+      "tags_search_placeholder": "Tags suchen…",
+      "tags_count_one": "{{count}} Host",
+      "tags_count_other": "{{count}} Hosts",
+      "groups_empty_none": "Noch keine Gruppen definiert.",
+      "groups_empty_match": "Keine passenden Gruppen.",
+      "groups_search_placeholder": "Gruppen suchen…",
+      "groups_members_one": "{{count}} Mitglied",
+      "groups_members_other": "{{count}} Mitglieder",
+      "hosts_empty_none": "Noch keine Hosts bekannt.",
+      "hosts_empty_match": "Keine passenden Hosts.",
+      "hosts_search_placeholder": "Hosts suchen…",
+      "host_no_tags": "keine Tags"
+    },
+    "notify": {
+      "name_label": "Name",
+      "name_hint": "Wird in der Alarmliste und im Betreff der Benachrichtigung angezeigt.",
+      "name_placeholder": "z. B. prod hosts offline",
+      "channels_header": "Kanäle ({{count}} ausgewählt)",
+      "channels_empty": "Keine Kanäle verfügbar. Erstelle zuerst einen unter Kanäle.",
+      "channels_search_placeholder": "Kanäle suchen…",
+      "remove_channel_aria": "Kanal {{name}} entfernen",
+      "severity_label": "Schweregrad",
+      "severity_info": "Info",
+      "severity_warning": "Warnung",
+      "severity_critical": "Kritisch",
+      "throttle_label": "Nicht wiederholen für…",
+      "throttle_hint_minutes": "≈ {{value}} Minute(n)",
+      "throttle_hint_zero": "0 deaktiviert die Drosselung — jede Auslösung wird zugestellt.",
+      "throttle_unit": "Sekunden",
+      "repeat_label": "Erinnerung wiederholen",
+      "repeat_hint_zero": "0 = einmal pro Ausfall auslösen.",
+      "repeat_hint_active": "Alle {{value}} Min. erneut senden, solange aktiv.",
+      "repeat_unit": "Sekunden",
+      "notify_on_resolve_label": "Bei Behebung benachrichtigen",
+      "notify_on_resolve_hint": "Sendet eine Entwarnung, wenn der Host oder Monitor wieder verfügbar ist.",
+      "enabled_label": "Aktiviert",
+      "enabled_hint": "Deaktivieren, um die Regel zu behalten, aber keine Alarme mehr auszulösen."
+    },
+    "preview": {
+      "title": "Vorschau",
+      "add_to_see": "Bedingung hinzufügen, um die Vorschau zu sehen.",
+      "alert_when": "Alarm, wenn",
+      "condition_placeholder": "eine Bedingung ausgewählt ist",
+      "alert_when_any": "Alarm, wenn EINE der Bedingungen:",
+      "leg_no_type": "(noch kein Typ)",
+      "scope_any_host": "irgendein Host",
+      "scope_tagged": "Hosts mit Tag ",
+      "scope_in_group": "Hosts in Gruppe ",
+      "scope_specific": "Hosts ",
+      "delivery_send_to": "an ",
+      "delivery_a_channel": "einen Kanal",
+      "delivery_with_severity": " senden, Schweregrad ",
+      "name_label": "Name",
+      "rows_will_be_created_prefix": "{{count}} Zeilen werden erstellt — jeweils benannt ",
+      "rows_will_be_created_suffix": " — <condition_type>",
+      "view_json": "JSON anzeigen"
+    },
+    "panes": {
+      "no_params": "Keine zusätzlichen Parameter — Geltungsbereich und Zustellung in den nächsten Schritten konfigurieren.",
+      "cert": {
+        "days_label": "Tage-Schwellwert",
+        "days_hint": "Auslösen, wenn verbleibende Zert-Tage < dieser Wert. Standard 30."
+      },
+      "login_failed": {
+        "window_label": "Zeitfenster (Sekunden)",
+        "window_hint": "Standard 300.",
+        "threshold_label": "Schwellwert",
+        "threshold_hint": "Standard 10."
+      },
+      "security_updates": {
+        "threshold_label": "Schwellwert",
+        "threshold_hint": "Auslösen, wenn security_updates >= Schwellwert. Standard 1."
+      },
+      "metric": {
+        "metric_label": "Metrik",
+        "comparator_label": "Vergleich",
+        "comparator_gt": "> (größer als)",
+        "comparator_ge": ">= (mindestens)",
+        "comparator_lt": "< (kleiner als)",
+        "comparator_le": "<= (höchstens)",
+        "value_label": "Wert",
+        "value_hint": "Schwellwert zum Vergleich.",
+        "window_label": "Zeitfenster (Sekunden)",
+        "window_hint": "Rückschaufenster. Standard 120.",
+        "for_label": "Anhaltend für (Sekunden)",
+        "for_hint": "Mindestdauer der Bedingung. Standard = Zeitfenster.",
+        "for_placeholder": "optional",
+        "scope_label": "Geltungsbereich (optional)",
+        "scope_filter_placeholder": "Nach {{key}} filtern",
+        "scope_hints": {
+          "mountpoint": "z. B. / oder /var",
+          "nic": "z. B. eth0",
+          "workload_id": "workloads.id (uuid)",
+          "monitor_id": "monitors.id (uuid)"
+        }
+      },
+      "agent": {
+        "min_version_label": "Mindestversion",
+        "min_version_hint": "Semver-Baseline. Leer lassen, um automatisch mit der frischesten agent_version zu vergleichen.",
+        "min_version_placeholder": "leer für Automatik"
+      },
+      "image_update": {
+        "hours_label": "Mindestalter (Stunden)",
+        "hours_hint": "update_available muss so lange anhalten, bevor alarmiert wird. Standard 24."
+      },
+      "package_update": {
+        "threshold_label": "Schwellwert",
+        "threshold_hint": "updates_count > Schwellwert löst aus. Standard 50."
+      },
+      "repo_metadata": {
+        "threshold_label": "Schwellwert (Sekunden)",
+        "threshold_hint": "metadata_age_seconds > threshold_sec löst aus. Standard 86400 (24h)."
+      },
+      "login_anomaly": {
+        "kind_label": "Art",
+        "kind_new_source_ip": "Neue Quell-IP",
+        "kind_root_success": "Root/SU erfolgreich",
+        "kind_sudo_spike": "Sudo-Spike",
+        "window_label": "Zeitfenster (Sekunden)",
+        "window_hint": "Standard 86400 (24h).",
+        "threshold_label": "Schwellwert",
+        "threshold_hint": "Ereignisse im Fenster, ab denen ausgelöst wird. Standard 1."
+      },
+      "inventory_drift": {
+        "kind_label": "Art",
+        "kind_new_user": "Neuer Benutzer",
+        "kind_new_sudoer": "Neuer Sudoer",
+        "kind_new_disk": "Neue Festplatte",
+        "kind_new_nic": "Neue NIC",
+        "kind_mac_changed": "MAC geändert",
+        "kind_kernel_changed": "Kernel geändert",
+        "kind_distro_changed": "Distribution geändert",
+        "kind_new_package": "Neues Paket",
+        "kind_removed_package": "Entferntes Paket"
+      },
+      "firewall": {
+        "kind_label": "Art",
+        "kind_inactive": "Inaktiv (Firewall deaktiviert)",
+        "kind_default_policy_weakened": "Default-Policy abgeschwächt",
+        "kind_rule_count_drop": "Anzahl Regeln gesunken",
+        "drop_threshold_label": "Rückgang-Schwellwert",
+        "drop_threshold_hint": "Seit letzter Baseline entfernte Regeln. Standard 5."
+      },
+      "crowdsec": {
+        "threshold_label": "Schwellwert",
+        "threshold_hint": "Aktive Entscheidungen pro Host > Schwellwert löst aus. Standard 100."
+      },
+      "nic_link": {
+        "exclude_loopback_label": "Loopback ausschließen",
+        "exclude_loopback_hint": "Standard aktiv. Ignoriert lo / Loopback-NICs.",
+        "exclude_virtual_label": "Virtuelle ausschließen",
+        "exclude_virtual_hint": "Standard aktiv. Ignoriert veth/docker0/Bridges."
+      },
+      "vm_state": {
+        "subkind_label": "Untertyp",
+        "subkind_stopped": "Gestoppt",
+        "subkind_autostart_violation": "Autostart-Verletzung",
+        "subkind_any_transition": "Beliebiger Übergang (Standard)"
+      },
+      "container_state": {
+        "states_label": "Auslösende Zustände",
+        "states_hint": "Workload-Übergang in einen dieser Zustände löst aus.",
+        "exclude_image_label": "Image-Teilstring ausschließen",
+        "exclude_image_hint": "Workloads überspringen, deren Image diesen Teilstring enthält (Groß-/Kleinschreibung).",
+        "exclude_image_placeholder": "z. B. pause / sleep-infinity"
+      },
+      "audit": {
+        "actions_label": "Aktionen",
+        "actions_hint": "Komma-getrennte Aktionsschlüssel, z. B. admin.security.policy.update, host.delete",
+        "actions_placeholder": "admin.security.policy.update, host.delete",
+        "actor_label": "Akteur-Muster (Regex)",
+        "actor_hint": "Optional. Trifft auf audit_log.actor zu.",
+        "actor_placeholder": "^admin@",
+        "target_label": "Ziel-Muster (Regex)",
+        "target_hint": "Optional. Trifft auf audit_log.target zu.",
+        "target_placeholder": "rule:.*"
+      },
+      "host_flap": {
+        "window_label": "Zeitfenster (Sekunden)",
+        "window_hint": "Beobachtungsfenster. Standard 1800 (30 Min.).",
+        "threshold_label": "Schwellwert",
+        "threshold_hint": "Online/Offline-Übergänge im Fenster. Standard 6."
+      },
+      "expert": {
+        "must_be_object": "condition_params muss ein JSON-Objekt sein",
+        "invalid_json": "Ungültiges JSON: {{message}}",
+        "hint": "Rohes condition_params-Objekt. Experten-Modus ausschalten, um zur typisierten Ansicht zurückzukehren."
+      }
+    }
+  }
+}

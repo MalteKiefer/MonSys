@@ -20,18 +20,15 @@ import {
   Tabs,
   TextInput,
 } from "../components/ui";
+import { useT } from "../i18n/useT";
 import { api, ApiError } from "../lib/api";
 import { Host, HostGroup } from "../lib/types";
 import { hostDisplay } from "../lib/utils";
 
 type TabKey = "list" | "create";
 
-const TABS: ReadonlyArray<TabItem<TabKey>> = [
-  { key: "list", label: "Groups", icon: Layers },
-  { key: "create", label: "Create new", icon: Plus },
-];
-
 export function AdminGroups() {
+  const { t } = useT(["admin", "common"]);
   const qc = useQueryClient();
   const groups = useQuery({
     queryKey: ["groups"],
@@ -46,16 +43,26 @@ export function AdminGroups() {
   const [editing, setEditing] = useState<HostGroup | null>(null);
   const [members, setMembers] = useState<HostGroup | null>(null);
 
+  const tabs: ReadonlyArray<TabItem<TabKey>> = useMemo(
+    () => [
+      { key: "list", label: t("admin:groups.tabs.list"), icon: Layers },
+      { key: "create", label: t("admin:groups.tabs.create"), icon: Plus },
+    ],
+    [t],
+  );
+
   return (
     <div className="mx-auto max-w-5xl space-y-5 p-6">
       <header>
-        <h2 className="text-lg font-semibold tracking-tight">Host groups</h2>
+        <h2 className="text-lg font-semibold tracking-tight">{t("admin:groups.headerTitle")}</h2>
         <p className="text-sm text-fg-muted">
-          Group hosts by purpose (e.g. <code className="font-mono">prod-web</code>) and reference them from monitors.
+          {t("admin:groups.headerSubtitleLead")}
+          <code className="font-mono">{t("admin:groups.headerSubtitleExample")}</code>
+          {t("admin:groups.headerSubtitleTail")}
         </p>
       </header>
 
-      <Tabs items={TABS} value={tab} onChange={setTab} />
+      <Tabs items={tabs} value={tab} onChange={setTab} />
 
       {tab === "list" ? (
         <>
@@ -83,7 +90,7 @@ export function AdminGroups() {
 
           <Panel>
             <PanelHeader>
-              <h3 className="text-sm font-semibold">All groups</h3>
+              <h3 className="text-sm font-semibold">{t("admin:groups.list.title")}</h3>
             </PanelHeader>
             <PanelBody className="p-0 overflow-x-auto">
               {groups.isLoading ? (
@@ -91,15 +98,15 @@ export function AdminGroups() {
                   <Skeleton className="h-32" />
                 </div>
               ) : (groups.data?.groups ?? []).length === 0 ? (
-                <Empty>No groups yet.</Empty>
+                <Empty>{t("admin:groups.list.empty")}</Empty>
               ) : (
                 <Table>
                   <THead>
                     <tr>
-                      <TH>Name</TH>
-                      <TH>Description</TH>
-                      <TH>Members</TH>
-                      <TH className="text-right">Actions</TH>
+                      <TH>{t("admin:groups.list.columns.name")}</TH>
+                      <TH>{t("admin:groups.list.columns.description")}</TH>
+                      <TH>{t("admin:groups.list.columns.members")}</TH>
+                      <TH className="text-right">{t("admin:groups.list.columns.actions")}</TH>
                     </tr>
                   </THead>
                   <TBody>
@@ -111,15 +118,15 @@ export function AdminGroups() {
                         <TD className="text-right">
                           <div className="inline-flex items-center gap-1">
                             <Button onClick={() => setMembers(g)}>
-                              <UsersIcon className="h-3.5 w-3.5" /> Members
+                              <UsersIcon className="h-3.5 w-3.5" /> {t("admin:groups.list.membersBtn")}
                             </Button>
                             <Button onClick={() => setEditing(g)}>
-                              <PencilLine className="h-3.5 w-3.5" /> Edit
+                              <PencilLine className="h-3.5 w-3.5" /> {t("admin:groups.list.editBtn")}
                             </Button>
                             <Button
                               variant="danger"
                               onClick={() => {
-                                if (confirm(`Delete group "${g.name}"?`))
+                                if (confirm(t("admin:groups.list.confirmDelete", { name: g.name })))
                                   api(`/v1/groups/${g.id}`, { method: "DELETE" }).then(() =>
                                     qc.invalidateQueries({ queryKey: ["groups"] }),
                                   );
@@ -160,6 +167,7 @@ function GroupForm({
   onCancel: () => void;
   onSaved: () => void;
 }) {
+  const { t } = useT(["admin", "common"]);
   const [name, setName] = useState(initial?.name ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
   const [error, setError] = useState<string | null>(null);
@@ -173,7 +181,8 @@ function GroupForm({
       return api("/v1/groups", { method: "POST", body: JSON.stringify(body) });
     },
     onSuccess: onSaved,
-    onError: (err) => setError(err instanceof ApiError ? err.detail : "failed"),
+    onError: (err) =>
+      setError(err instanceof ApiError ? err.detail : t("admin:groups.form.failed")),
   });
 
   function submit(e: FormEvent) {
@@ -185,22 +194,32 @@ function GroupForm({
   return (
     <Panel>
       <PanelHeader>
-        <h3 className="text-sm font-semibold">{initial ? `Edit ${initial.name}` : "New group"}</h3>
+        <h3 className="text-sm font-semibold">
+          {initial
+            ? t("admin:groups.form.editTitle", { name: initial.name })
+            : t("admin:groups.form.newTitle")}
+        </h3>
       </PanelHeader>
       <PanelBody>
         <form onSubmit={submit} className="space-y-3">
-          <Field label="Name">
+          <Field label={t("admin:groups.form.name")}>
             <TextInput required value={name} onChange={(e) => setName(e.target.value)} />
           </Field>
-          <Field label="Description (optional)">
+          <Field label={t("admin:groups.form.description")}>
             <TextInput value={description} onChange={(e) => setDescription(e.target.value)} />
           </Field>
           {error && <ErrorBox>{error}</ErrorBox>}
           <div className="flex items-center gap-2">
             <Button variant="primary" type="submit" disabled={save.isPending}>
-              {save.isPending ? "Saving…" : initial ? "Save" : "Create"}
+              {save.isPending
+                ? t("admin:groups.form.saving")
+                : initial
+                  ? t("admin:groups.form.save")
+                  : t("admin:groups.form.create")}
             </Button>
-            <Button type="button" onClick={onCancel}>Cancel</Button>
+            <Button type="button" onClick={onCancel}>
+              {t("admin:groups.form.cancel")}
+            </Button>
           </div>
         </form>
       </PanelBody>
@@ -219,6 +238,7 @@ function MembersPanel({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const { t } = useT(["admin", "common"]);
   const [selected, setSelected] = useState<Set<string>>(new Set(group.member_ids));
   const save = useMutation({
     mutationFn: () =>
@@ -243,14 +263,21 @@ function MembersPanel({
     <Panel>
       <PanelHeader>
         <div>
-          <h3 className="text-sm font-semibold">{group.name} — members</h3>
-          <p className="text-xs text-fg-subtle">{selected.size} of {allHosts.length} hosts selected</p>
+          <h3 className="text-sm font-semibold">
+            {t("admin:groups.members.title", { name: group.name })}
+          </h3>
+          <p className="text-xs text-fg-subtle">
+            {t("admin:groups.members.selectedOf", {
+              selected: selected.size,
+              total: allHosts.length,
+            })}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="primary" onClick={() => save.mutate()} disabled={save.isPending}>
-            {save.isPending ? "Saving…" : "Save"}
+            {save.isPending ? t("admin:groups.members.saving") : t("admin:groups.members.save")}
           </Button>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={onClose}>{t("admin:groups.members.cancel")}</Button>
         </div>
       </PanelHeader>
       <PanelBody className="p-0 overflow-x-auto">
@@ -258,9 +285,9 @@ function MembersPanel({
           <THead>
             <tr>
               <TH></TH>
-              <TH>Host</TH>
-              <TH>Distro</TH>
-              <TH>Tags</TH>
+              <TH>{t("admin:groups.members.columns.host")}</TH>
+              <TH>{t("admin:groups.members.columns.distro")}</TH>
+              <TH>{t("admin:groups.members.columns.tags")}</TH>
             </tr>
           </THead>
           <TBody>
@@ -298,6 +325,7 @@ function CreateGroupPanel({
   hostsLoading: boolean;
   onCreated: () => void;
 }) {
+  const { t } = useT(["admin", "common"]);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [search, setSearch] = useState("");
@@ -311,7 +339,7 @@ function CreateGroupPanel({
   // tracks insertion order from the underlying host list.
   const allTags = useMemo(() => {
     const s = new Set<string>();
-    for (const h of allHosts) for (const t of h.tags) s.add(t);
+    for (const h of allHosts) for (const tag of h.tags) s.add(tag);
     return Array.from(s).sort();
   }, [allHosts]);
 
@@ -322,7 +350,7 @@ function CreateGroupPanel({
     const q = search.trim().toLowerCase();
     return allHosts.filter((h) => {
       if (activeTags.size > 0) {
-        const has = (t: string) => h.tags.includes(t);
+        const has = (tg: string) => h.tags.includes(tg);
         const ok = tagMatch === "all"
           ? Array.from(activeTags).every(has)
           : Array.from(activeTags).some(has);
@@ -338,10 +366,10 @@ function CreateGroupPanel({
 
   const visibleSelected = visibleHosts.filter((h) => selected.has(h.id)).length;
 
-  function toggleTag(t: string) {
+  function toggleTag(tag: string) {
     const next = new Set(activeTags);
-    if (next.has(t)) next.delete(t);
-    else next.add(t);
+    if (next.has(tag)) next.delete(tag);
+    else next.add(tag);
     setActiveTags(next);
   }
 
@@ -390,7 +418,8 @@ function CreateGroupPanel({
       setSelected(new Set());
       onCreated();
     },
-    onError: (err) => setError(err instanceof ApiError ? err.detail : "failed"),
+    onError: (err) =>
+      setError(err instanceof ApiError ? err.detail : t("admin:groups.create.failed")),
   });
 
   function submit(e: FormEvent) {
@@ -402,25 +431,25 @@ function CreateGroupPanel({
   return (
     <Panel>
       <PanelHeader>
-        <h3 className="text-sm font-semibold">New group</h3>
+        <h3 className="text-sm font-semibold">{t("admin:groups.create.panelTitle")}</h3>
         <p className="text-xs text-fg-subtle tabular-nums">
-          {selected.size} host{selected.size === 1 ? "" : "s"} selected
+          {t("admin:groups.create.countSelected", { count: selected.size })}
         </p>
       </PanelHeader>
       <PanelBody>
         <form onSubmit={submit} className="space-y-5">
           <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Name">
+            <Field label={t("admin:groups.form.name")}>
               <TextInput
                 required
-                placeholder="prod-web"
+                placeholder={t("admin:groups.create.namePh")}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
               />
             </Field>
-            <Field label="Description (optional)">
+            <Field label={t("admin:groups.form.description")}>
               <TextInput
-                placeholder="Production web tier"
+                placeholder={t("admin:groups.create.descriptionPh")}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
               />
@@ -429,7 +458,9 @@ function CreateGroupPanel({
 
           <div className="space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs font-medium text-fg-muted">Filter hosts by tag</span>
+              <span className="text-xs font-medium text-fg-muted">
+                {t("admin:groups.create.filterByTag")}
+              </span>
               <div className="inline-flex rounded-md border border-border bg-panel p-0.5 text-[11px]">
                 {(["any", "all"] as const).map((m) => (
                   <button
@@ -442,29 +473,31 @@ function CreateGroupPanel({
                         : "text-fg-subtle hover:text-fg"
                     }`}
                   >
-                    match {m}
+                    {m === "any"
+                      ? t("admin:groups.create.matchAny")
+                      : t("admin:groups.create.matchAll")}
                   </button>
                 ))}
               </div>
             </div>
             {allTags.length === 0 ? (
-              <p className="text-xs text-fg-subtle">No tags defined on any host yet.</p>
+              <p className="text-xs text-fg-subtle">{t("admin:groups.create.noTags")}</p>
             ) : (
               <div className="flex flex-wrap gap-1.5">
-                {allTags.map((t) => {
-                  const on = activeTags.has(t);
+                {allTags.map((tag) => {
+                  const on = activeTags.has(tag);
                   return (
                     <button
-                      key={t}
+                      key={tag}
                       type="button"
-                      onClick={() => toggleTag(t)}
+                      onClick={() => toggleTag(tag)}
                       className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[11px] transition-colors duration-150 ${
                         on
                           ? "border-accent/40 bg-accent/10 text-accent"
                           : "border-border bg-panel-2 text-fg-muted hover:border-border-strong hover:text-fg"
                       }`}
                     >
-                      {t}
+                      {tag}
                       {on && <X className="h-3 w-3" />}
                     </button>
                   );
@@ -476,20 +509,23 @@ function CreateGroupPanel({
           <div className="space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs font-medium text-fg-muted">
-                Members ({visibleSelected} of {visibleHosts.length} visible selected)
+                {t("admin:groups.create.membersHeader", {
+                  visibleSelected,
+                  visible: visibleHosts.length,
+                })}
               </span>
               <div className="flex items-center gap-2">
                 <TextInput
                   className="w-44"
-                  placeholder="Search hostname or tag…"
+                  placeholder={t("admin:groups.create.searchPh")}
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
                 <Button type="button" size="sm" onClick={selectAllVisible} disabled={visibleHosts.length === 0}>
-                  Select visible
+                  {t("admin:groups.create.selectVisible")}
                 </Button>
                 <Button type="button" size="sm" onClick={clearVisible} disabled={visibleSelected === 0}>
-                  Clear visible
+                  {t("admin:groups.create.clearVisible")}
                 </Button>
               </div>
             </div>
@@ -499,15 +535,15 @@ function CreateGroupPanel({
                   <Skeleton className="h-32" />
                 </div>
               ) : visibleHosts.length === 0 ? (
-                <Empty>No hosts match the current filter.</Empty>
+                <Empty>{t("admin:groups.create.noMatches")}</Empty>
               ) : (
                 <Table>
                   <THead>
                     <tr>
                       <TH></TH>
-                      <TH>Host</TH>
-                      <TH>Distro</TH>
-                      <TH>Tags</TH>
+                      <TH>{t("admin:groups.create.columns.host")}</TH>
+                      <TH>{t("admin:groups.create.columns.distro")}</TH>
+                      <TH>{t("admin:groups.create.columns.tags")}</TH>
                     </tr>
                   </THead>
                   <TBody>
@@ -534,7 +570,9 @@ function CreateGroupPanel({
 
           <div className="flex items-center gap-2">
             <Button variant="primary" type="submit" disabled={save.isPending || !name.trim()}>
-              {save.isPending ? "Creating…" : "Create group"}
+              {save.isPending
+                ? t("admin:groups.create.submitting")
+                : t("admin:groups.create.submit")}
             </Button>
           </div>
         </form>

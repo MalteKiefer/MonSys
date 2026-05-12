@@ -10,7 +10,7 @@ import {
   UserRound,
   Wifi,
 } from "lucide-react";
-import { ChangeEvent, FormEvent, useEffect, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 
 import { Page } from "../components/page";
 import {
@@ -27,6 +27,7 @@ import {
   Tabs,
   TextInput,
 } from "../components/ui";
+import { useT } from "../i18n/useT";
 import { api, ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import type { SmtpSettings, SmtpSettingsInput } from "../lib/types";
@@ -53,13 +54,8 @@ function deriveEncryption(starttls: boolean, tls: boolean): EncryptionMode {
   return "none";
 }
 
-const TABS: ReadonlyArray<TabItem<TabKey>> = [
-  { key: "server", label: "SMTP server", icon: Mail },
-  { key: "test", label: "Send test", icon: Send },
-  { key: "status", label: "Status", icon: Activity },
-];
-
 export function AdminMail() {
+  const { t } = useT(["admin", "common"]);
   const qc = useQueryClient();
   const myEmail = useAuth((s) => s.user?.email ?? "");
   const settings = useQuery({
@@ -70,16 +66,25 @@ export function AdminMail() {
   const [tab, setTab] = useState<TabKey>("server");
   const [lastOutcome, setLastOutcome] = useState<TestOutcome | null>(null);
 
+  const tabs: ReadonlyArray<TabItem<TabKey>> = useMemo(
+    () => [
+      { key: "server", label: t("admin:mail.tabs.server"), icon: Mail },
+      { key: "test", label: t("admin:mail.tabs.test"), icon: Send },
+      { key: "status", label: t("admin:mail.tabs.status"), icon: Activity },
+    ],
+    [t],
+  );
+
   return (
     <Page
       title={
         <span className="flex items-center gap-2">
-          <Mail className="h-5 w-5 text-accent" /> Mail (SMTP)
+          <Mail className="h-5 w-5 text-accent" /> {t("admin:mail.title")}
         </span>
       }
-      subtitle="One global SMTP transport. Every email-typed notification channel reuses these settings — users only choose a recipient address."
+      subtitle={t("admin:mail.subtitle")}
     >
-      <Tabs<TabKey> items={TABS} value={tab} onChange={setTab} />
+      <Tabs<TabKey> items={tabs} value={tab} onChange={setTab} />
 
       {settings.isLoading ? (
         <div id="panel-server" role="tabpanel" className="pt-4">
@@ -111,12 +116,11 @@ export function AdminMail() {
               ) : (
                 <Panel>
                   <PanelHeader>
-                    <h3 className="text-sm font-semibold text-fg">Send test message</h3>
+                    <h3 className="text-sm font-semibold text-fg">{t("admin:mail.test.title")}</h3>
                   </PanelHeader>
                   <PanelBody>
                     <p className="text-sm text-fg-muted">
-                      Configure and save the SMTP server first. Once a host is on file the test
-                      form unlocks here so you can send a one-off probe message to any address.
+                      {t("admin:mail.test.lockedHint")}
                     </p>
                   </PanelBody>
                 </Panel>
@@ -139,15 +143,15 @@ export function AdminMail() {
 
 type StepKey = "transport" | "identity";
 
-const STEPS: { key: StepKey; label: string; icon: typeof Wifi }[] = [
-  { key: "transport", label: "Transport", icon: Wifi },
-  { key: "identity", label: "Identity", icon: UserRound },
-];
-
 function Stepper({ current, completed }: { current: StepKey; completed: Set<StepKey> }) {
+  const { t } = useT(["admin"]);
+  const steps: { key: StepKey; label: string; icon: typeof Wifi }[] = [
+    { key: "transport", label: t("admin:mail.steps.transport"), icon: Wifi },
+    { key: "identity", label: t("admin:mail.steps.identity"), icon: UserRound },
+  ];
   return (
     <ol className="flex items-center gap-2 text-sm">
-      {STEPS.map((s, idx) => {
+      {steps.map((s, idx) => {
         const isCurrent = current === s.key;
         const isDone = completed.has(s.key);
         const Icon = s.icon;
@@ -165,9 +169,9 @@ function Stepper({ current, completed }: { current: StepKey; completed: Set<Step
               {isDone && !isCurrent ? <Check className="h-3.5 w-3.5" /> : <Icon className="h-3.5 w-3.5" />}
             </span>
             <span className={isCurrent ? "font-medium text-fg" : "text-fg-muted"}>
-              {idx + 1}. {s.label}
+              {t("admin:mail.steps.stepLabel", { index: idx + 1, label: s.label })}
             </span>
-            {idx < STEPS.length - 1 && (
+            {idx < steps.length - 1 && (
               <span className="ml-2 inline-block h-px w-6 bg-border" aria-hidden />
             )}
           </li>
@@ -188,6 +192,7 @@ function SettingsWizard({
   onSaved: () => void;
   onOutcome: (o: TestOutcome) => void;
 }) {
+  const { t } = useT(["admin", "common"]);
   const myEmail = useAuth((s) => s.user?.email ?? "");
 
   // Step 1 — transport
@@ -240,14 +245,17 @@ function SettingsWizard({
       });
     },
     onSuccess: () => {
-      setMsg({ kind: "ok", text: "Settings saved." });
+      setMsg({ kind: "ok", text: t("admin:mail.wizard.saved") });
       setPassword("");
       setClearPassword(false);
       setCompleted(new Set(["transport", "identity"]));
       onSaved();
     },
     onError: (err) =>
-      setMsg({ kind: "err", text: err instanceof ApiError ? err.detail : "save failed" }),
+      setMsg({
+        kind: "err",
+        text: err instanceof ApiError ? err.detail : t("admin:mail.wizard.saveFailed"),
+      }),
   });
 
   // Round-trip transport check using the existing test endpoint. Only enabled
@@ -263,17 +271,17 @@ function SettingsWizard({
       }),
     onSuccess: (data) => {
       if (data.ok) {
-        const text = `Connection OK — test mail dispatched to ${myEmail}.`;
+        const text = t("admin:mail.test.transportDispatched", { email: myEmail });
         setMsg({ kind: "ok", text });
         onOutcome({ kind: "ok", text, at: new Date().toISOString(), source: "transport-probe" });
       } else {
-        const text = data.error || "transport test failed";
+        const text = data.error || t("admin:mail.test.transportFailed");
         setMsg({ kind: "err", text });
         onOutcome({ kind: "err", text, at: new Date().toISOString(), source: "transport-probe" });
       }
     },
     onError: (err) => {
-      const text = err instanceof ApiError ? err.detail : "transport test failed";
+      const text = err instanceof ApiError ? err.detail : t("admin:mail.test.transportFailed");
       setMsg({ kind: "err", text });
       onOutcome({ kind: "err", text, at: new Date().toISOString(), source: "transport-probe" });
     },
@@ -281,16 +289,16 @@ function SettingsWizard({
 
   function validateTransport(): string[] {
     const errs: string[] = [];
-    if (!host.trim()) errs.push("Host is required.");
-    if (!port || port < 1 || port > 65535) errs.push("Port must be between 1 and 65535.");
+    if (!host.trim()) errs.push(t("admin:mail.wizard.validation.hostRequired"));
+    if (!port || port < 1 || port > 65535) errs.push(t("admin:mail.wizard.validation.portRange"));
     return errs;
   }
 
   function validateIdentity(): string[] {
     const errs: string[] = [];
-    if (!fromAddress.trim()) errs.push("From-address is required.");
+    if (!fromAddress.trim()) errs.push(t("admin:mail.wizard.validation.fromRequired"));
     if (fromAddress && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fromAddress)) {
-      errs.push("From-address must look like an email.");
+      errs.push(t("admin:mail.wizard.validation.fromEmail"));
     }
     return errs;
   }
@@ -325,9 +333,7 @@ function SettingsWizard({
       return;
     }
     if (clearPassword && password === "") {
-      const ok = window.confirm(
-        "Wipe the stored SMTP password? Outbound mail will fail until you set a new one.",
-      );
+      const ok = window.confirm(t("admin:mail.wizard.confirmWipe"));
       if (!ok) return;
     }
     setStepErrors([]);
@@ -336,15 +342,15 @@ function SettingsWizard({
   }
 
   const securityHint = (() => {
-    if (encryption === "tls") return "Implicit TLS — full TLS handshake on connect (typically port 465).";
-    if (encryption === "starttls") return "STARTTLS — upgrade plain connection to TLS (typically port 587).";
-    return "Insecure — clear-text SMTP. Only acceptable for in-cluster relays.";
+    if (encryption === "tls") return t("admin:mail.wizard.security.hintTls");
+    if (encryption === "starttls") return t("admin:mail.wizard.security.hintStarttls");
+    return t("admin:mail.wizard.security.hintNone");
   })();
 
   return (
     <Panel>
       <PanelHeader>
-        <h3 className="text-sm font-semibold text-fg">SMTP transport</h3>
+        <h3 className="text-sm font-semibold text-fg">{t("admin:mail.wizard.panelTitle")}</h3>
         <Stepper current={step} completed={completed} />
       </PanelHeader>
       <PanelBody>
@@ -352,7 +358,7 @@ function SettingsWizard({
           {step === "transport" && (
             <div className="space-y-4">
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                <Field label="Host">
+                <Field label={t("admin:mail.wizard.fields.host")}>
                   <TextInput
                     type="text"
                     required
@@ -362,7 +368,7 @@ function SettingsWizard({
                     autoFocus
                   />
                 </Field>
-                <Field label="Port">
+                <Field label={t("admin:mail.wizard.fields.port")}>
                   <TextInput
                     type="number"
                     required
@@ -376,7 +382,7 @@ function SettingsWizard({
 
               <fieldset className="space-y-2 rounded-md border border-border p-3 text-sm">
                 <legend className="px-1 text-xs uppercase tracking-wide text-fg-muted">
-                  Security mode
+                  {t("admin:mail.wizard.security.legend")}
                 </legend>
                 <label className="flex items-center gap-2">
                   <input
@@ -386,7 +392,7 @@ function SettingsWizard({
                     checked={encryption === "starttls"}
                     onChange={() => setEncryption("starttls")}
                   />
-                  STARTTLS (port 587)
+                  {t("admin:mail.wizard.security.starttls")}
                 </label>
                 <label className="flex items-center gap-2">
                   <input
@@ -396,7 +402,7 @@ function SettingsWizard({
                     checked={encryption === "tls"}
                     onChange={() => setEncryption("tls")}
                   />
-                  Implicit TLS (port 465)
+                  {t("admin:mail.wizard.security.tls")}
                 </label>
                 <label className="flex items-center gap-2">
                   <input
@@ -406,7 +412,7 @@ function SettingsWizard({
                     checked={encryption === "none"}
                     onChange={() => setEncryption("none")}
                   />
-                  Insecure (no TLS)
+                  {t("admin:mail.wizard.security.none")}
                 </label>
                 <label
                   className={`flex items-center gap-2 ${encryption === "none" ? "opacity-50" : ""}`}
@@ -418,9 +424,9 @@ function SettingsWizard({
                     onChange={(e) => setInsecureSkipVerify(e.target.checked)}
                   />
                   <span>
-                    Skip TLS certificate verification{" "}
+                    {t("admin:mail.wizard.security.skipVerify")}{" "}
                     <span className="text-fail">
-                      (dangerous; only for self-signed dev mailservers)
+                      {t("admin:mail.wizard.security.skipVerifyWarn")}
                     </span>
                   </span>
                 </label>
@@ -440,17 +446,19 @@ function SettingsWizard({
                   disabled={!initial.host || testConn.isPending || !myEmail}
                   title={
                     !initial.host
-                      ? "Save settings once before running a transport test."
+                      ? t("admin:mail.wizard.testConn.hintNoHost")
                       : !myEmail
-                        ? "Your account has no email on file."
-                        : `Send a probe mail to ${myEmail} using the saved transport.`
+                        ? t("admin:mail.wizard.testConn.hintNoEmail")
+                        : t("admin:mail.wizard.testConn.hintReady", { email: myEmail })
                   }
                 >
                   <Wifi className="h-3.5 w-3.5" />
-                  {testConn.isPending ? "Testing…" : "Test connection"}
+                  {testConn.isPending
+                    ? t("admin:mail.wizard.testConn.testing")
+                    : t("admin:mail.wizard.testConn.button")}
                 </Button>
                 <span className="text-xs text-fg-subtle">
-                  Uses the persisted transport. Save first if this is the initial setup.
+                  {t("admin:mail.wizard.testConn.note")}
                 </span>
               </div>
             </div>
@@ -459,7 +467,10 @@ function SettingsWizard({
           {step === "identity" && (
             <div className="space-y-4">
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                <Field label="Username" hint="Optional, only set if your relay needs auth.">
+                <Field
+                  label={t("admin:mail.wizard.fields.username")}
+                  hint={t("admin:mail.wizard.fields.usernameHint")}
+                >
                   <TextInput
                     type="text"
                     value={username}
@@ -469,7 +480,9 @@ function SettingsWizard({
                 </Field>
                 <Field
                   label={
-                    initial.has_password ? "Password (leave blank to keep stored)" : "Password"
+                    initial.has_password
+                      ? t("admin:mail.wizard.fields.passwordKeep")
+                      : t("admin:mail.wizard.fields.password")
                   }
                 >
                   <TextInput
@@ -481,7 +494,7 @@ function SettingsWizard({
                     className="font-mono"
                   />
                 </Field>
-                <Field label="From address">
+                <Field label={t("admin:mail.wizard.fields.fromAddress")}>
                   <TextInput
                     type="email"
                     required
@@ -500,28 +513,30 @@ function SettingsWizard({
                         if (e.target.checked) setPassword("");
                       }}
                     />
-                    Wipe stored password
+                    {t("admin:mail.wizard.fields.wipePassword")}
                   </label>
                 )}
               </div>
 
               <div className="rounded-md border border-border bg-panel-2 p-3 text-xs text-fg-muted">
                 <div className="mb-1 flex items-center gap-1.5 font-medium text-fg">
-                  <Check className="h-3.5 w-3.5 text-ok" /> Review
+                  <Check className="h-3.5 w-3.5 text-ok" /> {t("admin:mail.wizard.review.heading")}
                 </div>
                 <dl className="grid grid-cols-2 gap-x-4 gap-y-1 font-mono">
-                  <dt className="text-fg-subtle">host</dt>
+                  <dt className="text-fg-subtle">{t("admin:mail.wizard.review.host")}</dt>
                   <dd>{host || "—"}</dd>
-                  <dt className="text-fg-subtle">port</dt>
+                  <dt className="text-fg-subtle">{t("admin:mail.wizard.review.port")}</dt>
                   <dd>{port}</dd>
-                  <dt className="text-fg-subtle">security</dt>
+                  <dt className="text-fg-subtle">{t("admin:mail.wizard.review.security")}</dt>
                   <dd>
                     <StatusPill status={encryption === "none" ? "warn" : "ok"}>
                       {encryption}
                     </StatusPill>
                   </dd>
-                  <dt className="text-fg-subtle">skip-verify</dt>
-                  <dd>{insecureSkipVerify ? "yes" : "no"}</dd>
+                  <dt className="text-fg-subtle">{t("admin:mail.wizard.review.skipVerify")}</dt>
+                  <dd>
+                    {insecureSkipVerify ? t("admin:mail.status.yes") : t("admin:mail.status.no")}
+                  </dd>
                 </dl>
               </div>
             </div>
@@ -551,22 +566,28 @@ function SettingsWizard({
           <div className="flex flex-wrap items-center gap-3">
             {step === "transport" ? (
               <Button type="button" variant="primary" onClick={next}>
-                Next: Identity <ChevronRight className="h-3.5 w-3.5" />
+                {t("admin:mail.wizard.buttons.next")} <ChevronRight className="h-3.5 w-3.5" />
               </Button>
             ) : (
               <>
                 <Button type="button" onClick={back}>
-                  <ChevronLeft className="h-3.5 w-3.5" /> Back
+                  <ChevronLeft className="h-3.5 w-3.5" /> {t("common:actions.back")}
                 </Button>
                 <Button type="submit" variant="primary" disabled={save.isPending}>
-                  {save.isPending ? "Saving…" : "Save"}
+                  {save.isPending
+                    ? t("admin:mail.wizard.buttons.saving")
+                    : t("admin:mail.wizard.buttons.save")}
                 </Button>
               </>
             )}
             {initial.updated_at && (
               <span className="text-xs text-fg-subtle">
-                Last updated {new Date(initial.updated_at).toLocaleString()}
-                {initial.updated_by ? ` by ${initial.updated_by}` : ""}
+                {t("admin:mail.wizard.lastUpdated", {
+                  when: new Date(initial.updated_at).toLocaleString(),
+                })}
+                {initial.updated_by
+                  ? t("admin:mail.wizard.lastUpdatedBy", { user: initial.updated_by })
+                  : ""}
               </span>
             )}
           </div>
@@ -583,6 +604,7 @@ function TestCard({
   defaultTo: string;
   onOutcome: (o: TestOutcome) => void;
 }) {
+  const { t } = useT(["admin"]);
   const [to, setTo] = useState(defaultTo);
   const [msg, setMsg] = useState<Msg>(null);
   // Append-only log of recent send attempts (newest first), capped at 5.
@@ -601,17 +623,17 @@ function TestCard({
       }),
     onSuccess: (data) => {
       if (data.ok) {
-        const text = `Test mail dispatched to ${to}.`;
+        const text = t("admin:mail.test.dispatched", { to });
         setMsg({ kind: "ok", text });
         recordOutcome({ kind: "ok", text, at: new Date().toISOString(), source: "send-test" });
       } else {
-        const text = data.error || "test failed";
+        const text = data.error || t("admin:mail.test.failed");
         setMsg({ kind: "err", text });
         recordOutcome({ kind: "err", text, at: new Date().toISOString(), source: "send-test" });
       }
     },
     onError: (err) => {
-      const text = err instanceof ApiError ? err.detail : "test failed";
+      const text = err instanceof ApiError ? err.detail : t("admin:mail.test.failed");
       setMsg({ kind: "err", text });
       recordOutcome({ kind: "err", text, at: new Date().toISOString(), source: "send-test" });
     },
@@ -620,7 +642,7 @@ function TestCard({
   return (
     <Panel>
       <PanelHeader>
-        <h3 className="text-sm font-semibold text-fg">Send test message</h3>
+        <h3 className="text-sm font-semibold text-fg">{t("admin:mail.test.title")}</h3>
       </PanelHeader>
       <PanelBody>
         <form
@@ -631,7 +653,7 @@ function TestCard({
           }}
           className="space-y-3"
         >
-          <Field label="Recipient">
+          <Field label={t("admin:mail.test.recipient")}>
             <TextInput
               type="email"
               required
@@ -647,14 +669,14 @@ function TestCard({
             ))}
           <Button type="submit" disabled={send.isPending}>
             <Send className="h-3.5 w-3.5" />
-            {send.isPending ? "Sending…" : "Send test mail"}
+            {send.isPending ? t("admin:mail.test.sending") : t("admin:mail.test.send")}
           </Button>
         </form>
 
         {log.length > 0 && (
           <div className="mt-5">
             <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-fg-subtle">
-              Recent results
+              {t("admin:mail.test.recentResults")}
             </h4>
             <ul className="space-y-1.5 text-xs">
               {log.map((entry) => (
@@ -663,7 +685,9 @@ function TestCard({
                   className="flex items-start gap-2 rounded-md border border-border bg-panel-2 px-2.5 py-1.5"
                 >
                   <StatusPill status={entry.kind === "ok" ? "ok" : "fail"}>
-                    {entry.kind === "ok" ? "ok" : "fail"}
+                    {entry.kind === "ok"
+                      ? t("admin:mail.test.outcomeOk")
+                      : t("admin:mail.test.outcomeFail")}
                   </StatusPill>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-fg">{entry.text}</p>
@@ -690,6 +714,7 @@ function StatusCard({
   settings: SmtpSettings;
   lastOutcome: TestOutcome | null;
 }) {
+  const { t } = useT(["admin"]);
   // Ready = saved settings define a transport. Sending may still fail at the
   // network layer; the badge below reflects last observed test outcome.
   const ready = Boolean(settings.host && settings.from_address);
@@ -698,43 +723,49 @@ function StatusCard({
   return (
     <Panel>
       <PanelHeader>
-        <h3 className="text-sm font-semibold text-fg">Mail status</h3>
+        <h3 className="text-sm font-semibold text-fg">{t("admin:mail.status.title")}</h3>
         <div className="flex items-center gap-2">
           {ready ? (
-            <StatusPill status="ok">ready</StatusPill>
+            <StatusPill status="ok">{t("admin:mail.status.ready")}</StatusPill>
           ) : (
-            <StatusPill status="warn">not configured</StatusPill>
+            <StatusPill status="warn">{t("admin:mail.status.notConfigured")}</StatusPill>
           )}
           {lastOutcome &&
             (lastOutcome.kind === "ok" ? (
-              <StatusPill status="ok">last test OK</StatusPill>
+              <StatusPill status="ok">{t("admin:mail.status.lastTestOk")}</StatusPill>
             ) : (
-              <StatusPill status="fail">last test failed</StatusPill>
+              <StatusPill status="fail">{t("admin:mail.status.lastTestFailed")}</StatusPill>
             ))}
         </div>
       </PanelHeader>
       <PanelBody className="space-y-4">
         <dl className="grid grid-cols-2 gap-x-4 gap-y-1 font-mono text-xs">
-          <dt className="text-fg-subtle">host</dt>
+          <dt className="text-fg-subtle">{t("admin:mail.status.fields.host")}</dt>
           <dd>{settings.host || "—"}</dd>
-          <dt className="text-fg-subtle">port</dt>
+          <dt className="text-fg-subtle">{t("admin:mail.status.fields.port")}</dt>
           <dd>{settings.port || "—"}</dd>
-          <dt className="text-fg-subtle">security</dt>
+          <dt className="text-fg-subtle">{t("admin:mail.status.fields.security")}</dt>
           <dd>
             <StatusPill status={encryption === "none" ? "warn" : "ok"}>{encryption}</StatusPill>
           </dd>
-          <dt className="text-fg-subtle">from</dt>
+          <dt className="text-fg-subtle">{t("admin:mail.status.fields.from")}</dt>
           <dd>{settings.from_address || "—"}</dd>
-          <dt className="text-fg-subtle">password</dt>
-          <dd>{settings.has_password ? "stored" : "—"}</dd>
-          <dt className="text-fg-subtle">skip-verify</dt>
-          <dd>{settings.insecure_skip_verify ? "yes" : "no"}</dd>
+          <dt className="text-fg-subtle">{t("admin:mail.status.fields.password")}</dt>
+          <dd>{settings.has_password ? t("admin:mail.status.stored") : "—"}</dd>
+          <dt className="text-fg-subtle">{t("admin:mail.status.fields.skipVerify")}</dt>
+          <dd>
+            {settings.insecure_skip_verify
+              ? t("admin:mail.status.yes")
+              : t("admin:mail.status.no")}
+          </dd>
           {settings.updated_at && (
             <>
-              <dt className="text-fg-subtle">updated</dt>
+              <dt className="text-fg-subtle">{t("admin:mail.status.fields.updated")}</dt>
               <dd>
                 {new Date(settings.updated_at).toLocaleString()}
-                {settings.updated_by ? ` by ${settings.updated_by}` : ""}
+                {settings.updated_by
+                  ? t("admin:mail.wizard.lastUpdatedBy", { user: settings.updated_by })
+                  : ""}
               </dd>
             </>
           )}
@@ -744,7 +775,12 @@ function StatusCard({
           <div className="rounded-md border border-border bg-panel-2 p-3 text-xs">
             <div className="mb-1 flex items-center gap-1.5 font-medium text-fg">
               <Activity className="h-3.5 w-3.5 text-accent" />
-              Last test ({lastOutcome.source === "transport-probe" ? "transport probe" : "send-test"})
+              {t("admin:mail.status.lastTestHeading", {
+                source:
+                  lastOutcome.source === "transport-probe"
+                    ? t("admin:mail.status.sourceTransport")
+                    : t("admin:mail.status.sourceSendTest"),
+              })}
             </div>
             <p className={lastOutcome.kind === "ok" ? "text-ok" : "text-fail"}>
               {lastOutcome.text}
@@ -756,28 +792,32 @@ function StatusCard({
         )}
 
         <div className="rounded-md border border-border bg-panel-2 p-3 text-xs text-fg-muted">
-          <p className="mb-1 font-medium text-fg">Troubleshooting</p>
+          <p className="mb-1 font-medium text-fg">{t("admin:mail.status.troubleshooting.heading")}</p>
           <ul className="list-disc space-y-0.5 pl-4">
             <li>
-              <span className="text-fg">Connection refused / timeout</span> — check host, port,
-              and that the relay accepts inbound from this network.
+              <span className="text-fg">{t("admin:mail.status.troubleshooting.connectionLabel")}</span>
+              {t("admin:mail.status.troubleshooting.connection")}
             </li>
             <li>
-              <span className="text-fg">TLS handshake fails</span> — switch between STARTTLS
-              (587) and implicit TLS (465); only enable <em>skip verify</em> for self-signed
-              dev relays.
+              <span className="text-fg">{t("admin:mail.status.troubleshooting.tlsLabel")}</span>
+              {t("admin:mail.status.troubleshooting.tlsLead")}
+              <em>{t("admin:mail.status.troubleshooting.tlsEm")}</em>
+              {t("admin:mail.status.troubleshooting.tlsTail")}
             </li>
             <li>
-              <span className="text-fg">535 auth rejected</span> — verify username/password;
-              re-save with the password field filled to overwrite.
+              <span className="text-fg">{t("admin:mail.status.troubleshooting.authLabel")}</span>
+              {t("admin:mail.status.troubleshooting.auth")}
             </li>
             <li>
-              <span className="text-fg">550 sender rejected</span> — the From-address domain
-              must be one your relay is willing to forward.
+              <span className="text-fg">{t("admin:mail.status.troubleshooting.senderLabel")}</span>
+              {t("admin:mail.status.troubleshooting.sender")}
             </li>
             <li>
-              Run a probe from the <span className="font-medium text-fg">Send test</span> tab to
-              capture the live error returned by the server.
+              {t("admin:mail.status.troubleshooting.probeLead")}
+              <span className="font-medium text-fg">
+                {t("admin:mail.status.troubleshooting.probeTab")}
+              </span>
+              {t("admin:mail.status.troubleshooting.probeTail")}
             </li>
           </ul>
         </div>

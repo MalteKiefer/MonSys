@@ -19,6 +19,7 @@ import {
   Table,
   TextInput,
 } from "../components/ui";
+import { useT } from "../i18n/useT";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { Host } from "../lib/types";
@@ -28,14 +29,15 @@ type HostsResponse = { hosts: Host[] };
 
 type StatusFilter = "all" | "online" | "stale" | "offline";
 
-const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "online", label: "Online" },
-  { key: "stale", label: "Stale" },
-  { key: "offline", label: "Offline" },
+const STATUS_FILTER_KEYS: { key: StatusFilter; labelKey: string }[] = [
+  { key: "all", labelKey: "hosts:filters.all" },
+  { key: "online", labelKey: "hosts:filters.online" },
+  { key: "stale", labelKey: "hosts:filters.stale" },
+  { key: "offline", labelKey: "hosts:filters.offline" },
 ];
 
 export function Hosts() {
+  const { t } = useT(["hosts", "common"]);
   const navigate = useNavigate();
   const isAdmin = useAuth((s) => s.user?.role === "admin");
   const { data, isLoading, error, refetch } = useQuery({
@@ -82,10 +84,10 @@ export function Hosts() {
 
   const updatesSortLabel =
     updatesSort === "pending"
-      ? "sorted by pending desc"
+      ? t("hosts:table.sortPendingDesc")
       : updatesSort === "security"
-        ? "sorted by security desc"
-        : "unsorted";
+        ? t("hosts:table.sortSecurityDesc")
+        : t("hosts:table.sortUnsorted");
   const updatesSortGlyph = updatesSort === "pending" ? "↓" : updatesSort === "security" ? "⚠↓" : "";
 
   const onRowKeyDown = (e: KeyboardEvent<HTMLTableRowElement>, id: string) => {
@@ -97,24 +99,24 @@ export function Hosts() {
 
   const addAgentButton = isAdmin ? (
     <Button variant="primary" onClick={() => setEnrollOpen(true)}>
-      <Plus className="h-3.5 w-3.5" /> Add agent
+      <Plus className="h-3.5 w-3.5" /> {t("hosts:addAgent")}
     </Button>
   ) : null;
 
   const subtitle = !isLoading && !error ? (
     <span className="tabular-nums">
       {filtered.length === hosts.length
-        ? `${hosts.length} known`
-        : `${filtered.length} of ${hosts.length}`}
+        ? t("hosts:subtitleKnown", { count: hosts.length })
+        : t("hosts:subtitleFiltered", { shown: filtered.length, total: hosts.length })}
     </span>
   ) : undefined;
 
   return (
-    <Page title="Hosts" subtitle={subtitle} actions={addAgentButton}>
+    <Page title={t("hosts:title")} subtitle={subtitle} actions={addAgentButton}>
       {enrollOpen && <EnrollAgentModal onClose={() => setEnrollOpen(false)} />}
 
       {isLoading ? (
-        <p className="text-sm text-fg-muted">Loading hosts…</p>
+        <p className="text-sm text-fg-muted">{t("hosts:loading")}</p>
       ) : error ? (
         <ErrorState message={(error as Error).message} onRetry={() => refetch()} />
       ) : (
@@ -122,24 +124,24 @@ export function Hosts() {
           {hosts.length > 0 && (
             <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
               <div className="flex-1">
-                <Field label="Search" hint="Matches hostname, label, or tag (case-insensitive).">
+                <Field label={t("hosts:filters.searchLabel")} hint={t("hosts:filters.searchHint")}>
                   <TextInput
                     type="search"
-                    placeholder="hostname, label, or #tag…"
+                    placeholder={t("hosts:filters.searchPlaceholder")}
                     value={search}
                     onChange={(e) => setSearch(e.currentTarget.value)}
-                    aria-label="Search hosts"
+                    aria-label={t("hosts:filters.searchAria")}
                   />
                 </Field>
               </div>
               <div>
-                <Field label="Status">
+                <Field label={t("hosts:filters.statusLabel")}>
                   <div
                     role="group"
-                    aria-label="Filter by status"
+                    aria-label={t("hosts:filters.statusGroupAria")}
                     className="inline-flex rounded-md border border-border bg-panel p-0.5"
                   >
-                    {STATUS_FILTERS.map(({ key, label }) => {
+                    {STATUS_FILTER_KEYS.map(({ key, labelKey }) => {
                       const active = key === statusFilter;
                       return (
                         <button
@@ -151,7 +153,7 @@ export function Hosts() {
                             active ? "bg-panel-2 text-fg shadow-panel" : "text-fg-subtle hover:text-fg"
                           }`}
                         >
-                          {label}
+                          {t(labelKey)}
                         </button>
                       );
                     })}
@@ -165,36 +167,35 @@ export function Hosts() {
             {hosts.length === 0 ? (
               <EmptyState
                 icon={Server}
-                title="No hosts yet"
+                title={t("hosts:empty.noneTitle")}
                 hint={
                   <>
-                    Issue a token via <code className="font-mono text-fg-muted">/admin/enrollments</code>{" "}
-                    and run the install command on the target host.
+                    {t("hosts:empty.noneHintPrefix")}<code className="font-mono text-fg-muted">{t("hosts:empty.noneHintCode")}</code>{t("hosts:empty.noneHintSuffix")}
                   </>
                 }
                 primaryAction={addAgentButton ?? undefined}
               />
             ) : filtered.length === 0 ? (
-              <EmptyState icon={Server} title="No hosts match your filter." />
+              <EmptyState icon={Server} title={t("hosts:empty.noMatch")} />
             ) : (
               <Table>
                 <THead>
                   <tr>
-                    <TH>Status</TH>
-                    <TH>Host</TH>
-                    <TH>Distro</TH>
-                    <TH>Services</TH>
-                    <TH>Tags / Groups</TH>
-                    <TH>CPU / RAM</TH>
-                    <TH>Agent</TH>
+                    <TH>{t("hosts:table.status")}</TH>
+                    <TH>{t("hosts:table.host")}</TH>
+                    <TH>{t("hosts:table.distro")}</TH>
+                    <TH>{t("hosts:table.services")}</TH>
+                    <TH>{t("hosts:table.tagsGroups")}</TH>
+                    <TH>{t("hosts:table.cpuRam")}</TH>
+                    <TH>{t("hosts:table.agent")}</TH>
                     <TH>
                       <button
                         type="button"
                         onClick={cycleUpdatesSort}
-                        aria-label={`Updates column, ${updatesSortLabel}, click to change`}
+                        aria-label={t("hosts:table.updatesColAria", { label: updatesSortLabel })}
                         className="inline-flex items-center gap-1 text-inherit hover:text-fg focus:outline-none focus-visible:underline"
                       >
-                        Updates
+                        {t("hosts:table.updates")}
                         {updatesSortGlyph && (
                           <span aria-hidden="true" className="text-[10px] text-accent">
                             {updatesSortGlyph}
@@ -202,7 +203,7 @@ export function Hosts() {
                         )}
                       </button>
                     </TH>
-                    <TH>Last seen</TH>
+                    <TH>{t("hosts:table.lastSeen")}</TH>
                   </tr>
                 </THead>
                 <TBody>
@@ -211,7 +212,7 @@ export function Hosts() {
                       key={h.id}
                       role="link"
                       tabIndex={0}
-                      aria-label={`Open host ${hostDisplay(h)}`}
+                      aria-label={t("hosts:table.openHostAria", { host: hostDisplay(h) })}
                       className="cursor-pointer transition-colors duration-100 hover:bg-panel-2 focus:outline-none focus-visible:bg-panel-2 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/50"
                       onClick={() => navigate(`/hosts/${h.id}`)}
                       onKeyDown={(e) => onRowKeyDown(e, h.id)}
@@ -254,15 +255,15 @@ export function Hosts() {
                         </div>
                       </TD>
                       <TD className="tabular-nums text-fg-muted whitespace-nowrap">
-                        {h.cpu_cores}c · {formatBytes(h.ram_total_bytes)}
+                        {t("hosts:table.cpuRamValue", { cores: h.cpu_cores, ram: formatBytes(h.ram_total_bytes) })}
                       </TD>
                       <TD className="font-mono text-xs text-fg-muted whitespace-nowrap">
                         {h.agent_version || "—"}
                       </TD>
                       <TD className="tabular-nums whitespace-nowrap">
-                        <UpdatesCell pending={h.pending_updates} security={h.security_updates} />
+                        <UpdatesCell pending={h.pending_updates} security={h.security_updates} t={t} />
                       </TD>
-                      <TD className="text-fg-muted whitespace-nowrap">{relativeTime(h.last_seen_at)}</TD>
+                      <TD className="text-fg-muted whitespace-nowrap">{relativeTime(h.last_seen_at, t)}</TD>
                     </tr>
                   ))}
                 </TBody>
@@ -275,7 +276,15 @@ export function Hosts() {
   );
 }
 
-function UpdatesCell({ pending, security }: { pending?: number; security?: number }) {
+function UpdatesCell({
+  pending,
+  security,
+  t,
+}: {
+  pending?: number;
+  security?: number;
+  t: (key: string, opts?: Record<string, unknown>) => string;
+}) {
   if (typeof pending !== "number") {
     return <span className="text-fg-subtle">—</span>;
   }
@@ -284,7 +293,7 @@ function UpdatesCell({ pending, security }: { pending?: number; security?: numbe
     return (
       <span
         className="inline-flex items-center gap-1 text-warn"
-        title={`${sec} security`}
+        title={t("hosts:table.securityTitle", { count: sec })}
       >
         <AlertTriangle className="h-3 w-3" aria-hidden="true" />
         {pending}
@@ -306,12 +315,12 @@ function formatBytes(n: number): string {
   return `${v.toFixed(v < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
 }
 
-function relativeTime(iso: string): string {
-  const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return iso;
-  const diff = (Date.now() - t) / 1000;
-  if (diff < 60) return `${Math.round(diff)}s ago`;
-  if (diff < 3600) return `${Math.round(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.round(diff / 3600)}h ago`;
-  return `${Math.round(diff / 86400)}d ago`;
+function relativeTime(iso: string, t: (key: string, opts?: Record<string, unknown>) => string): string {
+  const ts = new Date(iso).getTime();
+  if (Number.isNaN(ts)) return iso;
+  const diff = (Date.now() - ts) / 1000;
+  if (diff < 60) return t("hosts:time.secondsAgo", { count: Math.round(diff) });
+  if (diff < 3600) return t("hosts:time.minutesAgo", { count: Math.round(diff / 60) });
+  if (diff < 86400) return t("hosts:time.hoursAgo", { count: Math.round(diff / 3600) });
+  return t("hosts:time.daysAgo", { count: Math.round(diff / 86400) });
 }

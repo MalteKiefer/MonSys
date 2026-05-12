@@ -46,6 +46,10 @@ export type CurrentUser = {
   // bust the URL after re-upload without hammering the server otherwise.
   has_avatar?: boolean;
   avatar_updated_at?: string | null;
+  // Persisted UI locale ("en" | "de", or empty/undefined for "auto"
+  // detection). The TopBar language switcher writes this through
+  // POST /v1/auth/me/language so the choice survives across devices.
+  language?: string;
 };
 
 // Passkey (WebAuthn credential) summary returned by /v1/auth/passkeys.

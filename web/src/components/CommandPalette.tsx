@@ -45,6 +45,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useCommandPalette, type PaletteRecent } from "../lib/palette-store";
+import { useT } from "../i18n/useT";
 import {
   Host,
   Monitor,
@@ -183,6 +184,7 @@ export function CommandPalette() {
 }
 
 function PaletteModal() {
+  const { t } = useT("nav");
   const setOpen = useCommandPalette((s) => s.setOpen);
   const recent = useCommandPalette((s) => s.recent);
   const addRecent = useCommandPalette((s) => s.addRecent);
@@ -428,7 +430,7 @@ function PaletteModal() {
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Quick command palette"
+        aria-label={t("palette.dialog_label")}
         className="flex w-full max-w-xl flex-col overflow-hidden rounded-lg border border-border bg-panel shadow-panel-strong"
         style={{ maxHeight: "60vh" }}
         onKeyDown={onKeyDown}
@@ -443,7 +445,7 @@ function PaletteModal() {
             aria-controls={listboxId}
             aria-activedescendant={activeOptionId}
             aria-autocomplete="list"
-            placeholder="Search hosts, pages, monitors, rules…"
+            placeholder={t("palette.placeholder")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="flex-1 bg-transparent text-sm text-fg placeholder:text-fg-subtle focus:outline-none"
@@ -457,12 +459,12 @@ function PaletteModal() {
           ref={listRef}
           id={listboxId}
           role="listbox"
-          aria-label="Palette results"
+          aria-label={t("palette.results_label")}
           className="flex-1 overflow-y-auto py-1"
         >
           {flat.length === 0 ? (
             <div className="px-4 py-8 text-center text-sm text-fg-muted">
-              {trimmed === "" ? "Start typing to search…" : "No results."}
+              {trimmed === "" ? t("palette.empty_prompt") : t("palette.empty_results")}
             </div>
           ) : (
             sections.map((sec) => {
@@ -531,16 +533,16 @@ function PaletteModal() {
         <div className="flex items-center justify-between gap-3 border-t border-border bg-panel/40 px-3 py-1.5 text-[10px] text-fg-subtle">
           <div className="flex items-center gap-1">
             <Activity className="h-3 w-3" aria-hidden />
-            <span>MonSys palette</span>
+            <span>{t("palette.brand")}</span>
           </div>
           <div className="flex items-center gap-3">
             <span className="inline-flex items-center gap-1">
               <kbd className="rounded border border-border bg-panel-2 px-1 py-0.5 font-mono">↑↓</kbd>
-              navigate
+              {t("palette.hint_navigate")}
             </span>
             <span className="inline-flex items-center gap-1">
               <kbd className="rounded border border-border bg-panel-2 px-1 py-0.5 font-mono">↵</kbd>
-              open
+              {t("palette.hint_open")}
             </span>
           </div>
         </div>

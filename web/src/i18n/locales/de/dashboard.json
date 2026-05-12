@@ -1,0 +1,47 @@
+{
+  "title": "Übersicht",
+  "subtitle": "Flottenstatus auf einen Blick.",
+  "kpi": {
+    "onlineHosts": "Online-Hosts",
+    "onlineHostsHint": "von {{count}} insgesamt",
+    "openAlerts": "Offene Warnungen",
+    "openAlertsHint": "letzte 24h",
+    "staleHosts": "Veraltete Hosts",
+    "staleHostsHint": "{{stale}} veraltet, {{offline}} offline",
+    "pendingUpdates": "Ausstehende Updates",
+    "pendingUpdatesHint": "Details pro Host",
+    "viewPackages": "Pakete ansehen"
+  },
+  "attention": {
+    "title": "Hosts, die Aufmerksamkeit benötigen",
+    "allHosts": "Alle Hosts →",
+    "allOnline": "Alle Hosts online.",
+    "colStatus": "Status",
+    "colHost": "Host",
+    "colLastSeen": "Zuletzt gesehen"
+  },
+  "alerts": {
+    "title": "Neueste Warnungen",
+    "allAlerts": "Alle Warnungen →",
+    "empty": "Keine Warnungen in den letzten 24h.",
+    "colWhen": "Wann",
+    "colSeverity": "Schweregrad",
+    "colSubject": "Betreff"
+  },
+  "system": {
+    "title": "Live-System",
+    "pickHost": "Host für Diagramme auswählen",
+    "pickHostPlaceholder": "— Host auswählen —",
+    "pickHostHint": "Wähle einen Host, um Live-CPU- und RAM-Diagramme anzuzeigen.",
+    "noSamples": "Keine System-Messwerte in diesem Zeitraum.",
+    "cpu": "CPU",
+    "ram": "RAM"
+  },
+  "footer": "Live-Daten werden alle 15-30 Sekunden aktualisiert.",
+  "time": {
+    "secondsAgo": "vor {{count}}s",
+    "minutesAgo": "vor {{count}}m",
+    "hoursAgo": "vor {{count}}h",
+    "daysAgo": "vor {{count}}T"
+  }
+}

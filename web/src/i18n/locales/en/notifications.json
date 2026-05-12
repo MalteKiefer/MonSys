@@ -1,0 +1,404 @@
+{
+  "tabs": {
+    "rules": "Rules",
+    "channels": "Channels",
+    "alerts": "Alerts"
+  },
+  "rules": {
+    "page_title": "Notification rules",
+    "page_subtitle": "Trigger alerts when host status, monitor result, or login pattern changes.",
+    "panel_title": "Rules",
+    "new_rule": "New rule",
+    "empty_no_channels": "Create a channel first, then add rules.",
+    "empty_no_rules": "No rules yet.",
+    "card": {
+      "conditions_count": "{{count}} conditions",
+      "state_on": "on",
+      "state_off": "off",
+      "state_mixed": "mixed",
+      "channels_label": "Channels:",
+      "channels_none": "—",
+      "throttle_label": "Throttle:",
+      "throttle_value": "{{seconds}}s",
+      "repeat_label": "Repeat:",
+      "repeat_value": "{{seconds}}s",
+      "edit": "Edit",
+      "enable": "Enable",
+      "disable": "Disable"
+    },
+    "confirm_delete_group": "Delete group \"{{name}}\" ({{count}} rules)?",
+    "confirm_delete_rule": "Delete rule \"{{name}}\"?",
+    "form": {
+      "title_new": "New rule",
+      "title_edit": "Edit {{name}}",
+      "expert_toggle": "Expert JSON",
+      "expert_tooltip_open": "Toggle expert / raw JSON mode for the open condition",
+      "expert_tooltip_closed": "Open a condition editor to toggle expert mode",
+      "close": "Close",
+      "back": "Back",
+      "cancel": "Cancel",
+      "next": "Next: {{step}}",
+      "save_rule": "Save rule",
+      "create_rule": "Create rule",
+      "create_rules_n": "Create {{count}} rules",
+      "saving": "Saving…",
+      "finish_condition_hint": "Finish the condition above to continue.",
+      "error_add_condition": "Add at least one condition",
+      "error_pick_channel": "Pick at least one channel",
+      "error_repeat_range": "Repeat interval must be 0 or between 60 and 86400 seconds",
+      "error_params_not_serialisable": "condition_params for {{type}} is not serialisable JSON: {{message}}",
+      "error_condition_no_type": "A condition has no type — finish or remove it"
+    }
+  },
+  "channels": {
+    "page_title": "Notification channels",
+    "page_subtitle": "Outbound destinations: email, Slack, Mattermost, Discord, ntfy.",
+    "panel_title": "Channels",
+    "new_channel": "New channel",
+    "empty": "No channels yet.",
+    "table": {
+      "type": "Type",
+      "name": "Name",
+      "owner": "Owner",
+      "enabled": "Enabled",
+      "last_used": "Last used",
+      "last_error": "Last error",
+      "actions": "Actions"
+    },
+    "owner": {
+      "shared": "shared",
+      "you": "you",
+      "other": "other"
+    },
+    "state_on": "on",
+    "state_off": "off",
+    "actions": {
+      "test": "Test",
+      "edit": "Edit"
+    },
+    "test_success": "Test message sent.",
+    "test_failed": "Test failed.",
+    "test_generic_failed": "failed",
+    "confirm_delete": "Delete channel \"{{name}}\"?",
+    "form": {
+      "title_new": "New channel",
+      "title_edit": "Edit {{name}}",
+      "type_section": "Channel type",
+      "type_locked_hint": "Type cannot be changed after creation.",
+      "identification_section": "Identification",
+      "name_label": "Name",
+      "name_placeholder": "e.g. ops-oncall",
+      "smtp_warning": "Outbound mail isn't configured yet — ask an admin to set up SMTP under Admin → Mail before this channel can deliver.",
+      "recipient_email_label": "Recipient email",
+      "recipient_email_hint": "Defaults to your account email. Outbound transport (SMTP host, auth, from address) is configured by an admin under Admin → Mail (SMTP).",
+      "config_section_suffix": "configuration",
+      "enabled_label": "Enabled",
+      "enabled_hint": "Disable to keep the channel configured but skip deliveries.",
+      "save": "Save",
+      "create": "Create",
+      "saving": "Saving…",
+      "cancel": "Cancel",
+      "error_generic": "failed",
+      "types": {
+        "email": {
+          "label": "Email",
+          "description": "Send a templated email"
+        },
+        "slack": {
+          "label": "Slack",
+          "description": "Post to a Slack channel via webhook"
+        },
+        "mattermost": {
+          "label": "Mattermost",
+          "description": "Post to a Mattermost channel via webhook"
+        },
+        "discord": {
+          "label": "Discord",
+          "description": "Post to a Discord channel via webhook"
+        },
+        "ntfy": {
+          "label": "ntfy",
+          "description": "Push to an ntfy topic"
+        }
+      },
+      "fields": {
+        "webhook_url": "Incoming webhook URL",
+        "discord_webhook_url": "Webhook URL",
+        "username_optional": "Display username (optional)",
+        "server_url": "Server URL",
+        "topic": "Topic",
+        "auth_token_optional": "Bearer token (optional)",
+        "basic_user_optional": "Basic auth user (optional)",
+        "basic_pass_optional": "Basic auth password (optional)"
+      }
+    }
+  },
+  "alerts": {
+    "page_title": "Alert history",
+    "page_subtitle": "Recent alerts delivered through the rules + channels above.",
+    "panel_title": "Alert history",
+    "windows": {
+      "1h": "1h",
+      "24h": "24h",
+      "7d": "7d",
+      "30d": "30d"
+    },
+    "filter_label": "Filter by host",
+    "filter_hint": "Only host-scoped alerts (offline, login-failed) will match.",
+    "all_hosts": "All hosts",
+    "count_filtered": "{{filtered}} of {{total}}",
+    "count_total_one": "{{count}} alert",
+    "count_total_other": "{{count}} alerts",
+    "empty_window": "No alerts in this window.",
+    "empty_filter": "No alerts match the selected host.",
+    "table": {
+      "when": "When",
+      "severity": "Severity",
+      "rule": "Rule",
+      "subject": "Subject",
+      "delivered": "Delivered"
+    },
+    "rel_time": {
+      "seconds_ago": "{{count}}s ago",
+      "minutes_ago": "{{count}}m ago",
+      "hours_ago": "{{count}}h ago",
+      "days_ago": "{{count}}d ago"
+    }
+  },
+  "wizard": {
+    "steps": {
+      "detect": "Detect",
+      "scope": "Scope",
+      "notify": "Notify"
+    },
+    "detect": {
+      "conditions_label": "Conditions",
+      "conditions_hint": "(rule fires when ANY trigger)",
+      "configured_count": "{{count}} configured",
+      "no_type": "(no type)",
+      "no_summary": "—",
+      "edit_condition_aria": "Edit condition {{index}}",
+      "remove_condition_aria": "Remove condition {{index}}",
+      "add_another": "Add another condition",
+      "editor_title_new": "Add condition",
+      "editor_title_edit": "Edit condition",
+      "expert_toggle": "Expert JSON",
+      "expert_tooltip": "Toggle expert / raw JSON mode for this leg",
+      "section_condition_type": "Condition type",
+      "select_placeholder": "— pick one —",
+      "step1_heading": "1. What kind of signal?",
+      "step2_heading": "2. Pick a condition",
+      "step3_heading": "3. Configure {{label}}",
+      "back_to_categories": "← Back to categories",
+      "cancel": "Cancel",
+      "save_condition": "Save condition",
+      "update_condition": "Update condition"
+    },
+    "scope": {
+      "legend": "Who does this rule watch?",
+      "choices": {
+        "all_label": "All hosts",
+        "all_hint": "Every host that reports to MonSys.",
+        "tags_label": "Hosts with tag…",
+        "tags_hint": "Match any selected tag.",
+        "groups_label": "Hosts in group…",
+        "groups_hint": "Match any selected host group.",
+        "hosts_label": "Specific hosts",
+        "hosts_hint": "Pick individual hosts."
+      },
+      "tags_header": "Tags ({{count}} selected)",
+      "groups_header": "Groups ({{count}} selected)",
+      "hosts_header": "Hosts ({{count}} selected)",
+      "tags_empty_none": "No tags defined yet.",
+      "tags_empty_match": "No matching tags.",
+      "tags_search_placeholder": "Search tags…",
+      "tags_count_one": "{{count}} host",
+      "tags_count_other": "{{count}} hosts",
+      "groups_empty_none": "No groups defined yet.",
+      "groups_empty_match": "No matching groups.",
+      "groups_search_placeholder": "Search groups…",
+      "groups_members_one": "{{count}} member",
+      "groups_members_other": "{{count}} members",
+      "hosts_empty_none": "No hosts known yet.",
+      "hosts_empty_match": "No matching hosts.",
+      "hosts_search_placeholder": "Search hosts…",
+      "host_no_tags": "no tags"
+    },
+    "notify": {
+      "name_label": "Name",
+      "name_hint": "Shown in the alerts list and notification subject.",
+      "name_placeholder": "e.g. prod hosts offline",
+      "channels_header": "Channels ({{count}} selected)",
+      "channels_empty": "No channels available. Create one in Channels first.",
+      "channels_search_placeholder": "Search channels…",
+      "remove_channel_aria": "Remove channel {{name}}",
+      "severity_label": "Severity",
+      "severity_info": "info",
+      "severity_warning": "warning",
+      "severity_critical": "critical",
+      "throttle_label": "Don't repeat for…",
+      "throttle_hint_minutes": "≈ {{value}} minute(s)",
+      "throttle_hint_zero": "0 disables throttling — every fire delivers.",
+      "throttle_unit": "seconds",
+      "repeat_label": "Repeat reminder",
+      "repeat_hint_zero": "0 = fire once per outage.",
+      "repeat_hint_active": "Re-send every {{value}} min while still active.",
+      "repeat_unit": "seconds",
+      "notify_on_resolve_label": "Notify on resolve",
+      "notify_on_resolve_hint": "Send an all-clear when the host or monitor recovers.",
+      "enabled_label": "Enabled",
+      "enabled_hint": "Disable to keep the rule but stop firing alerts."
+    },
+    "preview": {
+      "title": "Preview",
+      "add_to_see": "Add a condition to see preview.",
+      "alert_when": "Alert when",
+      "condition_placeholder": "a condition is picked",
+      "alert_when_any": "Alert when ANY of:",
+      "leg_no_type": "(no type yet)",
+      "scope_any_host": "any host",
+      "scope_tagged": "hosts tagged ",
+      "scope_in_group": "hosts in group ",
+      "scope_specific": "hosts ",
+      "delivery_send_to": "send to ",
+      "delivery_a_channel": "a channel",
+      "delivery_with_severity": " with severity ",
+      "name_label": "Name",
+      "rows_will_be_created_prefix": "{{count}} rows will be created — each named ",
+      "rows_will_be_created_suffix": " — <condition_type>",
+      "view_json": "View JSON"
+    },
+    "panes": {
+      "no_params": "No additional parameters — configure scope and delivery in the next steps.",
+      "cert": {
+        "days_label": "Days threshold",
+        "days_hint": "Fire when remaining cert days < this. Default 30."
+      },
+      "login_failed": {
+        "window_label": "Window (seconds)",
+        "window_hint": "Default 300.",
+        "threshold_label": "Threshold",
+        "threshold_hint": "Default 10."
+      },
+      "security_updates": {
+        "threshold_label": "Threshold",
+        "threshold_hint": "Fire when security_updates >= threshold. Default 1."
+      },
+      "metric": {
+        "metric_label": "Metric",
+        "comparator_label": "Comparator",
+        "comparator_gt": "> (greater than)",
+        "comparator_ge": ">= (at least)",
+        "comparator_lt": "< (less than)",
+        "comparator_le": "<= (at most)",
+        "value_label": "Value",
+        "value_hint": "Threshold to compare against.",
+        "window_label": "Window (seconds)",
+        "window_hint": "Lookback window. Default 120.",
+        "for_label": "For (seconds)",
+        "for_hint": "Sustained-for window. Default = window.",
+        "for_placeholder": "optional",
+        "scope_label": "Scope (optional)",
+        "scope_filter_placeholder": "Filter by {{key}}",
+        "scope_hints": {
+          "mountpoint": "e.g. / or /var",
+          "nic": "e.g. eth0",
+          "workload_id": "workloads.id (uuid)",
+          "monitor_id": "monitors.id (uuid)"
+        }
+      },
+      "agent": {
+        "min_version_label": "Minimum version",
+        "min_version_hint": "Semver baseline. Leave empty to auto-compare against the freshest host's agent_version.",
+        "min_version_placeholder": "leave empty for auto"
+      },
+      "image_update": {
+        "hours_label": "Minimum age (hours)",
+        "hours_hint": "update_available must persist this long before alerting. Default 24."
+      },
+      "package_update": {
+        "threshold_label": "Threshold",
+        "threshold_hint": "Total updates_count > threshold fires. Default 50."
+      },
+      "repo_metadata": {
+        "threshold_label": "Threshold (seconds)",
+        "threshold_hint": "metadata_age_seconds > threshold_sec fires. Default 86400 (24h)."
+      },
+      "login_anomaly": {
+        "kind_label": "Kind",
+        "kind_new_source_ip": "New source IP",
+        "kind_root_success": "Root/SU success",
+        "kind_sudo_spike": "Sudo spike",
+        "window_label": "Window (seconds)",
+        "window_hint": "Default 86400 (24h).",
+        "threshold_label": "Threshold",
+        "threshold_hint": "Events in window to fire. Default 1."
+      },
+      "inventory_drift": {
+        "kind_label": "Kind",
+        "kind_new_user": "New user",
+        "kind_new_sudoer": "New sudoer",
+        "kind_new_disk": "New disk",
+        "kind_new_nic": "New NIC",
+        "kind_mac_changed": "MAC changed",
+        "kind_kernel_changed": "Kernel changed",
+        "kind_distro_changed": "Distro changed",
+        "kind_new_package": "New package",
+        "kind_removed_package": "Removed package"
+      },
+      "firewall": {
+        "kind_label": "Kind",
+        "kind_inactive": "Inactive (firewall disabled)",
+        "kind_default_policy_weakened": "Default policy weakened",
+        "kind_rule_count_drop": "Rule count drop",
+        "drop_threshold_label": "Drop threshold",
+        "drop_threshold_hint": "Rules removed since last baseline. Default 5."
+      },
+      "crowdsec": {
+        "threshold_label": "Threshold",
+        "threshold_hint": "Active decisions per host > threshold fires. Default 100."
+      },
+      "nic_link": {
+        "exclude_loopback_label": "Exclude loopback",
+        "exclude_loopback_hint": "Default on. Ignores lo / loopback NICs.",
+        "exclude_virtual_label": "Exclude virtual",
+        "exclude_virtual_hint": "Default on. Ignores veth/docker0/bridges."
+      },
+      "vm_state": {
+        "subkind_label": "Subkind",
+        "subkind_stopped": "Stopped",
+        "subkind_autostart_violation": "Autostart violation",
+        "subkind_any_transition": "Any transition (default)"
+      },
+      "container_state": {
+        "states_label": "States that fire",
+        "states_hint": "Workload transitions to any of these states fire.",
+        "exclude_image_label": "Exclude image substring",
+        "exclude_image_hint": "Skip workloads whose image contains this substring (case-sensitive).",
+        "exclude_image_placeholder": "e.g. pause / sleep-infinity"
+      },
+      "audit": {
+        "actions_label": "Actions",
+        "actions_hint": "Comma-separated action keys, e.g. admin.security.policy.update, host.delete",
+        "actions_placeholder": "admin.security.policy.update, host.delete",
+        "actor_label": "Actor pattern (regex)",
+        "actor_hint": "Optional. Matches audit_log.actor.",
+        "actor_placeholder": "^admin@",
+        "target_label": "Target pattern (regex)",
+        "target_hint": "Optional. Matches audit_log.target.",
+        "target_placeholder": "rule:.*"
+      },
+      "host_flap": {
+        "window_label": "Window (seconds)",
+        "window_hint": "Observation window. Default 1800 (30 min).",
+        "threshold_label": "Threshold",
+        "threshold_hint": "Online/offline transitions in window. Default 6."
+      },
+      "expert": {
+        "must_be_object": "condition_params must be a JSON object",
+        "invalid_json": "Invalid JSON: {{message}}",
+        "hint": "Raw condition_params object. Toggle Expert off to drop back to the typed pane."
+      }
+    }
+  }
+}

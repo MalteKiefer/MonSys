@@ -1,0 +1,106 @@
+{
+  "signedInAs": "Signed in as <1>{{email}}</1> ({{role}})",
+  "tabs": {
+    "account": "Account",
+    "twoFactor": "Two-factor",
+    "passkeys": "Passkeys"
+  },
+  "display": {
+    "title": "Display",
+    "description": "Density adjusts table row, panel, and font sizing across the app. The setting is saved to this browser.",
+    "ariaLabel": "UI density",
+    "compact": {
+      "label": "Compact",
+      "hint": "Denser tables and tighter panels."
+    },
+    "comfortable": {
+      "label": "Comfortable",
+      "hint": "Default spacing."
+    }
+  },
+  "avatar": {
+    "title": "Avatar",
+    "working": "Working…",
+    "replace": "Replace",
+    "uploadNew": "Upload new",
+    "remove": "Remove",
+    "helpText": "PNG, JPG, or WebP, max 5 MiB. Auto-cropped to a circle and resized to 400×400. Updates immediately.",
+    "errors": {
+      "tooLarge": "File too large. Pick something under 5 MiB.",
+      "resizedTooLarge": "Resized image is still too large. Try a simpler picture.",
+      "decodeFailed": "Could not decode image",
+      "canvasUnavailable": "Canvas 2D context unavailable",
+      "encodingFailed": "Encoding failed",
+      "fileReaderResult": "Unexpected FileReader result",
+      "fileReaderGeneric": "FileReader error"
+    },
+    "success": {
+      "updated": "Avatar updated.",
+      "removed": "Avatar removed."
+    }
+  },
+  "email": {
+    "title": "Change email",
+    "description": "We'll send a confirmation link to your new address. Once you click it, the change takes effect and every session is ended for security — you'll be asked to log in again with the new email.",
+    "currentPassword": "Current password",
+    "newEmail": "New email",
+    "submit": "Send verification",
+    "submitting": "Sending…",
+    "genericFailure": "failed",
+    "pending": {
+      "message": "Confirmation link sent to <1>{{email}}</1>. Click it within 1 hour. Your sessions will be ended after you confirm.",
+      "hint": "Didn't get the email? Check spam, then start over below.",
+      "sendAnother": "Send another link"
+    }
+  },
+  "password": {
+    "title": "Change password",
+    "currentPassword": "Current password",
+    "newPassword": "New password",
+    "submit": "Update password",
+    "submitting": "Updating…",
+    "success": "Password updated.",
+    "genericFailure": "failed"
+  },
+  "twoFactor": {
+    "titleActive": "Two-factor authentication (active)",
+    "titleInactive": "Two-factor authentication (off)",
+    "activeText": "TOTP is active. To remove, confirm your password.",
+    "passwordLabel": "Password",
+    "disableSubmit": "Disable 2FA",
+    "disableSubmitting": "Disabling…",
+    "introText": "Add a second factor by scanning a QR code in your authenticator (Aegis, 1Password, etc.).",
+    "generating": "Generating…",
+    "beginSetup": "Begin setup",
+    "scanLabel": "Scan with authenticator",
+    "qrAlt": "TOTP QR code",
+    "manualSecret": "Or enter the secret manually:",
+    "backupCodesLabel": "Backup codes (save once!)",
+    "confirmCodeLabel": "Confirm with a current 6-digit code",
+    "activateSubmit": "Activate 2FA",
+    "activateSubmitting": "Verifying…",
+    "successEnabled": "Two-factor authentication enabled. Save your backup codes!",
+    "successDisabled": "Two-factor authentication disabled.",
+    "genericFailure": "failed"
+  },
+  "passkeys": {
+    "title": "Passkeys",
+    "description": "Faster, more secure sign-in without a password. Browser or hardware key.",
+    "unsupported": "Your browser does not support passkeys.",
+    "nameLabel": "Passkey name",
+    "namePlaceholder": "e.g. Laptop, YubiKey 5C",
+    "addSubmit": "Add passkey",
+    "addSubmitting": "Registering…",
+    "addSuccess": "Passkey added.",
+    "addNameRequired": "Please provide a name.",
+    "empty": "No passkeys registered yet.",
+    "lastUsed": "Last used: {{value}}",
+    "lastUsedNever": "—",
+    "renameAria": "Rename passkey",
+    "deleteAria": "Delete passkey",
+    "saving": "…",
+    "save": "Save",
+    "cancel": "Cancel",
+    "confirmDelete": "Really delete passkey \"{{name}}\"?"
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "actions": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "create": "Create",
+    "confirm": "Confirm",
+    "close": "Close",
+    "back": "Back",
+    "next": "Next",
+    "submit": "Submit",
+    "send": "Send",
+    "copy": "Copy",
+    "search": "Search",
+    "loading": "Loading…",
+    "saving": "Saving…",
+    "retry": "Retry",
+    "more": "More",
+    "yes": "Yes",
+    "no": "No"
+  },
+  "status": {
+    "ok": "OK",
+    "warn": "Warning",
+    "fail": "Failed",
+    "online": "Online",
+    "offline": "Offline",
+    "stale": "Stale",
+    "unknown": "Unknown",
+    "enabled": "Enabled",
+    "disabled": "Disabled"
+  },
+  "errors": {
+    "network": "Network error",
+    "unauthorized": "Not authorized",
+    "notFound": "Not found",
+    "generic": "Something went wrong"
+  },
+  "time": {
+    "never": "Never",
+    "now": "Just now",
+    "seconds": "{{count}}s",
+    "minutes": "{{count}}m",
+    "hours": "{{count}}h",
+    "days": "{{count}}d"
+  },
+  "severity": {
+    "info": "Info",
+    "warning": "Warning",
+    "critical": "Critical"
+  }
+}

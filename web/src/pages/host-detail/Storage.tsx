@@ -24,6 +24,7 @@ import {
   Table,
   TimeRangeSelector,
 } from "../../components/ui";
+import { useT } from "../../i18n/useT";
 import { api } from "../../lib/api";
 import { DiskRow, DiskSample } from "../../lib/types";
 
@@ -32,6 +33,7 @@ import { useHostDetail } from "./HostLayout";
 // Storage tab: per-mount disk I/O chart on top, snapshot of mount usage below.
 export function Storage() {
   const { detail, hostId } = useHostDetail();
+  const { t } = useT(["hostDetail", "common"]);
   const [rangeSec, setRangeSec] = useState(60 * 60);
 
   const fromTo = useMemo(() => {
@@ -50,12 +52,12 @@ export function Storage() {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <h2 className="text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">I/O over time</h2>
+        <h2 className="text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">{t("hostDetail:storage.ioOverTime")}</h2>
         <TimeRangeSelector value={rangeSec} onChange={setRangeSec} />
       </div>
       <DiskIOPanel samples={disk.data?.samples ?? []} disks={detail.disks} loading={disk.isLoading} />
       <Panel>
-        <PanelHeader><h3 className="text-sm font-semibold">Mounts ({detail.disks.length})</h3></PanelHeader>
+        <PanelHeader><h3 className="text-sm font-semibold">{t("hostDetail:storage.mountsTitle", { count: detail.disks.length })}</h3></PanelHeader>
         <PanelBody className="p-0 overflow-x-auto"><DisksTable rows={detail.disks} /></PanelBody>
       </Panel>
     </div>
@@ -65,11 +67,12 @@ export function Storage() {
 // ---- Disks table --------------------------------------------------------
 
 function DisksTable({ rows }: { rows: DiskRow[] }) {
-  if (rows.length === 0) return <Empty>No disks.</Empty>;
+  const { t } = useT(["hostDetail", "common"]);
+  if (rows.length === 0) return <Empty>{t("hostDetail:storage.noDisks")}</Empty>;
   return (
     <Table>
       <THead>
-        <tr><TH>Mount</TH><TH>Device</TH><TH>FS</TH><TH>Size</TH><TH>Used</TH><TH>Free</TH><TH>Use</TH></tr>
+        <tr><TH>{t("hostDetail:storage.colMount")}</TH><TH>{t("hostDetail:storage.colDevice")}</TH><TH>{t("hostDetail:storage.colFs")}</TH><TH>{t("hostDetail:storage.colSize")}</TH><TH>{t("hostDetail:storage.colUsed")}</TH><TH>{t("hostDetail:storage.colFree")}</TH><TH>{t("hostDetail:storage.colUse")}</TH></tr>
       </THead>
       <TBody>
         {rows.map((d) => {
@@ -94,19 +97,20 @@ function DisksTable({ rows }: { rows: DiskRow[] }) {
 // ---- I/O chart ----------------------------------------------------------
 
 function DiskIOPanel({ samples, disks, loading }: { samples: DiskSample[]; disks: DiskRow[]; loading: boolean }) {
+  const { t } = useT(["hostDetail", "common"]);
   const { matrix, series } = useMemo(() => {
     if (samples.length === 0) return { matrix: [[]], series: [] as ChartSeries[] };
     const byMount = new Map<string, { times: number[]; read: number[]; write: number[] }>();
     for (const s of samples) {
-      const t = Math.floor(new Date(s.time).getTime() / 1000);
+      const ts = Math.floor(new Date(s.time).getTime() / 1000);
       const cur = byMount.get(s.mountpoint) ?? { times: [], read: [], write: [] };
-      cur.times.push(t);
+      cur.times.push(ts);
       cur.read.push(s.read_bytes);
       cur.write.push(s.write_bytes);
       byMount.set(s.mountpoint, cur);
     }
     const timeSet = new Set<number>();
-    byMount.forEach((v) => v.times.forEach((t) => timeSet.add(t)));
+    byMount.forEach((v) => v.times.forEach((ts) => timeSet.add(ts)));
     const times = Array.from(timeSet).sort((a, b) => a - b);
     const seriesArr: ChartSeries[] = [];
     const cols: number[][] = [times];
@@ -114,27 +118,27 @@ function DiskIOPanel({ samples, disks, loading }: { samples: DiskSample[]; disks
     byMount.forEach((v, mount) => {
       cols.push(alignToAxis(times, v.times, rateOfChange(v.times, v.read)));
       cols.push(alignToAxis(times, v.times, rateOfChange(v.times, v.write)));
-      seriesArr.push({ label: `${mount} read`, color: colorFor(i * 2) });
-      seriesArr.push({ label: `${mount} write`, color: colorFor(i * 2 + 1) });
+      seriesArr.push({ label: t("hostDetail:storage.seriesRead", { mount }), color: colorFor(i * 2) });
+      seriesArr.push({ label: t("hostDetail:storage.seriesWrite", { mount }), color: colorFor(i * 2 + 1) });
       i++;
     });
     return { matrix: cols, series: seriesArr };
-  }, [samples]);
+  }, [samples, t]);
 
   return (
     <Panel>
       <PanelHeader>
         <div className="flex items-center gap-2">
           <HardDrive className="h-4 w-4 text-fg-muted" />
-          <h3 className="text-sm font-semibold">Disk I/O</h3>
-          <span className="ml-2 text-xs text-fg-subtle">{disks.length} disks · per-second rate</span>
+          <h3 className="text-sm font-semibold">{t("hostDetail:storage.diskIoTitle")}</h3>
+          <span className="ml-2 text-xs text-fg-subtle">{t("hostDetail:storage.diskIoSubtitle", { count: disks.length })}</span>
         </div>
       </PanelHeader>
       <PanelBody>
         {loading && samples.length === 0 ? (
           <Skeleton className="h-48" />
         ) : samples.length === 0 ? (
-          <Empty>No disk samples in this range.</Empty>
+          <Empty>{t("hostDetail:storage.noSamples")}</Empty>
         ) : (
           <ChartLine data={{ matrix }} series={series} formatY={formatBytesPerSec} yMin={0} height={220} />
         )}

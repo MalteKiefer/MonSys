@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 
 import { Field, TextInput } from "../../../components/ui";
 import { Toggle } from "../../../components/notifications/FormParts";
+import { useT } from "../../../i18n/useT";
 import type { NotificationConditionType } from "../../../lib/types";
 
 import { METRIC_KINDS, NO_PARAM_CONDITIONS } from "./catalogue";
@@ -98,20 +99,22 @@ type PaneProps = {
 };
 
 function NoParamsPane() {
+  const { t } = useT(["notifications", "common"]);
   return (
     <p className="rounded-md border border-dashed border-border bg-panel-2/30 px-3 py-3 text-xs text-fg-subtle">
-      No additional parameters — configure scope and delivery in the next steps.
+      {t("notifications:wizard.panes.no_params")}
     </p>
   );
 }
 
 function CertExpiringPane({ params, setParams }: PaneProps) {
+  const { t } = useT(["notifications", "common"]);
   const days = asNumberOrEmpty(params.days_threshold);
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
       <NumberField
-        label="Days threshold"
-        hint="Fire when remaining cert days < this. Default 30."
+        label={t("notifications:wizard.panes.cert.days_label")}
+        hint={t("notifications:wizard.panes.cert.days_hint")}
         value={days === "" ? 30 : days}
         min={1}
         onChange={(v) => setParams({ ...params, days_threshold: v === "" ? 30 : v })}
@@ -121,20 +124,21 @@ function CertExpiringPane({ params, setParams }: PaneProps) {
 }
 
 function LoginFailedThresholdPane({ params, setParams }: PaneProps) {
+  const { t } = useT(["notifications", "common"]);
   const win = asNumberOrEmpty(params.window_sec);
   const thr = asNumberOrEmpty(params.threshold);
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
       <NumberField
-        label="Window (seconds)"
-        hint="Default 300."
+        label={t("notifications:wizard.panes.login_failed.window_label")}
+        hint={t("notifications:wizard.panes.login_failed.window_hint")}
         value={win === "" ? 300 : win}
         min={1}
         onChange={(v) => setParams({ ...params, window_sec: v === "" ? 300 : v })}
       />
       <NumberField
-        label="Threshold"
-        hint="Default 10."
+        label={t("notifications:wizard.panes.login_failed.threshold_label")}
+        hint={t("notifications:wizard.panes.login_failed.threshold_hint")}
         value={thr === "" ? 10 : thr}
         min={1}
         onChange={(v) => setParams({ ...params, threshold: v === "" ? 10 : v })}
@@ -144,12 +148,13 @@ function LoginFailedThresholdPane({ params, setParams }: PaneProps) {
 }
 
 function SecurityUpdatesPendingPane({ params, setParams }: PaneProps) {
+  const { t } = useT(["notifications", "common"]);
   const thr = asNumberOrEmpty(params.threshold);
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
       <NumberField
-        label="Threshold"
-        hint="Fire when security_updates >= threshold. Default 1."
+        label={t("notifications:wizard.panes.security_updates.threshold_label")}
+        hint={t("notifications:wizard.panes.security_updates.threshold_hint")}
         value={thr === "" ? 1 : thr}
         min={1}
         onChange={(v) => setParams({ ...params, threshold: v === "" ? 1 : v })}
@@ -159,6 +164,7 @@ function SecurityUpdatesPendingPane({ params, setParams }: PaneProps) {
 }
 
 function MetricThresholdPane({ params, setParams }: PaneProps) {
+  const { t } = useT(["notifications", "common"]);
   const metric = asString(params.metric, "cpu_usage_pct");
   const comparator = asString(params.comparator, ">");
   const value = asNumberOrEmpty(params.value);
@@ -188,7 +194,7 @@ function MetricThresholdPane({ params, setParams }: PaneProps) {
     <div className="space-y-3">
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <SelectField
-          label="Metric"
+          label={t("notifications:wizard.panes.metric.metric_label")}
           value={metric}
           onChange={(v) =>
             setParams({
@@ -201,38 +207,38 @@ function MetricThresholdPane({ params, setParams }: PaneProps) {
           options={METRIC_KINDS.map((m) => ({ value: m.value, label: m.label }))}
         />
         <SelectField
-          label="Comparator"
+          label={t("notifications:wizard.panes.metric.comparator_label")}
           value={comparator}
           onChange={(v) => setParams({ ...params, comparator: v })}
           options={[
-            { value: ">", label: "> (greater than)" },
-            { value: ">=", label: ">= (at least)" },
-            { value: "<", label: "< (less than)" },
-            { value: "<=", label: "<= (at most)" },
+            { value: ">", label: t("notifications:wizard.panes.metric.comparator_gt") },
+            { value: ">=", label: t("notifications:wizard.panes.metric.comparator_ge") },
+            { value: "<", label: t("notifications:wizard.panes.metric.comparator_lt") },
+            { value: "<=", label: t("notifications:wizard.panes.metric.comparator_le") },
           ]}
         />
       </div>
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         <NumberField
-          label="Value"
-          hint="Threshold to compare against."
+          label={t("notifications:wizard.panes.metric.value_label")}
+          hint={t("notifications:wizard.panes.metric.value_hint")}
           value={value}
           step={0.01}
           onChange={(v) => setParams({ ...params, value: v === "" ? 0 : v })}
         />
         <NumberField
-          label="Window (seconds)"
-          hint="Lookback window. Default 120."
+          label={t("notifications:wizard.panes.metric.window_label")}
+          hint={t("notifications:wizard.panes.metric.window_hint")}
           value={windowSec === "" ? 120 : windowSec}
           min={1}
           onChange={(v) => setParams({ ...params, window_sec: v === "" ? 120 : v })}
         />
         <NumberField
-          label="For (seconds)"
-          hint="Sustained-for window. Default = window."
+          label={t("notifications:wizard.panes.metric.for_label")}
+          hint={t("notifications:wizard.panes.metric.for_hint")}
           value={forSec}
           min={1}
-          placeholder="optional"
+          placeholder={t("notifications:wizard.panes.metric.for_placeholder")}
           onChange={(v) =>
             v === ""
               ? (() => {
@@ -247,28 +253,18 @@ function MetricThresholdPane({ params, setParams }: PaneProps) {
       {scopeKeys.length > 0 && (
         <div className="rounded-md border border-border bg-panel-2/40 p-3">
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-fg-subtle">
-            Scope (optional)
+            {t("notifications:wizard.panes.metric.scope_label")}
           </p>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             {scopeKeys.map((key) => (
               <Field
                 key={key}
                 label={key}
-                hint={
-                  key === "mountpoint"
-                    ? "e.g. / or /var"
-                    : key === "nic"
-                      ? "e.g. eth0"
-                      : key === "workload_id"
-                        ? "workloads.id (uuid)"
-                        : key === "monitor_id"
-                          ? "monitors.id (uuid)"
-                          : undefined
-                }
+                hint={t(`notifications:wizard.panes.metric.scope_hints.${key}` as const, { defaultValue: "" }) || undefined}
               >
                 <TextInput
                   value={asString(scope[key])}
-                  placeholder={`Filter by ${key}`}
+                  placeholder={t("notifications:wizard.panes.metric.scope_filter_placeholder", { key })}
                   onChange={(e) => patchScope(key, e.target.value)}
                 />
               </Field>
@@ -281,15 +277,16 @@ function MetricThresholdPane({ params, setParams }: PaneProps) {
 }
 
 function AgentOutdatedPane({ params, setParams }: PaneProps) {
+  const { t } = useT(["notifications", "common"]);
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
       <Field
-        label="Minimum version"
-        hint="Semver baseline. Leave empty to auto-compare against the freshest host's agent_version."
+        label={t("notifications:wizard.panes.agent.min_version_label")}
+        hint={t("notifications:wizard.panes.agent.min_version_hint")}
       >
         <TextInput
           value={asString(params.min_version)}
-          placeholder="leave empty for auto"
+          placeholder={t("notifications:wizard.panes.agent.min_version_placeholder")}
           onChange={(e) => {
             const v = e.target.value.trim();
             if (v === "") {
@@ -307,12 +304,13 @@ function AgentOutdatedPane({ params, setParams }: PaneProps) {
 }
 
 function ImageUpdatePendingPane({ params, setParams }: PaneProps) {
+  const { t } = useT(["notifications", "common"]);
   const hours = asNumberOrEmpty(params.min_age_hours);
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
       <NumberField
-        label="Minimum age (hours)"
-        hint="update_available must persist this long before alerting. Default 24."
+        label={t("notifications:wizard.panes.image_update.hours_label")}
+        hint={t("notifications:wizard.panes.image_update.hours_hint")}
         value={hours === "" ? 24 : hours}
         min={0}
         onChange={(v) => setParams({ ...params, min_age_hours: v === "" ? 24 : v })}
@@ -322,12 +320,13 @@ function ImageUpdatePendingPane({ params, setParams }: PaneProps) {
 }
 
 function PackageUpdateAvailablePane({ params, setParams }: PaneProps) {
+  const { t } = useT(["notifications", "common"]);
   const thr = asNumberOrEmpty(params.threshold);
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
       <NumberField
-        label="Threshold"
-        hint="Total updates_count > threshold fires. Default 50."
+        label={t("notifications:wizard.panes.package_update.threshold_label")}
+        hint={t("notifications:wizard.panes.package_update.threshold_hint")}
         value={thr === "" ? 50 : thr}
         min={0}
         onChange={(v) => setParams({ ...params, threshold: v === "" ? 50 : v })}
@@ -337,12 +336,13 @@ function PackageUpdateAvailablePane({ params, setParams }: PaneProps) {
 }
 
 function RepoMetadataStalePane({ params, setParams }: PaneProps) {
+  const { t } = useT(["notifications", "common"]);
   const thr = asNumberOrEmpty(params.threshold_sec);
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
       <NumberField
-        label="Threshold (seconds)"
-        hint="metadata_age_seconds > threshold_sec fires. Default 86400 (24h)."
+        label={t("notifications:wizard.panes.repo_metadata.threshold_label")}
+        hint={t("notifications:wizard.panes.repo_metadata.threshold_hint")}
         value={thr === "" ? 86400 : thr}
         min={0}
         onChange={(v) => setParams({ ...params, threshold_sec: v === "" ? 86400 : v })}
@@ -352,31 +352,32 @@ function RepoMetadataStalePane({ params, setParams }: PaneProps) {
 }
 
 function LoginAnomalyPane({ params, setParams }: PaneProps) {
+  const { t } = useT(["notifications", "common"]);
   const kind = asString(params.kind, "new_source_ip");
   const win = asNumberOrEmpty(params.window_sec);
   const thr = asNumberOrEmpty(params.threshold);
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
       <SelectField
-        label="Kind"
+        label={t("notifications:wizard.panes.login_anomaly.kind_label")}
         value={kind}
         onChange={(v) => setParams({ ...params, kind: v })}
         options={[
-          { value: "new_source_ip", label: "New source IP" },
-          { value: "root_success", label: "Root/SU success" },
-          { value: "sudo_spike", label: "Sudo spike" },
+          { value: "new_source_ip", label: t("notifications:wizard.panes.login_anomaly.kind_new_source_ip") },
+          { value: "root_success", label: t("notifications:wizard.panes.login_anomaly.kind_root_success") },
+          { value: "sudo_spike", label: t("notifications:wizard.panes.login_anomaly.kind_sudo_spike") },
         ]}
       />
       <NumberField
-        label="Window (seconds)"
-        hint="Default 86400 (24h)."
+        label={t("notifications:wizard.panes.login_anomaly.window_label")}
+        hint={t("notifications:wizard.panes.login_anomaly.window_hint")}
         value={win === "" ? 86400 : win}
         min={1}
         onChange={(v) => setParams({ ...params, window_sec: v === "" ? 86400 : v })}
       />
       <NumberField
-        label="Threshold"
-        hint="Events in window to fire. Default 1."
+        label={t("notifications:wizard.panes.login_anomaly.threshold_label")}
+        hint={t("notifications:wizard.panes.login_anomaly.threshold_hint")}
         value={thr === "" ? 1 : thr}
         min={1}
         onChange={(v) => setParams({ ...params, threshold: v === "" ? 1 : v })}
@@ -386,23 +387,24 @@ function LoginAnomalyPane({ params, setParams }: PaneProps) {
 }
 
 function InventoryDriftPane({ params, setParams }: PaneProps) {
+  const { t } = useT(["notifications", "common"]);
   const kind = asString(params.kind, "new_user");
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
       <SelectField
-        label="Kind"
+        label={t("notifications:wizard.panes.inventory_drift.kind_label")}
         value={kind}
         onChange={(v) => setParams({ ...params, kind: v })}
         options={[
-          { value: "new_user", label: "New user" },
-          { value: "new_sudoer", label: "New sudoer" },
-          { value: "new_disk", label: "New disk" },
-          { value: "new_nic", label: "New NIC" },
-          { value: "mac_changed", label: "MAC changed" },
-          { value: "kernel_changed", label: "Kernel changed" },
-          { value: "distro_changed", label: "Distro changed" },
-          { value: "new_package", label: "New package" },
-          { value: "removed_package", label: "Removed package" },
+          { value: "new_user", label: t("notifications:wizard.panes.inventory_drift.kind_new_user") },
+          { value: "new_sudoer", label: t("notifications:wizard.panes.inventory_drift.kind_new_sudoer") },
+          { value: "new_disk", label: t("notifications:wizard.panes.inventory_drift.kind_new_disk") },
+          { value: "new_nic", label: t("notifications:wizard.panes.inventory_drift.kind_new_nic") },
+          { value: "mac_changed", label: t("notifications:wizard.panes.inventory_drift.kind_mac_changed") },
+          { value: "kernel_changed", label: t("notifications:wizard.panes.inventory_drift.kind_kernel_changed") },
+          { value: "distro_changed", label: t("notifications:wizard.panes.inventory_drift.kind_distro_changed") },
+          { value: "new_package", label: t("notifications:wizard.panes.inventory_drift.kind_new_package") },
+          { value: "removed_package", label: t("notifications:wizard.panes.inventory_drift.kind_removed_package") },
         ]}
       />
     </div>
@@ -410,12 +412,13 @@ function InventoryDriftPane({ params, setParams }: PaneProps) {
 }
 
 function FirewallStateChangePane({ params, setParams }: PaneProps) {
+  const { t } = useT(["notifications", "common"]);
   const kind = asString(params.kind, "inactive");
   const dropThr = asNumberOrEmpty(params.drop_threshold);
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
       <SelectField
-        label="Kind"
+        label={t("notifications:wizard.panes.firewall.kind_label")}
         value={kind}
         onChange={(v) => {
           // drop_threshold only applies to rule_count_drop
@@ -428,15 +431,15 @@ function FirewallStateChangePane({ params, setParams }: PaneProps) {
           }
         }}
         options={[
-          { value: "inactive", label: "Inactive (firewall disabled)" },
-          { value: "default_policy_weakened", label: "Default policy weakened" },
-          { value: "rule_count_drop", label: "Rule count drop" },
+          { value: "inactive", label: t("notifications:wizard.panes.firewall.kind_inactive") },
+          { value: "default_policy_weakened", label: t("notifications:wizard.panes.firewall.kind_default_policy_weakened") },
+          { value: "rule_count_drop", label: t("notifications:wizard.panes.firewall.kind_rule_count_drop") },
         ]}
       />
       {kind === "rule_count_drop" && (
         <NumberField
-          label="Drop threshold"
-          hint="Rules removed since last baseline. Default 5."
+          label={t("notifications:wizard.panes.firewall.drop_threshold_label")}
+          hint={t("notifications:wizard.panes.firewall.drop_threshold_hint")}
           value={dropThr === "" ? 5 : dropThr}
           min={1}
           onChange={(v) => setParams({ ...params, drop_threshold: v === "" ? 5 : v })}
@@ -447,12 +450,13 @@ function FirewallStateChangePane({ params, setParams }: PaneProps) {
 }
 
 function CrowdSecDecisionThresholdPane({ params, setParams }: PaneProps) {
+  const { t } = useT(["notifications", "common"]);
   const thr = asNumberOrEmpty(params.threshold);
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
       <NumberField
-        label="Threshold"
-        hint="Active decisions per host > threshold fires. Default 100."
+        label={t("notifications:wizard.panes.crowdsec.threshold_label")}
+        hint={t("notifications:wizard.panes.crowdsec.threshold_hint")}
         value={thr === "" ? 100 : thr}
         min={1}
         onChange={(v) => setParams({ ...params, threshold: v === "" ? 100 : v })}
@@ -462,6 +466,7 @@ function CrowdSecDecisionThresholdPane({ params, setParams }: PaneProps) {
 }
 
 function NICLinkDownPane({ params, setParams }: PaneProps) {
+  const { t } = useT(["notifications", "common"]);
   // Both flags default to true server-side; we surface them as toggles so the
   // user can opt back in to loopback/virtual NICs if they really want.
   const excludeLoopback = asBool(params.exclude_loopback, true);
@@ -471,31 +476,32 @@ function NICLinkDownPane({ params, setParams }: PaneProps) {
       <Toggle
         checked={excludeLoopback}
         onChange={(v) => setParams({ ...params, exclude_loopback: v })}
-        label="Exclude loopback"
-        hint="Default on. Ignores lo / loopback NICs."
+        label={t("notifications:wizard.panes.nic_link.exclude_loopback_label")}
+        hint={t("notifications:wizard.panes.nic_link.exclude_loopback_hint")}
       />
       <Toggle
         checked={excludeVirtual}
         onChange={(v) => setParams({ ...params, exclude_virtual: v })}
-        label="Exclude virtual"
-        hint="Default on. Ignores veth/docker0/bridges."
+        label={t("notifications:wizard.panes.nic_link.exclude_virtual_label")}
+        hint={t("notifications:wizard.panes.nic_link.exclude_virtual_hint")}
       />
     </div>
   );
 }
 
 function VMStateChangePane({ params, setParams }: PaneProps) {
+  const { t } = useT(["notifications", "common"]);
   const subkind = asString(params.subkind, "any_transition");
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
       <SelectField
-        label="Subkind"
+        label={t("notifications:wizard.panes.vm_state.subkind_label")}
         value={subkind}
         onChange={(v) => setParams({ ...params, subkind: v })}
         options={[
-          { value: "stopped", label: "Stopped" },
-          { value: "autostart_violation", label: "Autostart violation" },
-          { value: "any_transition", label: "Any transition (default)" },
+          { value: "stopped", label: t("notifications:wizard.panes.vm_state.subkind_stopped") },
+          { value: "autostart_violation", label: t("notifications:wizard.panes.vm_state.subkind_autostart_violation") },
+          { value: "any_transition", label: t("notifications:wizard.panes.vm_state.subkind_any_transition") },
         ]}
       />
     </div>
@@ -503,6 +509,7 @@ function VMStateChangePane({ params, setParams }: PaneProps) {
 }
 
 function ContainerStateChangePane({ params, setParams }: PaneProps) {
+  const { t } = useT(["notifications", "common"]);
   const statesArr = asStringArray(params.states);
   const states = statesArr.length > 0 ? statesArr : ["exited", "dead"];
   const exclude = asString(params.exclude_image_substring);
@@ -515,7 +522,10 @@ function ContainerStateChangePane({ params, setParams }: PaneProps) {
 
   return (
     <div className="space-y-3">
-      <Field label="States that fire" hint="Workload transitions to any of these states fire.">
+      <Field
+        label={t("notifications:wizard.panes.container_state.states_label")}
+        hint={t("notifications:wizard.panes.container_state.states_hint")}
+      >
         <div className="flex flex-wrap gap-2">
           {choices.map((s) => {
             const active = states.includes(s);
@@ -537,12 +547,12 @@ function ContainerStateChangePane({ params, setParams }: PaneProps) {
         </div>
       </Field>
       <Field
-        label="Exclude image substring"
-        hint="Skip workloads whose image contains this substring (case-sensitive)."
+        label={t("notifications:wizard.panes.container_state.exclude_image_label")}
+        hint={t("notifications:wizard.panes.container_state.exclude_image_hint")}
       >
         <TextInput
           value={exclude}
-          placeholder="e.g. pause / sleep-infinity"
+          placeholder={t("notifications:wizard.panes.container_state.exclude_image_placeholder")}
           onChange={(e) => {
             const v = e.target.value;
             if (v === "") {
@@ -560,6 +570,7 @@ function ContainerStateChangePane({ params, setParams }: PaneProps) {
 }
 
 function AuditActionPane({ params, setParams }: PaneProps) {
+  const { t } = useT(["notifications", "common"]);
   const actionsArr = asStringArray(params.actions);
   // Local string state for the comma-separated input so the user can type
   // mid-token without losing focus or having trailing-comma stripped early.
@@ -585,12 +596,12 @@ function AuditActionPane({ params, setParams }: PaneProps) {
   return (
     <div className="space-y-3">
       <Field
-        label="Actions"
-        hint="Comma-separated action keys, e.g. admin.security.policy.update, host.delete"
+        label={t("notifications:wizard.panes.audit.actions_label")}
+        hint={t("notifications:wizard.panes.audit.actions_hint")}
       >
         <TextInput
           value={actionsRaw}
-          placeholder="admin.security.policy.update, host.delete"
+          placeholder={t("notifications:wizard.panes.audit.actions_placeholder")}
           onChange={(e) => setActionsRaw(e.target.value)}
           onBlur={(e) => commitActions(e.target.value)}
           className="font-mono"
@@ -609,10 +620,13 @@ function AuditActionPane({ params, setParams }: PaneProps) {
         )}
       </Field>
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-        <Field label="Actor pattern (regex)" hint="Optional. Matches audit_log.actor.">
+        <Field
+          label={t("notifications:wizard.panes.audit.actor_label")}
+          hint={t("notifications:wizard.panes.audit.actor_hint")}
+        >
           <TextInput
             value={asString(params.actor_pattern)}
-            placeholder="^admin@"
+            placeholder={t("notifications:wizard.panes.audit.actor_placeholder")}
             onChange={(e) => {
               const v = e.target.value;
               if (v === "") {
@@ -626,10 +640,13 @@ function AuditActionPane({ params, setParams }: PaneProps) {
             className="font-mono"
           />
         </Field>
-        <Field label="Target pattern (regex)" hint="Optional. Matches audit_log.target.">
+        <Field
+          label={t("notifications:wizard.panes.audit.target_label")}
+          hint={t("notifications:wizard.panes.audit.target_hint")}
+        >
           <TextInput
             value={asString(params.target_pattern)}
-            placeholder="rule:.*"
+            placeholder={t("notifications:wizard.panes.audit.target_placeholder")}
             onChange={(e) => {
               const v = e.target.value;
               if (v === "") {
@@ -649,20 +666,21 @@ function AuditActionPane({ params, setParams }: PaneProps) {
 }
 
 function HostFlapPane({ params, setParams }: PaneProps) {
+  const { t } = useT(["notifications", "common"]);
   const win = asNumberOrEmpty(params.window_sec);
   const thr = asNumberOrEmpty(params.threshold);
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
       <NumberField
-        label="Window (seconds)"
-        hint="Observation window. Default 1800 (30 min)."
+        label={t("notifications:wizard.panes.host_flap.window_label")}
+        hint={t("notifications:wizard.panes.host_flap.window_hint")}
         value={win === "" ? 1800 : win}
         min={60}
         onChange={(v) => setParams({ ...params, window_sec: v === "" ? 1800 : v })}
       />
       <NumberField
-        label="Threshold"
-        hint="Online/offline transitions in window. Default 6."
+        label={t("notifications:wizard.panes.host_flap.threshold_label")}
+        hint={t("notifications:wizard.panes.host_flap.threshold_hint")}
         value={thr === "" ? 6 : thr}
         min={2}
         onChange={(v) => setParams({ ...params, threshold: v === "" ? 6 : v })}
@@ -733,6 +751,7 @@ export function ExpertJsonPane({
   params: Params;
   setParams: (p: Params) => void;
 }) {
+  const { t } = useT(["notifications", "common"]);
   // Local mirror of the JSON text. We only lift back into the params object
   // when the textarea parses cleanly (on every change). On blur we re-pretty
   // print so misformatted input snaps back to canonical shape.
@@ -756,7 +775,7 @@ export function ExpertJsonPane({
     try {
       const parsed = JSON.parse(next);
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-        setErr("condition_params must be a JSON object");
+        setErr(t("notifications:wizard.panes.expert.must_be_object"));
         return;
       }
       setErr(null);
@@ -788,10 +807,10 @@ export function ExpertJsonPane({
         placeholder='{\n  "threshold": 10\n}'
       />
       {err ? (
-        <p className="text-xs text-fail">Invalid JSON: {err}</p>
+        <p className="text-xs text-fail">{t("notifications:wizard.panes.expert.invalid_json", { message: err })}</p>
       ) : (
         <p className="text-[11px] text-fg-subtle">
-          Raw condition_params object. Toggle Expert off to drop back to the typed pane.
+          {t("notifications:wizard.panes.expert.hint")}
         </p>
       )}
     </div>

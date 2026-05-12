@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { KeyRound, Pencil, Smartphone, Trash2, Upload, User } from "lucide-react";
 import { ChangeEvent, FormEvent, ReactNode, useRef, useState } from "react";
+import { Trans } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
 
 import {
@@ -17,6 +18,7 @@ import {
   Tabs,
   TextInput,
 } from "../components/ui";
+import { useT } from "../i18n/useT";
 import { api, ApiError } from "../lib/api";
 import { DensityProvider, useDensityStore, type Density } from "../lib/density-store";
 import { CurrentUser, ListPasskeysResponse, Passkey, TOTPSetup } from "../lib/types";
@@ -33,6 +35,7 @@ function parseTab(raw: string | null): ProfileTab {
 }
 
 export function Profile() {
+  const { t } = useT(["profile", "common"]);
   const qc = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = parseTab(searchParams.get("tab"));
@@ -60,9 +63,9 @@ export function Profile() {
   const user = me.data!;
 
   const items: ReadonlyArray<TabItem<ProfileTab>> = [
-    { key: "account", label: "Account", icon: User },
-    { key: "two_factor", label: "Two-factor", icon: Smartphone },
-    { key: "passkeys", label: "Passkeys", icon: KeyRound },
+    { key: "account", label: t("profile:tabs.account"), icon: User },
+    { key: "two_factor", label: t("profile:tabs.twoFactor"), icon: Smartphone },
+    { key: "passkeys", label: t("profile:tabs.passkeys"), icon: KeyRound },
   ];
 
   return (
@@ -73,7 +76,12 @@ export function Profile() {
       <DensityProvider />
       <header className="mb-4">
         <p className="text-sm text-fg-muted">
-          Signed in as <span className="text-fg">{user.email}</span> ({user.role})
+          <Trans
+            ns="profile"
+            i18nKey="signedInAs"
+            values={{ email: user.email, role: user.role }}
+            components={{ 1: <span className="text-fg" /> }}
+          />
         </p>
       </header>
 
@@ -106,20 +114,26 @@ export function Profile() {
 }
 
 function DisplayCard() {
+  const { t } = useT(["profile", "common"]);
   const density = useDensityStore((s) => s.density);
   const setDensity = useDensityStore((s) => s.setDensity);
   const options: { value: Density; label: string; hint: string }[] = [
-    { value: "compact", label: "Compact", hint: "Denser tables and tighter panels." },
-    { value: "comfortable", label: "Comfortable", hint: "Default spacing." },
+    {
+      value: "compact",
+      label: t("profile:display.compact.label"),
+      hint: t("profile:display.compact.hint"),
+    },
+    {
+      value: "comfortable",
+      label: t("profile:display.comfortable.label"),
+      hint: t("profile:display.comfortable.hint"),
+    },
   ];
   return (
-    <ProfilePanel title="Display">
+    <ProfilePanel title={t("profile:display.title")}>
       <div className="space-y-3">
-        <p className="text-sm text-fg-muted">
-          Density adjusts table row, panel, and font sizing across the app. The setting is saved
-          to this browser.
-        </p>
-        <div role="radiogroup" aria-label="UI density" className="inline-flex rounded-md border border-border bg-panel p-0.5">
+        <p className="text-sm text-fg-muted">{t("profile:display.description")}</p>
+        <div role="radiogroup" aria-label={t("profile:display.ariaLabel")} className="inline-flex rounded-md border border-border bg-panel p-0.5">
           {options.map((opt) => {
             const active = opt.value === density;
             return (
@@ -164,7 +178,14 @@ function ProfilePanel({ title, children }: { title: string; children: ReactNode 
 const AVATAR_MAX_INPUT_BYTES = 5 * 1024 * 1024; // 5 MiB
 const AVATAR_TARGET_SIZE = 400; // px — square output, downscaled with cover-crop
 
-async function fileToCroppedWebp(file: File): Promise<{ blob: Blob; b64: string }> {
+async function fileToCroppedWebp(
+  file: File,
+  messages: {
+    decodeFailed: string;
+    canvasUnavailable: string;
+    encodingFailed: string;
+  },
+): Promise<{ blob: Blob; b64: string }> {
   // Decode the image off the main thread when supported, fall back to an
   // <img> element otherwise. We don't bother with createImageBitmap on
   // unsupported browsers — the fallback path still runs in tens of ms for
@@ -174,7 +195,7 @@ async function fileToCroppedWebp(file: File): Promise<{ blob: Blob; b64: string 
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {
       const el = new Image();
       el.onload = () => resolve(el);
-      el.onerror = () => reject(new Error("Could not decode image"));
+      el.onerror = () => reject(new Error(messages.decodeFailed));
       el.src = url;
     });
 
@@ -186,42 +207,49 @@ async function fileToCroppedWebp(file: File): Promise<{ blob: Blob; b64: string 
     canvas.width = AVATAR_TARGET_SIZE;
     canvas.height = AVATAR_TARGET_SIZE;
     const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("Canvas 2D context unavailable");
+    if (!ctx) throw new Error(messages.canvasUnavailable);
     ctx.drawImage(img, sx, sy, side, side, 0, 0, AVATAR_TARGET_SIZE, AVATAR_TARGET_SIZE);
 
     const blob: Blob = await new Promise((resolve, reject) => {
       canvas.toBlob(
-        (b) => (b ? resolve(b) : reject(new Error("Encoding failed"))),
+        (b) => (b ? resolve(b) : reject(new Error(messages.encodingFailed))),
         "image/webp",
         0.9,
       );
     });
-    const b64 = await blobToBase64(blob);
+    const b64 = await blobToBase64(blob, {
+      result: messages.encodingFailed,
+      generic: messages.encodingFailed,
+    });
     return { blob, b64 };
   } finally {
     URL.revokeObjectURL(url);
   }
 }
 
-function blobToBase64(blob: Blob): Promise<string> {
+function blobToBase64(
+  blob: Blob,
+  messages: { result: string; generic: string },
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const fr = new FileReader();
     fr.onload = () => {
       const result = fr.result;
       if (typeof result !== "string") {
-        reject(new Error("Unexpected FileReader result"));
+        reject(new Error(messages.result));
         return;
       }
       // result is "data:image/webp;base64,XXXX" — strip the prefix.
       const idx = result.indexOf(",");
       resolve(idx >= 0 ? result.slice(idx + 1) : result);
     };
-    fr.onerror = () => reject(fr.error ?? new Error("FileReader error"));
+    fr.onerror = () => reject(fr.error ?? new Error(messages.generic));
     fr.readAsDataURL(blob);
   });
 }
 
 function AvatarCard({ user }: { user: CurrentUser }) {
+  const { t } = useT(["profile", "common"]);
   const qc = useQueryClient();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
@@ -235,25 +263,29 @@ function AvatarCard({ user }: { user: CurrentUser }) {
     if (!file) return;
     setMsg(null);
     if (file.size > AVATAR_MAX_INPUT_BYTES) {
-      setMsg({ kind: "err", text: "File too large. Pick something under 5 MiB." });
+      setMsg({ kind: "err", text: t("profile:avatar.errors.tooLarge") });
       return;
     }
     setBusy(true);
     try {
-      const { b64 } = await fileToCroppedWebp(file);
+      const { b64 } = await fileToCroppedWebp(file, {
+        decodeFailed: t("profile:avatar.errors.decodeFailed"),
+        canvasUnavailable: t("profile:avatar.errors.canvasUnavailable"),
+        encodingFailed: t("profile:avatar.errors.encodingFailed"),
+      });
       // Server limit is 512 KiB decoded; 400×400 webp@0.9 lands well under
       // that for realistic photos but we still bail loudly if it ever runs
       // away (e.g. extreme noise input).
       const decodedBytes = Math.floor((b64.length * 3) / 4);
       if (decodedBytes > 512 * 1024) {
-        setMsg({ kind: "err", text: "Resized image is still too large. Try a simpler picture." });
+        setMsg({ kind: "err", text: t("profile:avatar.errors.resizedTooLarge") });
         return;
       }
       await api<{ ok: boolean }>("/v1/auth/me/avatar", {
         method: "POST",
         body: JSON.stringify({ content_type: "image/webp", data_b64: b64 }),
       });
-      setMsg({ kind: "ok", text: "Avatar updated." });
+      setMsg({ kind: "ok", text: t("profile:avatar.success.updated") });
       qc.invalidateQueries({ queryKey: ["me"] });
     } catch (err) {
       setMsg({ kind: "err", text: err instanceof ApiError ? err.detail : (err as Error).message });
@@ -267,7 +299,7 @@ function AvatarCard({ user }: { user: CurrentUser }) {
     setBusy(true);
     try {
       await api<{ ok: boolean }>("/v1/auth/me/avatar", { method: "DELETE" });
-      setMsg({ kind: "ok", text: "Avatar removed." });
+      setMsg({ kind: "ok", text: t("profile:avatar.success.removed") });
       qc.invalidateQueries({ queryKey: ["me"] });
     } catch (err) {
       setMsg({ kind: "err", text: err instanceof ApiError ? err.detail : (err as Error).message });
@@ -277,7 +309,7 @@ function AvatarCard({ user }: { user: CurrentUser }) {
   }
 
   return (
-    <ProfilePanel title="Avatar">
+    <ProfilePanel title={t("profile:avatar.title")}>
       <div className="flex flex-wrap items-start gap-5">
         <Avatar
           userId={user.id}
@@ -302,19 +334,20 @@ function AvatarCard({ user }: { user: CurrentUser }) {
               onClick={() => inputRef.current?.click()}
             >
               <Upload className="h-3.5 w-3.5" />
-              {busy ? "Working…" : user.has_avatar ? "Replace" : "Upload new"}
+              {busy
+                ? t("profile:avatar.working")
+                : user.has_avatar
+                  ? t("profile:avatar.replace")
+                  : t("profile:avatar.uploadNew")}
             </Button>
             {user.has_avatar && (
               <Button type="button" variant="danger" disabled={busy} onClick={onRemove}>
                 <Trash2 className="h-3.5 w-3.5" />
-                Remove
+                {t("profile:avatar.remove")}
               </Button>
             )}
           </div>
-          <p className="text-xs text-fg-subtle">
-            PNG, JPG, or WebP, max 5 MiB. Auto-cropped to a circle and resized to 400×400.
-            Updates immediately.
-          </p>
+          <p className="text-xs text-fg-subtle">{t("profile:avatar.helpText")}</p>
           {msg && <Message msg={msg} />}
         </div>
       </div>
@@ -329,6 +362,7 @@ function AvatarCard({ user }: { user: CurrentUser }) {
 // the email and revokes every session for the user. We never mutate the
 // email in place from here.
 function ChangeEmailCard() {
+  const { t } = useT(["profile", "common"]);
   const [pw, setPw] = useState("");
   const [email, setEmail] = useState("");
   const [msg, setMsg] = useState<Msg>(null);
@@ -348,7 +382,10 @@ function ChangeEmailCard() {
       setPw("");
       setEmail("");
     } catch (err) {
-      setMsg({ kind: "err", text: err instanceof ApiError ? err.detail : "failed" });
+      setMsg({
+        kind: "err",
+        text: err instanceof ApiError ? err.detail : t("profile:email.genericFailure"),
+      });
     } finally {
       setBusy(false);
     }
@@ -356,17 +393,19 @@ function ChangeEmailCard() {
 
   if (pendingEmail) {
     return (
-      <ProfilePanel title="Change email">
+      <ProfilePanel title={t("profile:email.title")}>
         <div className="space-y-3">
           <SuccessBox>
-            Confirmation link sent to <span className="font-medium">{pendingEmail}</span>. Click
-            it within 1 hour. Your sessions will be ended after you confirm.
+            <Trans
+              ns="profile"
+              i18nKey="email.pending.message"
+              values={{ email: pendingEmail }}
+              components={{ 1: <span className="font-medium" /> }}
+            />
           </SuccessBox>
-          <p className="text-xs text-fg-subtle">
-            Didn't get the email? Check spam, then start over below.
-          </p>
+          <p className="text-xs text-fg-subtle">{t("profile:email.pending.hint")}</p>
           <Button type="button" variant="ghost" onClick={() => setPendingEmail(null)}>
-            Send another link
+            {t("profile:email.pending.sendAnother")}
           </Button>
         </div>
       </ProfilePanel>
@@ -374,14 +413,10 @@ function ChangeEmailCard() {
   }
 
   return (
-    <ProfilePanel title="Change email">
+    <ProfilePanel title={t("profile:email.title")}>
       <form onSubmit={submit} className="space-y-3">
-        <p className="text-sm text-fg-muted">
-          We'll send a confirmation link to your new address. Once you click it, the change
-          takes effect and every session is ended for security — you'll be asked to log in
-          again with the new email.
-        </p>
-        <Field label="Current password">
+        <p className="text-sm text-fg-muted">{t("profile:email.description")}</p>
+        <Field label={t("profile:email.currentPassword")}>
           <TextInput
             type="password"
             required
@@ -389,7 +424,7 @@ function ChangeEmailCard() {
             onChange={(e: ChangeEvent<HTMLInputElement>) => setPw(e.target.value)}
           />
         </Field>
-        <Field label="New email">
+        <Field label={t("profile:email.newEmail")}>
           <TextInput
             type="email"
             required
@@ -397,13 +432,19 @@ function ChangeEmailCard() {
             onChange={(e) => setEmail(e.target.value)}
           />
         </Field>
-        <FormFooter busy={busy} idle="Send verification" busyLabel="Sending…" msg={msg} />
+        <FormFooter
+          busy={busy}
+          idle={t("profile:email.submit")}
+          busyLabel={t("profile:email.submitting")}
+          msg={msg}
+        />
       </form>
     </ProfilePanel>
   );
 }
 
 function ChangePasswordCard() {
+  const { t } = useT(["profile", "common"]);
   const [cur, setCur] = useState("");
   const [next, setNext] = useState("");
   const [msg, setMsg] = useState<Msg>(null);
@@ -418,32 +459,41 @@ function ChangePasswordCard() {
         method: "POST",
         body: JSON.stringify({ current_password: cur, new_password: next }),
       });
-      setMsg({ kind: "ok", text: "Password updated." });
+      setMsg({ kind: "ok", text: t("profile:password.success") });
       setCur("");
       setNext("");
     } catch (err) {
-      setMsg({ kind: "err", text: err instanceof ApiError ? err.detail : "failed" });
+      setMsg({
+        kind: "err",
+        text: err instanceof ApiError ? err.detail : t("profile:password.genericFailure"),
+      });
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <ProfilePanel title="Change password">
+    <ProfilePanel title={t("profile:password.title")}>
       <form onSubmit={submit} className="space-y-3">
-        <Field label="Current password">
+        <Field label={t("profile:password.currentPassword")}>
           <TextInput type="password" required value={cur} onChange={(e) => setCur(e.target.value)} />
         </Field>
-        <Field label="New password">
+        <Field label={t("profile:password.newPassword")}>
           <TextInput type="password" required value={next} onChange={(e) => setNext(e.target.value)} />
         </Field>
-        <FormFooter busy={busy} idle="Update password" busyLabel="Updating…" msg={msg} />
+        <FormFooter
+          busy={busy}
+          idle={t("profile:password.submit")}
+          busyLabel={t("profile:password.submitting")}
+          msg={msg}
+        />
       </form>
     </ProfilePanel>
   );
 }
 
 function TwoFactorCard({ active, onSuccess }: { active: boolean; onSuccess: () => void }) {
+  const { t } = useT(["profile", "common"]);
   const [setup, setSetup] = useState<TOTPSetup | null>(null);
   const [code, setCode] = useState("");
   const [pw, setPw] = useState("");
@@ -457,7 +507,10 @@ function TwoFactorCard({ active, onSuccess }: { active: boolean; onSuccess: () =
       const s = await api<TOTPSetup>("/v1/auth/2fa/setup", { method: "POST" });
       setSetup(s);
     } catch (err) {
-      setMsg({ kind: "err", text: err instanceof ApiError ? err.detail : "failed" });
+      setMsg({
+        kind: "err",
+        text: err instanceof ApiError ? err.detail : t("profile:twoFactor.genericFailure"),
+      });
     } finally {
       setBusy(false);
     }
@@ -472,11 +525,14 @@ function TwoFactorCard({ active, onSuccess }: { active: boolean; onSuccess: () =
         method: "POST",
         body: JSON.stringify({ code }),
       });
-      setMsg({ kind: "ok", text: "Two-factor authentication enabled. Save your backup codes!" });
+      setMsg({ kind: "ok", text: t("profile:twoFactor.successEnabled") });
       setCode("");
       onSuccess();
     } catch (err) {
-      setMsg({ kind: "err", text: err instanceof ApiError ? err.detail : "failed" });
+      setMsg({
+        kind: "err",
+        text: err instanceof ApiError ? err.detail : t("profile:twoFactor.genericFailure"),
+      });
     } finally {
       setBusy(false);
     }
@@ -491,34 +547,43 @@ function TwoFactorCard({ active, onSuccess }: { active: boolean; onSuccess: () =
         method: "POST",
         body: JSON.stringify({ password: pw }),
       });
-      setMsg({ kind: "ok", text: "Two-factor authentication disabled." });
+      setMsg({ kind: "ok", text: t("profile:twoFactor.successDisabled") });
       setPw("");
       setSetup(null);
       onSuccess();
     } catch (err) {
-      setMsg({ kind: "err", text: err instanceof ApiError ? err.detail : "failed" });
+      setMsg({
+        kind: "err",
+        text: err instanceof ApiError ? err.detail : t("profile:twoFactor.genericFailure"),
+      });
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <ProfilePanel title={`Two-factor authentication (${active ? "active" : "off"})`}>
+    <ProfilePanel
+      title={active ? t("profile:twoFactor.titleActive") : t("profile:twoFactor.titleInactive")}
+    >
       {active ? (
         <form onSubmit={disable} className="space-y-3">
-          <p className="text-sm text-fg-muted">TOTP is active. To remove, confirm your password.</p>
-          <Field label="Password">
+          <p className="text-sm text-fg-muted">{t("profile:twoFactor.activeText")}</p>
+          <Field label={t("profile:twoFactor.passwordLabel")}>
             <TextInput type="password" required value={pw} onChange={(e) => setPw(e.target.value)} />
           </Field>
-          <FormFooter busy={busy} idle="Disable 2FA" busyLabel="Disabling…" msg={msg} variant="danger" />
+          <FormFooter
+            busy={busy}
+            idle={t("profile:twoFactor.disableSubmit")}
+            busyLabel={t("profile:twoFactor.disableSubmitting")}
+            msg={msg}
+            variant="danger"
+          />
         </form>
       ) : !setup ? (
         <div className="space-y-3">
-          <p className="text-sm text-fg-muted">
-            Add a second factor by scanning a QR code in your authenticator (Aegis, 1Password, etc.).
-          </p>
+          <p className="text-sm text-fg-muted">{t("profile:twoFactor.introText")}</p>
           <Button variant="primary" onClick={startSetup} disabled={busy}>
-            {busy ? "Generating…" : "Begin setup"}
+            {busy ? t("profile:twoFactor.generating") : t("profile:twoFactor.beginSetup")}
           </Button>
           {msg && <Message msg={msg} />}
         </div>
@@ -526,21 +591,25 @@ function TwoFactorCard({ active, onSuccess }: { active: boolean; onSuccess: () =
         <div className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2">
             <div>
-              <p className="mb-2 text-xs uppercase tracking-wider text-fg-muted">Scan with authenticator</p>
+              <p className="mb-2 text-xs uppercase tracking-wider text-fg-muted">
+                {t("profile:twoFactor.scanLabel")}
+              </p>
               <img
                 src={`data:image/png;base64,${setup.qr_png_base64}`}
-                alt="TOTP QR code"
+                alt={t("profile:twoFactor.qrAlt")}
                 className="rounded border border-border bg-white p-2"
               />
               <p className="mt-2 text-xs text-fg-subtle">
-                Or enter the secret manually:
+                {t("profile:twoFactor.manualSecret")}
                 <code className="ml-1 select-all rounded bg-panel-2 px-1 py-0.5 font-mono text-xs text-fg">
                   {setup.secret_b32}
                 </code>
               </p>
             </div>
             <div>
-              <p className="mb-2 text-xs uppercase tracking-wider text-fg-muted">Backup codes (save once!)</p>
+              <p className="mb-2 text-xs uppercase tracking-wider text-fg-muted">
+                {t("profile:twoFactor.backupCodesLabel")}
+              </p>
               <ul className="grid grid-cols-2 gap-1 rounded border border-border bg-bg p-3 font-mono text-xs text-fg">
                 {setup.backup_codes.map((c) => (
                   <li key={c} className="select-all">
@@ -552,7 +621,7 @@ function TwoFactorCard({ active, onSuccess }: { active: boolean; onSuccess: () =
           </div>
 
           <form onSubmit={verify} className="space-y-3">
-            <Field label="Confirm with a current 6-digit code">
+            <Field label={t("profile:twoFactor.confirmCodeLabel")}>
               <TextInput
                 type="text"
                 required
@@ -561,7 +630,12 @@ function TwoFactorCard({ active, onSuccess }: { active: boolean; onSuccess: () =
                 className="font-mono tracking-widest"
               />
             </Field>
-            <FormFooter busy={busy} idle="Activate 2FA" busyLabel="Verifying…" msg={msg} />
+            <FormFooter
+              busy={busy}
+              idle={t("profile:twoFactor.activateSubmit")}
+              busyLabel={t("profile:twoFactor.activateSubmitting")}
+              msg={msg}
+            />
           </form>
         </div>
       )}
@@ -570,6 +644,7 @@ function TwoFactorCard({ active, onSuccess }: { active: boolean; onSuccess: () =
 }
 
 function PasskeysCard() {
+  const { t } = useT(["profile", "common"]);
   const qc = useQueryClient();
   const [name, setName] = useState("");
   const [msg, setMsg] = useState<Msg>(null);
@@ -584,7 +659,7 @@ function PasskeysCard() {
     mutationFn: async (n: string) => registerPasskey(n),
     onSuccess: () => {
       setName("");
-      setMsg({ kind: "ok", text: "Passkey hinzugefügt." });
+      setMsg({ kind: "ok", text: t("profile:passkeys.addSuccess") });
       qc.invalidateQueries({ queryKey: ["passkeys"] });
       qc.invalidateQueries({ queryKey: ["me"] });
     },
@@ -626,7 +701,7 @@ function PasskeysCard() {
     setMsg(null);
     const trimmed = name.trim();
     if (!trimmed) {
-      setMsg({ kind: "err", text: "Bitte einen Namen vergeben." });
+      setMsg({ kind: "err", text: t("profile:passkeys.addNameRequired") });
       return;
     }
     addPasskey.mutate(trimmed);
@@ -634,12 +709,10 @@ function PasskeysCard() {
 
   if (!webauthnSupported()) {
     return (
-      <ProfilePanel title="Passkeys">
+      <ProfilePanel title={t("profile:passkeys.title")}>
         <div className="space-y-2">
-          <p className="text-sm text-fg-muted">
-            Sicherer und schneller Login ohne Passwort. Browser oder Hardware-Key.
-          </p>
-          <p className="text-sm text-fg-subtle">Dein Browser unterstützt keine Passkeys.</p>
+          <p className="text-sm text-fg-muted">{t("profile:passkeys.description")}</p>
+          <p className="text-sm text-fg-subtle">{t("profile:passkeys.unsupported")}</p>
         </div>
       </ProfilePanel>
     );
@@ -648,18 +721,16 @@ function PasskeysCard() {
   const list = passkeys.data?.passkeys ?? [];
 
   return (
-    <ProfilePanel title="Passkeys">
+    <ProfilePanel title={t("profile:passkeys.title")}>
       <div className="space-y-4">
-        <p className="text-sm text-fg-muted">
-          Sicherer und schneller Login ohne Passwort. Browser oder Hardware-Key.
-        </p>
+        <p className="text-sm text-fg-muted">{t("profile:passkeys.description")}</p>
 
         <form onSubmit={submitAdd} className="flex flex-wrap items-end gap-2">
           <div className="flex-1 min-w-[12rem]">
-            <Field label="Passkey-Name">
+            <Field label={t("profile:passkeys.nameLabel")}>
               <TextInput
                 type="text"
-                placeholder="z.B. Laptop, YubiKey 5C"
+                placeholder={t("profile:passkeys.namePlaceholder")}
                 value={name}
                 onChange={(e: ChangeEvent<HTMLInputElement>) => setName(e.target.value)}
                 disabled={addPasskey.isPending}
@@ -668,7 +739,9 @@ function PasskeysCard() {
           </div>
           <Button type="submit" variant="primary" disabled={addPasskey.isPending}>
             <KeyRound className="h-3.5 w-3.5" />
-            {addPasskey.isPending ? "Registriere…" : "Passkey hinzufügen"}
+            {addPasskey.isPending
+              ? t("profile:passkeys.addSubmitting")
+              : t("profile:passkeys.addSubmit")}
           </Button>
         </form>
 
@@ -679,7 +752,7 @@ function PasskeysCard() {
         ) : passkeys.error ? (
           <ErrorBox>{(passkeys.error as Error).message}</ErrorBox>
         ) : list.length === 0 ? (
-          <p className="text-sm text-fg-subtle">Noch keine Passkeys registriert.</p>
+          <p className="text-sm text-fg-subtle">{t("profile:passkeys.empty")}</p>
         ) : (
           <ul className="divide-y divide-border rounded border border-border bg-bg">
             {list.map((pk) => (
@@ -712,6 +785,7 @@ function PasskeyRow({
   renaming: boolean;
   deleting: boolean;
 }) {
+  const { t } = useT(["profile", "common"]);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(passkey.name);
 
@@ -728,14 +802,14 @@ function PasskeyRow({
   }
 
   function confirmDelete() {
-    if (window.confirm(`Passkey "${passkey.name}" wirklich löschen?`)) {
+    if (window.confirm(t("profile:passkeys.confirmDelete", { name: passkey.name }))) {
       onDelete();
     }
   }
 
   const lastUsed = passkey.last_used_at
     ? new Date(passkey.last_used_at).toLocaleString()
-    : "—";
+    : t("profile:passkeys.lastUsedNever");
 
   return (
     <li className="flex flex-wrap items-center gap-3 px-3 py-2 text-sm">
@@ -752,7 +826,7 @@ function PasskeyRow({
               className="flex-1"
             />
             <Button type="submit" variant="primary" disabled={renaming}>
-              {renaming ? "…" : "Save"}
+              {renaming ? t("profile:passkeys.saving") : t("common:actions.save")}
             </Button>
             <Button
               type="button"
@@ -763,7 +837,7 @@ function PasskeyRow({
               }}
               disabled={renaming}
             >
-              Cancel
+              {t("common:actions.cancel")}
             </Button>
           </form>
         ) : (
@@ -777,14 +851,16 @@ function PasskeyRow({
       </div>
       {!editing && (
         <>
-          <span className="text-xs text-fg-muted">Last used: {lastUsed}</span>
+          <span className="text-xs text-fg-muted">
+            {t("profile:passkeys.lastUsed", { value: lastUsed })}
+          </span>
           <div className="flex items-center gap-1">
             <Button
               type="button"
               variant="ghost"
               onClick={() => setEditing(true)}
               disabled={renaming || deleting}
-              aria-label="Rename passkey"
+              aria-label={t("profile:passkeys.renameAria")}
             >
               <Pencil className="h-3.5 w-3.5" />
             </Button>
@@ -793,7 +869,7 @@ function PasskeyRow({
               variant="danger"
               onClick={confirmDelete}
               disabled={renaming || deleting}
-              aria-label="Delete passkey"
+              aria-label={t("profile:passkeys.deleteAria")}
             >
               <Trash2 className="h-3.5 w-3.5" />
             </Button>

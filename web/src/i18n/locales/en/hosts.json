@@ -1,0 +1,50 @@
+{
+  "title": "Hosts",
+  "subtitleKnown": "{{count}} known",
+  "subtitleFiltered": "{{shown}} of {{total}}",
+  "addAgent": "Add agent",
+  "loading": "Loading hosts…",
+  "filters": {
+    "all": "All",
+    "online": "Online",
+    "stale": "Stale",
+    "offline": "Offline",
+    "searchLabel": "Search",
+    "searchHint": "Matches hostname, label, or tag (case-insensitive).",
+    "searchPlaceholder": "hostname, label, or #tag…",
+    "searchAria": "Search hosts",
+    "statusLabel": "Status",
+    "statusGroupAria": "Filter by status"
+  },
+  "empty": {
+    "noneTitle": "No hosts yet",
+    "noneHintPrefix": "Issue a token via ",
+    "noneHintCode": "/admin/enrollments",
+    "noneHintSuffix": " and run the install command on the target host.",
+    "noMatch": "No hosts match your filter."
+  },
+  "table": {
+    "status": "Status",
+    "host": "Host",
+    "distro": "Distro",
+    "services": "Services",
+    "tagsGroups": "Tags / Groups",
+    "cpuRam": "CPU / RAM",
+    "agent": "Agent",
+    "updates": "Updates",
+    "lastSeen": "Last seen",
+    "openHostAria": "Open host {{host}}",
+    "updatesColAria": "Updates column, {{label}}, click to change",
+    "sortPendingDesc": "sorted by pending desc",
+    "sortSecurityDesc": "sorted by security desc",
+    "sortUnsorted": "unsorted",
+    "securityTitle": "{{count}} security",
+    "cpuRamValue": "{{cores}}c · {{ram}}"
+  },
+  "time": {
+    "secondsAgo": "{{count}}s ago",
+    "minutesAgo": "{{count}}m ago",
+    "hoursAgo": "{{count}}h ago",
+    "daysAgo": "{{count}}d ago"
+  }
+}

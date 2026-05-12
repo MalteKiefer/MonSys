@@ -18,9 +18,14 @@ import {
   Table,
   TimeRangeSelector,
 } from "../components/ui";
+import { useT } from "../i18n/useT";
 import { api } from "../lib/api";
 import { Host, IngestPayload, IngestSummary } from "../lib/types";
 import { hostDisplay } from "../lib/utils";
+
+// Translator key for `relTime()` — unused here directly but threaded into a
+// helper function so the relative timestamp respects the active locale.
+type TFn = (key: string, opts?: Record<string, unknown>) => string;
 
 // Time-range cull options for the recent-ingests list. The ring buffer is
 // already capped at ~100 items so this is a client-side filter — no extra
@@ -45,6 +50,7 @@ const ARRAY_PAGE = 5;
 // inside a tab panel and surfaces the toolbar (range + host filter) via
 // `onMeta`.
 export function AdminIngestsContent({ onMeta }: { onMeta?: (node: ReactNode) => void } = {}) {
+  const { t } = useT(["admin", "common"]);
   const [hostID, setHostID] = useState("");
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
   const [rangeSec, setRangeSec] = useState<number>(0);
@@ -106,7 +112,7 @@ export function AdminIngestsContent({ onMeta }: { onMeta?: (node: ReactNode) => 
           }}
           className="rounded-md border border-border bg-panel px-3 py-2 text-sm focus:border-accent focus:outline-none"
         >
-          <option value="">All hosts</option>
+          <option value="">{t("admin:ingests.all_hosts")}</option>
           {(hostList ?? []).map((h) => (
             <option key={h.id} value={h.id}>{hostDisplay(h)}</option>
           ))}
@@ -114,15 +120,15 @@ export function AdminIngestsContent({ onMeta }: { onMeta?: (node: ReactNode) => 
       </div>,
     );
     return () => onMeta(null);
-  }, [onMeta, rangeSec, hostID, hostList]);
+  }, [onMeta, rangeSec, hostID, hostList, t]);
 
   return (
     <div className="grid gap-4 lg:grid-cols-[420px_1fr]">
         <Panel>
           <PanelHeader>
-            <h3 className="text-sm font-semibold">Recent</h3>
+            <h3 className="text-sm font-semibold">{t("admin:ingests.recent_heading")}</h3>
             <Button onClick={() => list.refetch()}>
-              <RefreshCcw className="h-3.5 w-3.5" /> Refresh
+              <RefreshCcw className="h-3.5 w-3.5" /> {t("admin:ingests.refresh")}
             </Button>
           </PanelHeader>
           <PanelBody className="p-0 overflow-x-auto max-h-[70vh]">
@@ -131,14 +137,14 @@ export function AdminIngestsContent({ onMeta }: { onMeta?: (node: ReactNode) => 
                 <Skeleton className="h-48" />
               </div>
             ) : visibleEntries.length === 0 ? (
-              <Empty>No ingests captured yet.</Empty>
+              <Empty>{t("admin:ingests.recent_empty")}</Empty>
             ) : (
               <Table>
                 <THead>
                   <tr>
-                    <TH>When</TH>
-                    <TH>Host</TH>
-                    <TH>Size</TH>
+                    <TH>{t("admin:ingests.col_when")}</TH>
+                    <TH>{t("admin:ingests.col_host")}</TH>
+                    <TH>{t("admin:ingests.col_size")}</TH>
                   </tr>
                 </THead>
                 <TBody>
@@ -150,7 +156,7 @@ export function AdminIngestsContent({ onMeta }: { onMeta?: (node: ReactNode) => 
                         onClick={() => setSelectedIdx(e.idx)}
                         className={`cursor-pointer ${active ? "bg-panel-2" : "hover:bg-panel-2"}`}
                       >
-                        <TD className="font-mono text-[11px] text-fg-muted">{relTime(e.time)}</TD>
+                        <TD className="font-mono text-[11px] text-fg-muted">{relTime(e.time, t)}</TD>
                         <TD>
                           <Link
                             to={`/hosts/${e.host_id}`}
@@ -177,11 +183,13 @@ export function AdminIngestsContent({ onMeta }: { onMeta?: (node: ReactNode) => 
             <div className="flex items-center gap-2">
               <FileJson className="h-4 w-4 text-fg-muted" />
               <h3 className="text-sm font-semibold">
-                {selectedIdx === null ? "Pick an ingest" : "Payload"}
+                {selectedIdx === null
+                  ? t("admin:ingests.pick_heading")
+                  : t("admin:ingests.payload_heading")}
               </h3>
               {detail.data?.truncated && (
                 <span className="rounded-md bg-warn/10 px-1.5 py-0.5 text-[10px] text-warn ring-1 ring-inset ring-warn/30">
-                  truncated
+                  {t("admin:ingests.truncated")}
                 </span>
               )}
             </div>
@@ -191,14 +199,14 @@ export function AdminIngestsContent({ onMeta }: { onMeta?: (node: ReactNode) => 
                   void navigator.clipboard.writeText(JSON.stringify(detail.data!.payload, null, 2));
                 }}
               >
-                <Copy className="h-3.5 w-3.5" /> Copy
+                <Copy className="h-3.5 w-3.5" /> {t("admin:ingests.copy")}
               </Button>
             )}
           </PanelHeader>
           <PanelBody className="max-h-[70vh] overflow-auto p-0">
             {selectedIdx === null ? (
               <p className="px-5 py-8 text-center text-sm text-fg-subtle">
-                Click a row to inspect the JSON the agent sent.
+                {t("admin:ingests.pick_hint")}
               </p>
             ) : detail.isLoading ? (
               <div className="p-5">
@@ -220,11 +228,12 @@ export function AdminIngestsContent({ onMeta }: { onMeta?: (node: ReactNode) => 
 // Standalone page wrapper, retained for backwards-compat. The consolidated
 // /admin/logs route mounts AdminIngestsContent directly inside its tab.
 export function AdminIngests() {
+  const { t } = useT(["admin", "common"]);
   return (
     <Page
-      title="Agent ingests"
-      subtitle="Captured payloads from the agent. Re-marshalled JSON; semantically identical to what the agent sent."
-      breadcrumb={[{ label: "Admin" }, { label: "Agent ingests" }]}
+      title={t("admin:ingests.title")}
+      subtitle={t("admin:ingests.subtitle")}
+      breadcrumb={[{ label: t("admin:ingests.breadcrumb_admin") }, { label: t("admin:ingests.breadcrumb_agent_ingests") }]}
     >
       <AdminIngestsContent />
     </Page>
@@ -247,6 +256,7 @@ type TreeNodeProps = {
 };
 
 function TreeNode({ value, k, depth, initialOpen = false }: TreeNodeProps) {
+  const { t } = useT(["admin", "common"]);
   // Top-level always opens; nested defaults to closed unless caller
   // overrides. Each node owns its own state so toggling one branch never
   // disturbs siblings.
@@ -270,6 +280,8 @@ function TreeNode({ value, k, depth, initialOpen = false }: TreeNodeProps) {
   if (typeof value === "object") {
     const obj = value as Record<string, unknown>;
     const entries = Object.entries(obj);
+    const keyWord =
+      entries.length === 1 ? t("admin:ingests.tree_key_one") : t("admin:ingests.tree_key_other");
     return (
       <div>
         <button
@@ -284,7 +296,7 @@ function TreeNode({ value, k, depth, initialOpen = false }: TreeNodeProps) {
           )}
           <KeyLabel k={k} />
           <span className="text-fg-subtle">
-            {open ? "{" : `{ ${entries.length} ${entries.length === 1 ? "key" : "keys"} }`}
+            {open ? "{" : `{ ${entries.length} ${keyWord} }`}
           </span>
         </button>
         {open && (
@@ -299,7 +311,7 @@ function TreeNode({ value, k, depth, initialOpen = false }: TreeNodeProps) {
     );
   }
 
-  return <Leaf k={k}>{renderPrimitive(value)}</Leaf>;
+  return <Leaf k={k}>{renderPrimitive(value, t)}</Leaf>;
 }
 
 function ArrayNode({
@@ -315,10 +327,13 @@ function ArrayNode({
   open: boolean;
   onToggle: () => void;
 }) {
+  const { t } = useT(["admin", "common"]);
   const [shown, setShown] = useState<number>(ARRAY_PAGE);
   const isLarge = arr.length >= LARGE_ARRAY_THRESHOLD;
   const visible = arr.slice(0, shown);
   const remaining = arr.length - shown;
+  const itemWord =
+    arr.length === 1 ? t("admin:ingests.tree_item_one") : t("admin:ingests.tree_item_other");
 
   return (
     <div>
@@ -334,11 +349,11 @@ function ArrayNode({
         )}
         <KeyLabel k={k} />
         <span className="text-fg-subtle">
-          {open ? "[" : `[ ${arr.length} ${arr.length === 1 ? "item" : "items"} ]`}
+          {open ? "[" : `[ ${arr.length} ${itemWord} ]`}
         </span>
         {isLarge && (
           <span className="ml-1 rounded bg-warn/10 px-1 py-0 text-[9px] font-medium text-warn ring-1 ring-inset ring-warn/30">
-            large
+            {t("admin:ingests.tree_large")}
           </span>
         )}
       </button>
@@ -354,7 +369,7 @@ function ArrayNode({
                 onClick={() => setShown((s) => s + ARRAY_PAGE)}
                 className="rounded-md border border-border bg-panel px-2 py-0.5 text-[10px] text-fg-muted hover:bg-panel-2 hover:text-fg"
               >
-                show more (+{Math.min(ARRAY_PAGE, remaining)})
+                {t("admin:ingests.tree_show_more", { count: Math.min(ARRAY_PAGE, remaining) })}
               </button>
               {remaining > ARRAY_PAGE && (
                 <button
@@ -362,7 +377,7 @@ function ArrayNode({
                   onClick={() => setShown(arr.length)}
                   className="rounded-md border border-border bg-panel px-2 py-0.5 text-[10px] text-fg-muted hover:bg-panel-2 hover:text-fg"
                 >
-                  show all ({remaining})
+                  {t("admin:ingests.tree_show_all", { count: remaining })}
                 </button>
               )}
               <span className="text-[10px] text-fg-subtle tabular-nums">
@@ -395,16 +410,18 @@ function KeyLabel({ k }: { k: string | number }) {
   );
 }
 
-function renderPrimitive(v: unknown) {
+function renderPrimitive(v: unknown, t: TFn) {
   if (typeof v === "string") {
     const big = v.length > LARGE_STRING_THRESHOLD;
-    const display = big ? `${v.slice(0, 120)}… (${v.length} chars)` : v;
+    const display = big
+      ? `${v.slice(0, 120)}… (${t("admin:ingests.tree_string_chars", { count: v.length })})`
+      : v;
     return (
       <span className={big ? "text-warn" : "text-ok"} title={big ? v : undefined}>
         "{display}"
         {big && (
           <span className="ml-1 rounded bg-warn/10 px-1 py-0 text-[9px] font-medium text-warn ring-1 ring-inset ring-warn/30">
-            big
+            {t("admin:ingests.tree_big")}
           </span>
         )}
       </span>
@@ -415,14 +432,14 @@ function renderPrimitive(v: unknown) {
   return <span className="text-fg-muted">{String(v)}</span>;
 }
 
-function relTime(iso: string): string {
-  const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return iso;
-  const diff = (Date.now() - t) / 1000;
-  if (diff < 60) return `${Math.round(diff)}s ago`;
-  if (diff < 3600) return `${Math.round(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.round(diff / 3600)}h ago`;
-  return `${Math.round(diff / 86400)}d ago`;
+function relTime(iso: string, t: TFn): string {
+  const ts = new Date(iso).getTime();
+  if (Number.isNaN(ts)) return iso;
+  const diff = (Date.now() - ts) / 1000;
+  if (diff < 60) return t("admin:ingests.rel_seconds_ago", { count: Math.round(diff) });
+  if (diff < 3600) return t("admin:ingests.rel_minutes_ago", { count: Math.round(diff / 60) });
+  if (diff < 86400) return t("admin:ingests.rel_hours_ago", { count: Math.round(diff / 3600) });
+  return t("admin:ingests.rel_days_ago", { count: Math.round(diff / 86400) });
 }
 
 function formatBytes(n: number): string {

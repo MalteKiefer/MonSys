@@ -1,6 +1,7 @@
 import { AlertTriangle, Bell, History } from "lucide-react";
 import { NavLink } from "react-router-dom";
 
+import { useT } from "../../i18n/useT";
 import { useAuth } from "../../lib/auth";
 
 // Sub-nav rendered at the top of every Notifications* page. Uses NavLinks so
@@ -11,6 +12,7 @@ import { useAuth } from "../../lib/auth";
 // The Rules tab is admin-only; channels and alerts are visible to anyone
 // signed in. The page itself enforces the underlying permission semantics.
 export function NotificationsTabs() {
+  const { t } = useT(["notifications", "common"]);
   const user = useAuth((s) => s.user);
   const isAdmin = user?.role === "admin";
 
@@ -21,9 +23,9 @@ export function NotificationsTabs() {
     end?: boolean;
     visible: boolean;
   }> = [
-    { to: "/notifications", label: "Rules", icon: AlertTriangle, end: true, visible: isAdmin },
-    { to: "/notifications/channels", label: "Channels", icon: Bell, visible: true },
-    { to: "/notifications/alerts", label: "Alerts", icon: History, visible: true },
+    { to: "/notifications", label: t("notifications:tabs.rules"), icon: AlertTriangle, end: true, visible: isAdmin },
+    { to: "/notifications/channels", label: t("notifications:tabs.channels"), icon: Bell, visible: true },
+    { to: "/notifications/alerts", label: t("notifications:tabs.alerts"), icon: History, visible: true },
   ];
 
   return (

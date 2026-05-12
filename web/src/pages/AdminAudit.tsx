@@ -15,6 +15,7 @@ import {
   Table,
   TextInput,
 } from "../components/ui";
+import { useT } from "../i18n/useT";
 import { api } from "../lib/api";
 import { AuditEntry } from "../lib/types";
 
@@ -29,6 +30,7 @@ type Resp = {
 // `<Page>` wrapper. The consolidated /admin/logs view mounts it inside a
 // tab panel and surfaces the entry count via `onMeta`.
 export function AdminAuditContent({ onMeta }: { onMeta?: (node: ReactNode) => void } = {}) {
+  const { t } = useT(["admin", "common"]);
   const [actor, setActor] = useState("");
   const [action, setAction] = useState("");
   const [debouncedActor, setDebouncedActor] = useState("");
@@ -68,29 +70,33 @@ export function AdminAuditContent({ onMeta }: { onMeta?: (node: ReactNode) => vo
   // header can host it beside the tab strip.
   useEffect(() => {
     if (!onMeta) return;
-    onMeta(<span className="text-xs text-fg-subtle tabular-nums">{total} entries</span>);
+    onMeta(
+      <span className="text-xs text-fg-subtle tabular-nums">
+        {t("admin:audit.meta", { count: total })}
+      </span>,
+    );
     return () => onMeta(null);
-  }, [onMeta, total]);
+  }, [onMeta, total, t]);
 
   return (
     <Panel>
         <PanelHeader>
           <div className="flex w-full flex-wrap items-end gap-3">
             <div className="min-w-[220px] flex-1">
-              <Field label="Actor" hint="Exact match on the user's email">
+              <Field label={t("admin:audit.filter_actor")} hint={t("admin:audit.filter_actor_hint")}>
                 <TextInput
                   type="search"
-                  placeholder="admin@example.com"
+                  placeholder={t("admin:audit.filter_actor_placeholder")}
                   value={actor}
                   onChange={(e) => setActor(e.target.value)}
                 />
               </Field>
             </div>
             <div className="min-w-[220px] flex-1">
-              <Field label="Action" hint="e.g. user.create, channel.delete">
+              <Field label={t("admin:audit.filter_action")} hint={t("admin:audit.filter_action_hint")}>
                 <TextInput
                   type="search"
-                  placeholder="user.create"
+                  placeholder={t("admin:audit.filter_action_placeholder")}
                   value={action}
                   onChange={(e) => setAction(e.target.value)}
                 />
@@ -100,7 +106,7 @@ export function AdminAuditContent({ onMeta }: { onMeta?: (node: ReactNode) => vo
         </PanelHeader>
         <PanelBody className="p-0 overflow-x-auto">
           {audit.isLoading ? (
-            <p className="px-5 py-4 text-sm text-fg-subtle">Loading…</p>
+            <p className="px-5 py-4 text-sm text-fg-subtle">{t("common:actions.loading")}</p>
           ) : audit.error ? (
             <div className="p-5">
               <ErrorState
@@ -111,18 +117,18 @@ export function AdminAuditContent({ onMeta }: { onMeta?: (node: ReactNode) => vo
           ) : entries.length === 0 ? (
             <EmptyState
               icon={ClipboardList}
-              title="No audit entries match."
-              hint="Try clearing the actor or action filter, or check back after an admin action runs."
+              title={t("admin:audit.empty_title")}
+              hint={t("admin:audit.empty_hint")}
             />
           ) : (
-            <Table aria-label="Audit log entries">
+            <Table aria-label={t("admin:audit.table_label")}>
               <THead>
                 <tr>
-                  <TH>At</TH>
-                  <TH>Actor</TH>
-                  <TH>Action</TH>
-                  <TH>Target</TH>
-                  <TH>Detail</TH>
+                  <TH>{t("admin:audit.col_at")}</TH>
+                  <TH>{t("admin:audit.col_actor")}</TH>
+                  <TH>{t("admin:audit.col_action")}</TH>
+                  <TH>{t("admin:audit.col_target")}</TH>
+                  <TH>{t("admin:audit.col_detail")}</TH>
                 </tr>
               </THead>
               <TBody>
@@ -154,24 +160,28 @@ export function AdminAuditContent({ onMeta }: { onMeta?: (node: ReactNode) => vo
             className="flex items-center justify-between border-t border-border px-5 py-3 text-xs text-fg-muted"
           >
             <span className="tabular-nums">
-              {offset + 1}–{Math.min(offset + entries.length, total)} of {total}
+              {t("admin:audit.pagination_range", {
+                from: offset + 1,
+                to: Math.min(offset + entries.length, total),
+                total,
+              })}
             </span>
             <div className="flex items-center gap-2">
               <button
-                aria-label="Previous page"
+                aria-label={t("admin:audit.prev_aria")}
                 disabled={offset === 0}
                 onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
                 className="rounded-md border border-border px-2 py-1 hover:bg-panel-2 disabled:opacity-40"
               >
-                Prev
+                {t("admin:audit.prev")}
               </button>
               <button
-                aria-label="Next page"
+                aria-label={t("admin:audit.next_aria")}
                 disabled={offset + PAGE_SIZE >= total}
                 onClick={() => setOffset(offset + PAGE_SIZE)}
                 className="rounded-md border border-border px-2 py-1 hover:bg-panel-2 disabled:opacity-40"
               >
-                Next
+                {t("admin:audit.next")}
               </button>
             </div>
           </div>
@@ -183,11 +193,12 @@ export function AdminAuditContent({ onMeta }: { onMeta?: (node: ReactNode) => vo
 // Standalone page wrapper, retained for backwards-compat. The consolidated
 // /admin/logs route mounts AdminAuditContent directly inside its tab.
 export function AdminAudit() {
+  const { t } = useT(["admin", "common"]);
   return (
     <Page
-      title="Audit log"
-      subtitle="Server-side record of admin-only actions: who changed what, when. Filter by exact actor email or action key."
-      breadcrumb={[{ label: "Admin" }, { label: "Audit log" }]}
+      title={t("admin:audit.title")}
+      subtitle={t("admin:audit.subtitle")}
+      breadcrumb={[{ label: t("admin:audit.breadcrumb_admin") }, { label: t("admin:audit.breadcrumb_audit_log") }]}
     >
       <AdminAuditContent />
     </Page>
@@ -202,8 +213,8 @@ function formatDetail(raw: string): string {
   try {
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === "object" && "text" in parsed && Object.keys(parsed).length === 1) {
-      const t = (parsed as { text?: unknown }).text;
-      return typeof t === "string" && t !== "" ? t : "—";
+      const txt = (parsed as { text?: unknown }).text;
+      return typeof txt === "string" && txt !== "" ? txt : "—";
     }
     return raw;
   } catch {

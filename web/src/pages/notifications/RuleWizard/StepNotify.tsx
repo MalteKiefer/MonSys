@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 
 import { Field, TextInput } from "../../../components/ui";
 import { PillGroup, Toggle } from "../../../components/notifications/FormParts";
+import { useT } from "../../../i18n/useT";
 import type { NotificationChannel } from "../../../lib/types";
 
 import { channelIcon } from "./catalogue";
@@ -21,6 +22,7 @@ export function StepNotify({
   patch: (p: Partial<RuleDraft>) => void;
   channels: NotificationChannel[];
 }) {
+  const { t } = useT(["notifications", "common"]);
   const channelOptions = useMemo(
     () =>
       channels.map((c) => ({
@@ -34,18 +36,21 @@ export function StepNotify({
 
   return (
     <div className="space-y-4">
-      <Field label="Name" hint="Shown in the alerts list and notification subject.">
+      <Field
+        label={t("notifications:wizard.notify.name_label")}
+        hint={t("notifications:wizard.notify.name_hint")}
+      >
         <TextInput
           required
           value={draft.name}
           onChange={(e) => patch({ name: e.target.value })}
-          placeholder="e.g. prod hosts offline"
+          placeholder={t("notifications:wizard.notify.name_placeholder")}
         />
       </Field>
 
       <section>
         <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-fg-subtle">
-          Channels ({draft.channelIds.length} selected)
+          {t("notifications:wizard.notify.channels_header", { count: draft.channelIds.length })}
         </p>
         <MultiSelectList
           items={channelOptions}
@@ -57,10 +62,10 @@ export function StepNotify({
                 : [...draft.channelIds, id],
             })
           }
-          empty="No channels available. Create one in Channels first."
+          empty={t("notifications:wizard.notify.channels_empty")}
           search={chSearch}
           onSearch={setChSearch}
-          placeholder="Search channels…"
+          placeholder={t("notifications:wizard.notify.channels_search_placeholder")}
         />
         {draft.channelIds.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1">
@@ -77,7 +82,7 @@ export function StepNotify({
                   {c.name}
                   <button
                     type="button"
-                    aria-label={`Remove channel ${c.name}`}
+                    aria-label={t("notifications:wizard.notify.remove_channel_aria", { name: c.name })}
                     onClick={() =>
                       patch({ channelIds: draft.channelIds.filter((x) => x !== id) })
                     }
@@ -92,26 +97,28 @@ export function StepNotify({
         )}
       </section>
 
-      <Field label="Severity">
+      <Field label={t("notifications:wizard.notify.severity_label")}>
         <PillGroup
           value={draft.severity}
           onChange={(v) => patch({ severity: v })}
-          label="Severity"
+          label={t("notifications:wizard.notify.severity_label")}
           options={[
-            { value: "info", label: "info", activeClass: "bg-ok/15 text-ok ring-ok/30" },
-            { value: "warning", label: "warning", activeClass: "bg-warn/15 text-warn ring-warn/30" },
-            { value: "critical", label: "critical", activeClass: "bg-fail/15 text-fail ring-fail/30" },
+            { value: "info", label: t("notifications:wizard.notify.severity_info"), activeClass: "bg-ok/15 text-ok ring-ok/30" },
+            { value: "warning", label: t("notifications:wizard.notify.severity_warning"), activeClass: "bg-warn/15 text-warn ring-warn/30" },
+            { value: "critical", label: t("notifications:wizard.notify.severity_critical"), activeClass: "bg-fail/15 text-fail ring-fail/30" },
           ]}
         />
       </Field>
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <Field
-          label="Don't repeat for…"
+          label={t("notifications:wizard.notify.throttle_label")}
           hint={
             draft.throttleSec > 0
-              ? `≈ ${(draft.throttleSec / 60).toFixed(draft.throttleSec % 60 ? 1 : 0)} minute(s)`
-              : "0 disables throttling — every fire delivers."
+              ? t("notifications:wizard.notify.throttle_hint_minutes", {
+                  value: (draft.throttleSec / 60).toFixed(draft.throttleSec % 60 ? 1 : 0),
+                })
+              : t("notifications:wizard.notify.throttle_hint_zero")
           }
         >
           <div className="flex items-center gap-2">
@@ -121,17 +128,17 @@ export function StepNotify({
               value={draft.throttleSec}
               onChange={(e) => patch({ throttleSec: parseInt(e.target.value || "0", 10) })}
             />
-            <span className="text-xs text-fg-subtle">seconds</span>
+            <span className="text-xs text-fg-subtle">{t("notifications:wizard.notify.throttle_unit")}</span>
           </div>
         </Field>
         <Field
-          label="Repeat reminder"
+          label={t("notifications:wizard.notify.repeat_label")}
           hint={
             draft.repeatIntervalSec === 0
-              ? "0 = fire once per outage."
-              : `Re-send every ${(draft.repeatIntervalSec / 60).toFixed(
-                  draft.repeatIntervalSec % 60 ? 1 : 0,
-                )} min while still active.`
+              ? t("notifications:wizard.notify.repeat_hint_zero")
+              : t("notifications:wizard.notify.repeat_hint_active", {
+                  value: (draft.repeatIntervalSec / 60).toFixed(draft.repeatIntervalSec % 60 ? 1 : 0),
+                })
           }
         >
           <div className="flex items-center gap-2">
@@ -142,7 +149,7 @@ export function StepNotify({
               value={draft.repeatIntervalSec}
               onChange={(e) => patch({ repeatIntervalSec: parseInt(e.target.value || "0", 10) })}
             />
-            <span className="text-xs text-fg-subtle">seconds</span>
+            <span className="text-xs text-fg-subtle">{t("notifications:wizard.notify.repeat_unit")}</span>
           </div>
         </Field>
       </div>
@@ -151,14 +158,14 @@ export function StepNotify({
         <Toggle
           checked={draft.notifyOnResolve}
           onChange={(v) => patch({ notifyOnResolve: v })}
-          label="Notify on resolve"
-          hint="Send an all-clear when the host or monitor recovers."
+          label={t("notifications:wizard.notify.notify_on_resolve_label")}
+          hint={t("notifications:wizard.notify.notify_on_resolve_hint")}
         />
         <Toggle
           checked={draft.enabled}
           onChange={(v) => patch({ enabled: v })}
-          label="Enabled"
-          hint="Disable to keep the rule but stop firing alerts."
+          label={t("notifications:wizard.notify.enabled_label")}
+          hint={t("notifications:wizard.notify.enabled_hint")}
         />
       </div>
     </div>

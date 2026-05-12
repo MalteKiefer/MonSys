@@ -19,6 +19,7 @@ import {
   Table,
   TextInput,
 } from "../components/ui";
+import { useT } from "../i18n/useT";
 import { api } from "../lib/api";
 import { Host, ServerLogEntry } from "../lib/types";
 import { hostDisplay } from "../lib/utils";
@@ -55,6 +56,7 @@ type Resp = {
 // `<Page>` wrapper. The consolidated /admin/logs view mounts it inside a
 // tab panel and forwards the header counter via `onMeta`.
 export function AdminLogsContent({ onMeta }: { onMeta?: (node: ReactNode) => void } = {}) {
+  const { t } = useT(["admin", "common"]);
   const [q, setQ] = useState("");
   const [debounced, setDebounced] = useState("");
   const [level, setLevel] = useState<(typeof LEVELS)[number]>("");
@@ -167,11 +169,11 @@ export function AdminLogsContent({ onMeta }: { onMeta?: (node: ReactNode) => voi
     if (!onMeta) return;
     onMeta(
       <span className="text-xs text-fg-subtle tabular-nums">
-        {total} matching · seq {seq}
+        {t("admin:logs.meta", { total, seq })}
       </span>,
     );
     return () => onMeta(null);
-  }, [onMeta, total, seq]);
+  }, [onMeta, total, seq, t]);
 
   return (
     <>
@@ -182,7 +184,7 @@ export function AdminLogsContent({ onMeta }: { onMeta?: (node: ReactNode) => voi
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-subtle" />
               <TextInput
                 type="search"
-                placeholder="search msg / attrs… (case-insensitive)"
+                placeholder={t("admin:logs.search_placeholder")}
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 className="pl-8 font-mono"
@@ -195,7 +197,7 @@ export function AdminLogsContent({ onMeta }: { onMeta?: (node: ReactNode) => voi
               className="rounded-md border border-border bg-panel px-3 py-2 text-sm focus:border-accent focus:outline-none"
             >
               {LEVELS.map((l) => (
-                <option key={l} value={l}>{l === "" ? "Any level" : l}</option>
+                <option key={l} value={l}>{l === "" ? t("admin:logs.any_level") : l}</option>
               ))}
             </select>
             <select
@@ -203,7 +205,7 @@ export function AdminLogsContent({ onMeta }: { onMeta?: (node: ReactNode) => voi
               onChange={(e) => setHostID(e.target.value)}
               className="max-w-[220px] truncate rounded-md border border-border bg-panel px-3 py-2 text-sm focus:border-accent focus:outline-none"
             >
-              <option value="">All hosts</option>
+              <option value="">{t("admin:logs.all_hosts")}</option>
               {(hosts.data?.hosts ?? []).map((h) => (
                 <option key={h.id} value={h.id}>
                   {hostDisplay(h)}
@@ -215,15 +217,15 @@ export function AdminLogsContent({ onMeta }: { onMeta?: (node: ReactNode) => voi
               size="sm"
               onClick={() => setLiveTail((v) => !v)}
               aria-pressed={liveTail}
-              title={liveTail ? "Pause live tail" : "Stream new entries every 2s"}
+              title={liveTail ? t("admin:logs.pause_tail_title") : t("admin:logs.start_tail_title")}
             >
               {liveTail ? (
                 <>
-                  <Pause className="h-3.5 w-3.5" /> Live tail
+                  <Pause className="h-3.5 w-3.5" /> {t("admin:logs.live_tail")}
                 </>
               ) : (
                 <>
-                  <Play className="h-3.5 w-3.5" /> Live tail
+                  <Play className="h-3.5 w-3.5" /> {t("admin:logs.live_tail")}
                 </>
               )}
             </Button>
@@ -232,7 +234,7 @@ export function AdminLogsContent({ onMeta }: { onMeta?: (node: ReactNode) => voi
 
         <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-5 py-2.5">
           <span className="mr-1 text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">
-            Level
+            {t("admin:logs.chip_level")}
           </span>
           {LEVEL_CHIPS.map((c) => (
             <Chip
@@ -245,7 +247,7 @@ export function AdminLogsContent({ onMeta }: { onMeta?: (node: ReactNode) => voi
           ))}
           <span className="mx-2 h-4 w-px bg-border" aria-hidden />
           <span className="mr-1 text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">
-            Op
+            {t("admin:logs.chip_op")}
           </span>
           {OP_CHIPS.map((op) => (
             <Chip key={op} active={chipOps.has(op)} onClick={() => toggleChipOp(op)}>
@@ -261,7 +263,7 @@ export function AdminLogsContent({ onMeta }: { onMeta?: (node: ReactNode) => voi
               }}
               className="ml-auto text-[11px] text-fg-subtle hover:text-fg"
             >
-              clear chips
+              {t("admin:logs.chip_clear")}
             </button>
           )}
         </div>
@@ -273,15 +275,15 @@ export function AdminLogsContent({ onMeta }: { onMeta?: (node: ReactNode) => voi
               <Skeleton className="h-64" />
             </div>
           ) : entries.length === 0 ? (
-            <Empty>No log entries match.</Empty>
+            <Empty>{t("admin:logs.empty")}</Empty>
           ) : (
             <Table>
               <THead>
                 <tr>
-                  <TH>Time</TH>
-                  <TH>Level</TH>
-                  <TH>Msg</TH>
-                  <TH>Attrs</TH>
+                  <TH>{t("admin:logs.col_time")}</TH>
+                  <TH>{t("admin:logs.col_level")}</TH>
+                  <TH>{t("admin:logs.col_msg")}</TH>
+                  <TH>{t("admin:logs.col_attrs")}</TH>
                 </tr>
               </THead>
               <TBody>
@@ -309,7 +311,11 @@ export function AdminLogsContent({ onMeta }: { onMeta?: (node: ReactNode) => voi
         {total > PAGE_SIZE && (
           <div className="flex items-center justify-between border-t border-border px-5 py-3 text-xs text-fg-muted">
             <span className="tabular-nums">
-              {offset + 1}–{Math.min(offset + entries.length, total)} of {total}
+              {t("admin:logs.pagination_range", {
+                from: offset + 1,
+                to: Math.min(offset + entries.length, total),
+                total,
+              })}
             </span>
             <div className="flex items-center gap-2">
               <button
@@ -317,14 +323,14 @@ export function AdminLogsContent({ onMeta }: { onMeta?: (node: ReactNode) => voi
                 onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
                 className="rounded-md border border-border px-2 py-1 hover:bg-panel-2 disabled:opacity-40"
               >
-                Prev
+                {t("admin:logs.prev")}
               </button>
               <button
                 disabled={offset + PAGE_SIZE >= total}
                 onClick={() => setOffset(offset + PAGE_SIZE)}
                 className="rounded-md border border-border px-2 py-1 hover:bg-panel-2 disabled:opacity-40"
               >
-                Next
+                {t("admin:logs.next")}
               </button>
             </div>
           </div>
@@ -338,11 +344,12 @@ export function AdminLogsContent({ onMeta }: { onMeta?: (node: ReactNode) => voi
 // The consolidated /admin/logs route uses LogsPage instead; this is still
 // useful if anything embeds the page elsewhere.
 export function AdminLogs() {
+  const { t } = useT(["admin", "common"]);
   return (
     <Page
-      title="Server logs"
-      subtitle="In-memory ring buffer. Older entries roll off — ship the JSON stream off-host for retention."
-      breadcrumb={[{ label: "Admin" }, { label: "Server logs" }]}
+      title={t("admin:logs.title")}
+      subtitle={t("admin:logs.subtitle")}
+      breadcrumb={[{ label: t("admin:logs.breadcrumb_admin") }, { label: t("admin:logs.breadcrumb_server_logs") }]}
     >
       <AdminLogsContent />
     </Page>

@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import { useLocation } from "react-router-dom";
 
 import { SidebarNav } from "./Sidebar";
+import { useT } from "../../i18n/useT";
 
 // Mobile-only navigation drawer. Renders nothing while closed (the parent
 // just stops mounting it) so we don't leak focus traps or scroll-locks for
@@ -17,6 +18,7 @@ import { SidebarNav } from "./Sidebar";
 //     drawer only contains nav links + one close button, and Tab cycles
 //     within the drawer naturally with `inert` siblings.
 export function MobileDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { t } = useT("nav");
   const closeRef = useRef<HTMLButtonElement | null>(null);
   const loc = useLocation();
 
@@ -62,10 +64,10 @@ export function MobileDrawer({ open, onClose }: { open: boolean; onClose: () => 
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 md:hidden" role="dialog" aria-modal="true" aria-label="Navigation">
+    <div className="fixed inset-0 z-50 md:hidden" role="dialog" aria-modal="true" aria-label={t("actions.open_navigation")}>
       <button
         type="button"
-        aria-label="Close navigation"
+        aria-label={t("actions.close_navigation")}
         onClick={onClose}
         className="absolute inset-0 cursor-default bg-black/50 backdrop-blur-sm"
       />
@@ -79,7 +81,7 @@ export function MobileDrawer({ open, onClose }: { open: boolean; onClose: () => 
             ref={closeRef}
             type="button"
             onClick={onClose}
-            aria-label="Close navigation"
+            aria-label={t("actions.close_navigation")}
             className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-panel text-fg-muted transition-colors hover:bg-panel-2 hover:text-fg focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           >
             <X className="h-4 w-4" />

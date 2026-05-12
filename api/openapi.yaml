@@ -971,6 +971,13 @@ components:
           maxLength: 36
           readOnly: true
           type: string
+        language:
+          description: UI language preference; 'auto' follows the browser/system locale
+          enum:
+            - auto
+            - en
+            - de
+          type: string
         must_enroll:
           type: boolean
         passkey_count:
@@ -991,6 +998,7 @@ components:
         - totp_active
         - passkey_count
         - has_avatar
+        - language
       type: object
     DiskInfo:
       additionalProperties: false
@@ -3647,6 +3655,26 @@ components:
       required:
         - time
       type: object
+    SetLanguageRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://mon.kiefer-networks.de/schemas/SetLanguageRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        language:
+          description: new language preference
+          enum:
+            - auto
+            - en
+            - de
+          type: string
+      required:
+        - language
+      type: object
     SmtpSettings:
       additionalProperties: false
       properties:
@@ -5588,6 +5616,31 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Request an email change; sends a confirmation link to the new address
+      tags:
+        - auth
+  /v1/auth/me/language:
+    put:
+      operationId: auth-me-set-language
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetLanguageRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Set the caller's UI language preference
       tags:
         - auth
   /v1/auth/me/passkeys:

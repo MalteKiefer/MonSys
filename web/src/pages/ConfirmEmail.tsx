@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 import { Button, ErrorBox, Panel, SuccessBox } from "../components/ui";
+import { useT } from "../i18n/useT";
 import { api, ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
 
@@ -20,6 +21,7 @@ type State =
   | { kind: "missing" };
 
 export function ConfirmEmail() {
+  const { t } = useT("auth");
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const token = params.get("token") ?? "";
@@ -46,14 +48,14 @@ export function ConfirmEmail() {
         setState({ kind: "ok" });
       } catch (err) {
         if (cancelled) return;
-        const msg = err instanceof ApiError ? err.detail : "Confirmation failed.";
+        const msg = err instanceof ApiError ? err.detail : t("confirmEmail.err_default");
         setState({ kind: "err", message: msg });
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [token, hasToken, clearAuth]);
+  }, [token, hasToken, clearAuth, t]);
 
   return (
     <div className="flex min-h-full items-center justify-center px-4 py-10">
@@ -63,27 +65,26 @@ export function ConfirmEmail() {
             <>
               <div className="flex items-center gap-2">
                 <MailWarning className="h-5 w-5 text-fail" />
-                <h1 className="text-lg font-semibold">Missing confirmation token</h1>
+                <h1 className="text-lg font-semibold">{t("confirmEmail.missing_title")}</h1>
               </div>
               <ErrorBox>
-                The link you used is incomplete. Open the confirmation link from the email we
-                sent, or request a new one from your profile.
+                {t("confirmEmail.missing_body")}
               </ErrorBox>
               <Button
                 variant="primary"
                 onClick={() => navigate("/login", { replace: true })}
                 className="w-full"
               >
-                Go to login
+                {t("confirmEmail.go_to_login")}
               </Button>
             </>
           )}
 
           {state.kind === "loading" && (
             <>
-              <h1 className="text-lg font-semibold">Confirming…</h1>
+              <h1 className="text-lg font-semibold">{t("confirmEmail.loading_title")}</h1>
               <p className="text-sm text-fg-muted">
-                Updating your email address. This should only take a moment.
+                {t("confirmEmail.loading_body")}
               </p>
             </>
           )}
@@ -92,18 +93,17 @@ export function ConfirmEmail() {
             <>
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="h-5 w-5 text-ok" />
-                <h1 className="text-lg font-semibold">Email updated</h1>
+                <h1 className="text-lg font-semibold">{t("confirmEmail.ok_title")}</h1>
               </div>
               <SuccessBox>
-                Email updated. All sessions have been signed out for security. Please log in
-                with your new email.
+                {t("confirmEmail.ok_body")}
               </SuccessBox>
               <Button
                 variant="primary"
                 onClick={() => navigate("/login", { replace: true })}
                 className="w-full"
               >
-                Go to login
+                {t("confirmEmail.go_to_login")}
               </Button>
             </>
           )}
@@ -112,12 +112,11 @@ export function ConfirmEmail() {
             <>
               <div className="flex items-center gap-2">
                 <MailWarning className="h-5 w-5 text-fail" />
-                <h1 className="text-lg font-semibold">Confirmation failed</h1>
+                <h1 className="text-lg font-semibold">{t("confirmEmail.err_title")}</h1>
               </div>
               <ErrorBox>{state.message}</ErrorBox>
               <p className="text-sm text-fg-muted">
-                Confirmation links expire after one hour. Request a new one from your
-                profile.
+                {t("confirmEmail.err_hint")}
               </p>
               <div className="flex gap-2">
                 <Button
@@ -125,13 +124,13 @@ export function ConfirmEmail() {
                   onClick={() => navigate("/login", { replace: true })}
                   className="flex-1"
                 >
-                  Go to login
+                  {t("confirmEmail.go_to_login")}
                 </Button>
                 <Link
                   to="/profile"
                   className="inline-flex flex-1 items-center justify-center rounded-md border border-border bg-panel px-3 py-1.5 text-sm font-medium text-fg hover:bg-panel-2"
                 >
-                  Profile
+                  {t("confirmEmail.profile")}
                 </Link>
               </div>
             </>

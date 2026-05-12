@@ -11,9 +11,11 @@ import {
   ReactNode,
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
 } from "react";
+import { useT } from "../../i18n/useT";
 
 // ---- Layout primitives -----------------------------------------------------
 
@@ -178,8 +180,12 @@ export function Field({
 
 // ---- Empty / error / loading ---------------------------------------------
 
-export function Empty({ children = "No data." }: { children?: ReactNode }) {
-  return <p className="py-4 text-sm text-fg-subtle">{children}</p>;
+export function Empty({ children }: { children?: ReactNode }) {
+  const { t } = useT(["ui", "common"]);
+  // Default text comes from i18n; callers can still override by passing
+  // `children` (e.g. `<Empty>No NICs.</Empty>`).
+  const content = children ?? t("ui:empty.default");
+  return <p className="py-4 text-sm text-fg-subtle">{content}</p>;
 }
 
 export function ErrorBox({ children }: { children: ReactNode }) {
@@ -215,15 +221,24 @@ export const DEFAULT_RANGES: RangeOption[] = [
 export function TimeRangeSelector({
   value,
   onChange,
-  options = DEFAULT_RANGES,
+  options,
 }: {
   value: number;
   onChange: (seconds: number) => void;
   options?: RangeOption[];
 }) {
+  const { t } = useT(["ui", "common"]);
+  // Build a localized default range list when the caller doesn't supply one.
+  // Keys mirror the seconds-based DEFAULT_RANGES so existing call sites that
+  // compare `seconds` against persisted values keep working unchanged.
+  const localizedDefault = useMemo<RangeOption[]>(
+    () => DEFAULT_RANGES.map((r) => ({ ...r, label: t(`ui:timeRange.labels.${r.label}` as const) })),
+    [t],
+  );
+  const resolved = options ?? localizedDefault;
   return (
-    <div role="tablist" aria-label="Time range" className="inline-flex rounded-md border border-border bg-panel p-0.5">
-      {options.map((opt) => {
+    <div role="tablist" aria-label={t("ui:timeRange.ariaLabel")} className="inline-flex rounded-md border border-border bg-panel p-0.5">
+      {resolved.map((opt) => {
         const active = opt.seconds === value;
         return (
           <button
@@ -414,6 +429,7 @@ export function Stepper({
   onJump?: (idx: number) => void;
   className?: string;
 }) {
+  const { t } = useT(["ui", "common"]);
   const listRef = useRef<HTMLOListElement | null>(null);
   const completedSet = new Set(completed ?? []);
 
@@ -454,7 +470,7 @@ export function Stepper({
       ref={listRef}
       onKeyDown={onKeyDown}
       className={`flex w-full items-start gap-2 ${className}`}
-      aria-label="Progress"
+      aria-label={t("ui:stepper.ariaLabel")}
     >
       {items.map((item, idx) => {
         const isCurrent = idx === current;
