@@ -201,6 +201,7 @@ function AdminAccordion({ group, collapsed, pathname, onNavigate }: AdminAccordi
   // this the user could collapse it manually and then click a nav link from
   // a sub-route — the active item would render hidden.
   useEffect(() => {
+     
     if (childActive) setOpen(true);
   }, [childActive]);
 
@@ -272,7 +273,9 @@ function UserCard({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: 
   // user is leaving the app either way; the server-side session will
   // expire on its own if the call fails.
   function logout() {
-    api<unknown>("/v1/auth/logout", { method: "POST" }).catch(() => {});
+    api<unknown>("/v1/auth/logout", { method: "POST" }).catch(() => {
+      /* fire-and-forget; user is leaving the app either way */
+    });
     qc.clear();
     clear();
     onNavigate?.();
@@ -434,6 +437,7 @@ export function Sidebar({ forceCollapsed = false }: { forceCollapsed?: boolean }
   const collapsed = baseCollapsed && !(forceCollapsed && hoverExpanded);
 
   return (
+    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- aside-level hover/focus is progressive enhancement; inner items remain keyboard-accessible
     <aside
       onMouseEnter={() => forceCollapsed && setHoverExpanded(true)}
       onMouseLeave={() => forceCollapsed && setHoverExpanded(false)}

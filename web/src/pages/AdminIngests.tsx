@@ -422,7 +422,7 @@ function renderPrimitive(v: unknown, t: TFn) {
       : v;
     return (
       <span className={big ? "text-warn" : "text-ok"} title={big ? v : undefined}>
-        "{display}"
+        &quot;{display}&quot;
         {big && (
           <span className="ml-1 rounded bg-warn/10 px-1 py-0 text-[9px] font-medium text-warn ring-1 ring-inset ring-warn/30">
             {t("admin:ingests.tree_big")}

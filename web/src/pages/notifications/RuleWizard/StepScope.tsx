@@ -80,6 +80,7 @@ export function StepScope({
           {choices.map((c) => {
             const active = draft.targetMode === c.value;
             return (
+              /* eslint-disable-next-line jsx-a11y/label-has-associated-control -- the nested <input type=radio> + visible <span> label IS the association; rule doesn't detect the implicit form-element wrap. */
               <label
                 key={c.value}
                 className={`flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2 transition-colors duration-150 ${

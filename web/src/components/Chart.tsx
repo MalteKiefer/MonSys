@@ -158,7 +158,7 @@ export function colorFor(idx: number): string {
 // a per-second rate aligned to `times`. The first sample becomes 0 since we
 // can't infer a delta. Negative values (counter wraparound) clamp to 0.
 export function rateOfChange(times: number[], values: number[]): number[] {
-  const out = new Array(times.length).fill(0);
+  const out: number[] = new Array<number>(times.length).fill(0);
   for (let i = 1; i < times.length; i++) {
     const dt = times[i] - times[i - 1];
     if (dt <= 0) continue;

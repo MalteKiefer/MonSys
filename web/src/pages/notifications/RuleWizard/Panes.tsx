@@ -175,10 +175,12 @@ function MetricThresholdPane({ params, setParams }: PaneProps) {
   const scopeKeys = metricMeta?.scopeHint ?? [];
 
   function patchScope(key: string, raw: string) {
-    const next = { ...scope };
-    if (raw.trim() === "") {
-      delete next[key];
-    } else {
+    // Rebuild rather than dynamic-delete so the lint rule stays happy and
+    // the operation is immutable-friendly.
+    const next: Record<string, string> = Object.fromEntries(
+      Object.entries(scope).filter(([k]) => k !== key),
+    ) as Record<string, string>;
+    if (raw.trim() !== "") {
       next[key] = raw;
     }
     if (Object.keys(next).length === 0) {
@@ -775,7 +777,7 @@ export function ExpertJsonPane({
       return;
     }
     try {
-      const parsed = JSON.parse(next);
+      const parsed: unknown = JSON.parse(next);
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
         setErr(t("notifications:wizard.panes.expert.must_be_object"));
         return;
@@ -790,7 +792,7 @@ export function ExpertJsonPane({
   function handleBlur() {
     if (err) return;
     try {
-      const parsed = text.trim() === "" ? {} : JSON.parse(text);
+      const parsed: unknown = text.trim() === "" ? {} : JSON.parse(text);
       setText(JSON.stringify(parsed, null, 2));
     } catch {
       // leave the user's text alone so they can fix it

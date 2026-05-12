@@ -181,6 +181,7 @@ export function ServiceBadges({ services, max = 3 }: { services?: string[]; max?
       ))}
       {overflow > 0 && (
         <span
+          role="button"
           tabIndex={0}
           className="group relative inline-flex cursor-help items-center rounded-md bg-panel-2 px-1.5 py-0.5 font-mono text-[10px] font-medium text-fg-muted ring-1 ring-inset ring-border hover:text-fg focus:outline-none focus-visible:ring-accent"
           aria-label={`${services.length} services: ${services.join(", ")}`}

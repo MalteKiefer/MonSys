@@ -146,11 +146,12 @@ export function Login() {
                         if (!resp.token) throw new Error(t("login.error_no_session"));
                         setSession(resp.token, resp.user);
                         void navigate("/", { replace: true });
-                      } catch (err: any) {
-                        if (err?.name === "NotAllowedError") {
+                      } catch (err: unknown) {
+                        const e = err as { name?: string; message?: string } | null;
+                        if (e?.name === "NotAllowedError") {
                           // User cancelled — silent.
                         } else {
-                          setError(err?.message ?? t("login.error_passkey_failed"));
+                          setError(e?.message ?? t("login.error_passkey_failed"));
                         }
                       } finally {
                         setSubmitting(false);

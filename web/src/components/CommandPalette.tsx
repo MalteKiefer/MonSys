@@ -357,6 +357,7 @@ function PaletteModal() {
   // Reset the active row to the top whenever the result set changes — keeps
   // the user from "scrolling past" rows that disappeared as they typed.
   useEffect(() => {
+     
     setActiveIdx(0);
   }, [trimmed, flat.length]);
 
@@ -428,6 +429,7 @@ function PaletteModal() {
         if (e.target === e.currentTarget) setOpen(false);
       }}
     >
+      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- modal dialog needs onKeyDown for keyboard nav; focus is on the inner input */}
       <div
         role="dialog"
         aria-modal="true"

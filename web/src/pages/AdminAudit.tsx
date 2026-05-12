@@ -47,6 +47,7 @@ export function AdminAuditContent({ onMeta }: { onMeta?: (node: ReactNode) => vo
     const t = setTimeout(() => { setDebouncedAction(action.trim()); }, 250);
     return () => { clearTimeout(t); };
   }, [action]);
+   
   useEffect(() => { setOffset(0); }, [debouncedActor, debouncedAction]);
 
   const params = useMemo(() => {
@@ -212,7 +213,7 @@ export function AdminAudit() {
 function formatDetail(raw: string): string {
   if (!raw) return "—";
   try {
-    const parsed = JSON.parse(raw);
+    const parsed = JSON.parse(raw) as unknown;
     if (parsed && typeof parsed === "object" && "text" in parsed && Object.keys(parsed).length === 1) {
       const txt = (parsed as { text?: unknown }).text;
       return typeof txt === "string" && txt !== "" ? txt : "—";

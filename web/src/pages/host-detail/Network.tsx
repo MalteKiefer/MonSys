@@ -186,7 +186,7 @@ function NetIOPanel({ samples, nics, loading }: { samples: NetSample[]; nics: Ni
 }
 
 function alignToAxis(target: number[], src: number[], values: number[]): number[] {
-  const out = new Array(target.length).fill(0);
+  const out: number[] = new Array<number>(target.length).fill(0);
   let j = 0;
   for (let i = 0; i < target.length; i++) {
     while (j < src.length && src[j] < target[i]) j++;

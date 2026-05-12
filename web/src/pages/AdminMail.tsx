@@ -225,14 +225,14 @@ function SettingsWizard({
   // straight through. The set-state-in-effect rule's preferred alternatives
   // (key-resetting / useSyncExternalStore) don't fit a multi-field draft.
   useEffect(() => {
-    /* eslint-disable react-hooks/set-state-in-effect */
+     
     setHost(initial.host);
     setPort(initial.port || 587);
     setUsername(initial.username);
     setFromAddress(initial.from_address);
     setEncryption(deriveEncryption(initial.starttls, initial.tls));
     setInsecureSkipVerify(initial.insecure_skip_verify);
-    /* eslint-enable react-hooks/set-state-in-effect */
+     
   }, [initial]);
 
   const save = useMutation({

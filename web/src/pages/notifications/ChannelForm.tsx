@@ -120,7 +120,8 @@ export function ChannelForm({
     const out: Record<string, string> = {};
     if (initial?.config) {
       for (const [k, v] of Object.entries(initial.config)) {
-        out[k] = v == null ? "" : String(v);
+        // initial.config is JSONB; values can be string|number|bool.
+        out[k] = typeof v === "string" ? v : v == null ? "" : JSON.stringify(v);
       }
     }
     return out;

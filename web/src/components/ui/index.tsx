@@ -66,7 +66,7 @@ const STATUS_PALETTE: Record<StatusKey, string> = {
   info: "bg-info/10 text-info ring-1 ring-inset ring-info/30",
 };
 
-export function StatusPill({ status, children }: { status: StatusKey | string; children?: ReactNode }) {
+export function StatusPill({ status, children }: { status: string; children?: ReactNode }) {
   const cls = STATUS_PALETTE[status as StatusKey] ?? STATUS_PALETTE.unknown;
   return (
     <span className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium ${cls}`}>
@@ -75,7 +75,7 @@ export function StatusPill({ status, children }: { status: StatusKey | string; c
   );
 }
 
-export function Dot({ status, pulse = false }: { status: StatusKey | string; pulse?: boolean }) {
+export function Dot({ status, pulse = false }: { status: string; pulse?: boolean }) {
   const map: Record<StatusKey, string> = {
     online: "bg-ok",
     ok: "bg-ok",
@@ -362,6 +362,7 @@ export function Tabs<T extends string>({
     <div
       ref={tablistRef}
       role="tablist"
+      tabIndex={-1}
       onKeyDown={onKeyDown}
       className={`sticky top-header-h z-20 -mx-2 flex gap-1 overflow-x-auto border-b border-border bg-bg/85 px-2 py-1.5 backdrop-blur supports-[backdrop-filter]:bg-bg/70 ${className}`}
     >
@@ -474,6 +475,7 @@ export function Stepper({
   }
 
   return (
+    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- stepper arrow-key navigation is delegated to interactive children (buttons); ol itself only intercepts arrow keys
     <ol
       ref={listRef}
       onKeyDown={onKeyDown}
@@ -625,10 +627,12 @@ export function DropdownMenu({
   // readers and keyboard users land somewhere actionable.
   useEffect(() => {
     if (!open) {
+       
       setActiveIdx(-1);
       return;
     }
     const firstEnabled = items.findIndex((it) => !it.disabled);
+     
     setActiveIdx(firstEnabled);
   }, [open, items]);
 
@@ -640,7 +644,8 @@ export function DropdownMenu({
   function moveFocus(delta: 1 | -1) {
     if (items.length === 0) return;
     let idx = activeIdx;
-    for (let i = 0; i < items.length; i++) {
+    for (const _item of items) {
+      void _item;
       idx = (idx + delta + items.length) % items.length;
       if (!items[idx].disabled) {
         setActiveIdx(idx);
@@ -686,6 +691,7 @@ export function DropdownMenu({
   const alignCls = align === "left" ? "left-0" : "right-0";
 
   return (
+    /* eslint-disable-next-line jsx-a11y/no-static-element-interactions -- key-capture wrapper for child trigger; the trigger button below owns the focus + interactive role */
     <div
       ref={wrapRef}
       className="relative inline-block"
@@ -693,7 +699,15 @@ export function DropdownMenu({
     >
       <div
         data-dropdown-trigger
+        role="button"
+        tabIndex={0}
         onClick={() => { setOpen((v) => !v); }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setOpen((v) => !v);
+          }
+        }}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
@@ -705,6 +719,7 @@ export function DropdownMenu({
         <div
           id={menuId}
           role="menu"
+          tabIndex={-1}
           onKeyDown={onMenuKeyDown}
           className={`absolute z-30 mt-1 min-w-[12rem] overflow-hidden rounded-md border border-border bg-panel shadow-panel ${alignCls}`}
         >

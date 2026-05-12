@@ -254,7 +254,11 @@ function ActiveMonitorsTab({
                   <TD className="font-mono text-xs text-fg-subtle truncate max-w-xs">{m.last_detail ?? "—"}</TD>
                   <TD className="text-right">
                     {/* Stop row-click propagation here so action buttons
-                        don't double-fire the row's open-detail handler. */}
+                        don't double-fire the row's open-detail handler.
+                        The wrapper is purely a click-capture sink — keyboard
+                        users hit the inner buttons directly, so no role is
+                        appropriate here. */}
+                    {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events -- click-capture sink only */}
                     <div
                       className="inline-flex items-center gap-1"
                       onClick={(e) => { e.stopPropagation(); }}
@@ -557,7 +561,14 @@ function MonitorForm({
   const [enabled, setEnabled] = useState(initial?.enabled ?? true);
   const [params, setParams] = useState<Record<string, string>>(() => {
     const out: Record<string, string> = {};
-    if (initial?.params) for (const [k, v] of Object.entries(initial.params)) out[k] = String(v ?? "");
+    if (initial?.params) {
+      for (const [k, v] of Object.entries(initial.params)) {
+        // initial.params is JSONB; values can be string|number|bool. Force
+        // a sensible string serialization without dropping into the default
+        // Object.toString that ESLint's no-base-to-string flags.
+        out[k] = typeof v === "string" ? v : v == null ? "" : JSON.stringify(v);
+      }
+    }
     return out;
   });
   const [tagsRaw, setTagsRaw] = useState((initial?.target_tags ?? []).join(", "));

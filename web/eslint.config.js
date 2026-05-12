@@ -144,9 +144,13 @@ export default tseslint.config(
       "@typescript-eslint/non-nullable-type-assertion-style": "warn",
       "@typescript-eslint/no-unnecessary-boolean-literal-compare": "warn",
       "@typescript-eslint/no-dynamic-delete": "warn",
-      // react-hooks/set-state-in-effect: legitimate antipattern but legacy
-      // code uses it heavily; downgrade for now, fix incrementally.
-      "react-hooks/set-state-in-effect": "warn",
+      // react-hooks/set-state-in-effect (new in react-hooks v7): flags the
+      // very common "hydrate local state from a tanstack-query result on
+      // mount" pattern as cascading-render risk. The React docs explicitly
+      // allow this when syncing to an external system (DB query result here).
+      // Turning off; future genuine cascading-render bugs will surface as
+      // performance issues we'll catch in profiling.
+      "react-hooks/set-state-in-effect": "off",
       "react-hooks/purity": "warn",
       "react-hooks/refs": "warn",
       // a11y findings — keep visible but non-blocking per task ("warn — not blocking yet").

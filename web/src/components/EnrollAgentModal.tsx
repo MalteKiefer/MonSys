@@ -57,6 +57,7 @@ function ModalShell({
   }, [onClose]);
 
   return (
+    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- modal backdrop: click-outside-to-close pattern; keyboard close handled by global Escape listener above
     <div
       role="dialog"
       aria-modal="true"
@@ -479,6 +480,7 @@ function InstallScriptViewer({
 
   useEffect(() => {
     let cancelled = false;
+     
     setLoading(true);
     setError(null);
     fetch(url, { credentials: "omit" })
@@ -489,7 +491,7 @@ function InstallScriptViewer({
       .then((text) => {
         if (!cancelled) setScript(text);
       })
-      .catch((e) => {
+      .catch((e: unknown) => {
         if (!cancelled) setError((e as Error).message || "fetch failed");
       })
       .finally(() => {

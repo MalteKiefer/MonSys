@@ -205,7 +205,7 @@ export function Packages() {
           ) : (
             <ul className="divide-y divide-border">
               {groups.map((g) => {
-                const isOpen = !!expanded[g.hostID];
+                const isOpen = expanded[g.hostID];
                 const host = hostByID.get(g.hostID);
                 const display = host ? hostDisplay(host) : g.hostname;
                 const preview = isOpen ? g.rows : g.rows.slice(0, HOST_PREVIEW);
