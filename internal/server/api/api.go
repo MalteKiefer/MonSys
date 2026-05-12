@@ -25,6 +25,7 @@ import (
 
 	"github.com/MalteKiefer/MonSys/internal/server/agentupdate"
 	"github.com/MalteKiefer/MonSys/internal/server/alerts"
+	"github.com/MalteKiefer/MonSys/internal/server/docs"
 	"github.com/MalteKiefer/MonSys/internal/server/ingestlog"
 	"github.com/MalteKiefer/MonSys/internal/server/notify"
 	"github.com/MalteKiefer/MonSys/internal/server/serverlog"
@@ -369,6 +370,16 @@ func (s *Server) registerRoutes() {
 	s.registerMonitorRoutes(protected)
 	s.registerSelfServiceAuthRoutes(openProtected, protected)
 	s.registerAdminRoutes(adminOnly)
+
+	// Interactive OpenAPI viewer (Scalar, vendored into the binary).
+	// huma's built-in /docs renderer is disabled by openAPIConfig — we
+	// serve the HTML shell and the JS bundle here so the supply chain is
+	// explicit and air-gapped deployments work without an outbound CDN
+	// fetch. Both routes are session-gated by requireSessionForDocs
+	// (AUDIT-066), and registered BEFORE the SPA catch-all so the SPA's
+	// index.html does not shadow /docs and /docs/scalar.js.
+	s.Router.Handle("/docs", docs.IndexHandler())
+	s.Router.Handle("/docs/scalar.js", docs.AssetHandler())
 
 	// SPA mount: anything not claimed by /v1, /healthz, /readyz, /docs is
 	// served from the embedded React build. Registered last so huma's API

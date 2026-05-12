@@ -4333,8 +4333,19 @@ components:
       description: "Opaque session token returned by /v1/auth/login. Pass as Authorization: Bearer <token>."
       scheme: bearer
       type: http
+externalDocs:
+  description: MonSys source code, issue tracker, and release notes.
+  url: https://github.com/MalteKiefer/MonSys
 info:
-  description: Self-hosted server-monitoring API. Agents push metrics; users query.
+  contact:
+    name: MonSys on GitHub
+    url: https://github.com/MalteKiefer/MonSys
+  description: |-
+    MonSys is a self-hosted server-monitoring stack: a Go backend (chi + huma + TimescaleDB), a React SPA, and a per-host agent daemon (`mon-agent`).
+
+    Agents authenticate with a per-host bearer key issued by `POST /v1/agents/register` and push metrics, package inventories, log lines, and process snapshots to `POST /v1/ingest`. Users authenticate with a session token issued by `POST /v1/auth/login` (with optional WebAuthn / TOTP step-up) and consume the rest of the surface from the SPA.
+
+    This document is generated directly from the live API code via huma's reflection; it stays in sync with `mon-server` by definition. Drift between this spec and `api/openapi.yaml` in the repository is caught by CI.
   license:
     name: MIT
     url: https://github.com/MalteKiefer/MonSys/blob/main/LICENSE
@@ -6882,3 +6893,24 @@ servers:
     url: https://mon.kiefer-networks.de
   - description: current (relative)
     url: /
+tags:
+  - description: Session login/logout, password reset, WebAuthn + TOTP step-up, language preference, /me.
+    name: auth
+  - description: "Bootstrap-token lifecycle: register a host, issue per-agent keys, surface agent-update metadata."
+    name: agents
+  - description: Single high-volume endpoint that agents push metrics, packages, logs, and process samples to.
+    name: ingest
+  - description: Per-host inventory and time-series read APIs consumed by the SPA dashboards.
+    name: hosts
+  - description: Host-group memberships used to scope agent config, alert rules, and notification routing.
+    name: groups
+  - description: Synthetic checks (HTTP, TCP, ICMP, TLS) executed server-side; results land in metrics_monitor_*.
+    name: monitors
+  - description: OS-package inventory + pending-update views derived from agent ingest.
+    name: packages
+  - description: Notification channels (email, Slack, webhook) and rule routing across hosts/groups/severities.
+    name: notifications
+  - description: "Operator-only surfaces: user management, agent config, security policy, audit log, agent-update bundle."
+    name: admin
+  - description: Public security surface — well-known paths, security policy disclosure helpers.
+    name: security
