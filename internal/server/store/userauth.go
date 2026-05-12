@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -14,9 +15,9 @@ import (
 )
 
 const (
-	sessionPrefix     = "mon_sess_"
-	defaultSessionTTL = 12 * time.Hour
-	bcryptCost        = 12
+	sessionPrefix      = "mon_sess_"
+	fallbackSessionTTL = 12 * time.Hour
+	bcryptCost         = 12
 
 	// AUDIT-013: failed-login lockout policy. After this many bad attempts
 	// inside the window, the account is locked for the duration. The window
@@ -547,13 +548,31 @@ func (s *Store) ListUsers(ctx context.Context) ([]AdminUserSummary, error) {
 	return out, rows.Err()
 }
 
+// effectiveSessionTTL returns the active session TTL, derived from
+// SecurityPolicy.MaxSessionHours (admin-tunable). If the caller passes a
+// non-zero ttl, it is clamped to the max; otherwise the max itself is used.
+// On policy load failure we fall back to fallbackSessionTTL — better a
+// stale-but-correct session than refusing to log anyone in.
+func (s *Store) effectiveSessionTTL(ctx context.Context, requested time.Duration) time.Duration {
+	p, err := s.GetSecurityPolicy(ctx)
+	if err != nil {
+		return fallbackSessionTTL
+	}
+	maxTTL := time.Duration(p.MaxSessionHours) * time.Hour
+	if maxTTL <= 0 {
+		maxTTL = fallbackSessionTTL
+	}
+	if requested <= 0 || requested > maxTTL {
+		return maxTTL
+	}
+	return requested
+}
+
 // IssueSession creates a new session for u and returns the plaintext token.
 // userAgent and remoteIP are recorded for audit but never trusted as
 // authentication signal.
 func (s *Store) IssueSession(ctx context.Context, u User, userAgent, remoteIP string, ttl time.Duration) (string, error) {
-	if ttl <= 0 {
-		ttl = defaultSessionTTL
-	}
+	ttl = s.effectiveSessionTTL(ctx, ttl)
 	plaintext, err := generateSecret(sessionPrefix)
 	if err != nil {
 		return "", err
@@ -568,6 +587,15 @@ func (s *Store) IssueSession(ctx context.Context, u User, userAgent, remoteIP st
 	if err != nil {
 		return "", fmt.Errorf("session insert: %w", err)
 	}
+
+	if _, aerr := s.Pool.Exec(ctx,
+		`INSERT INTO audit_log (actor, action, target, detail) VALUES ($1, 'auth.session.issued', $2, $3)`,
+		"user:"+u.Email, u.ID.String(),
+		map[string]any{"ttl_hours": int(ttl / time.Hour), "user_agent": userAgent, "remote_ip": remoteIP},
+	); aerr != nil {
+		slog.Warn("audit_log insert (session.issued)", "err", aerr)
+	}
+
 	return plaintext, nil
 }
 
@@ -575,6 +603,11 @@ func (s *Store) IssueSession(ctx context.Context, u User, userAgent, remoteIP st
 // returns the owning user.
 func (s *Store) ValidateSession(ctx context.Context, token string) (User, error) {
 	hash := hashSecret(token)
+
+	// Policy lookup is best-effort: a failure here falls back to 0, which the
+	// SQL below treats as "no idle limit". We'd rather honor a stale max
+	// session TTL than lock everyone out when settings briefly misbehave.
+	p, _ := s.GetSecurityPolicy(ctx)
 
 	var u User
 	err := s.Pool.QueryRow(ctx, `
@@ -586,8 +619,9 @@ func (s *Store) ValidateSession(ctx context.Context, token string) (User, error)
 		  AND user_sessions.revoked_at IS NULL
 		  AND users.id = user_sessions.user_id
 		  AND users.disabled_at IS NULL
+		  AND ($2 = 0 OR user_sessions.last_seen_at IS NULL OR user_sessions.last_seen_at > now() - make_interval(mins => $2))
 		RETURNING users.id, users.email, users.role, users.created_at`,
-		hash).Scan(&u.ID, &u.Email, &u.Role, &u.CreatedAt)
+		hash, p.IdleTimeoutMinutes).Scan(&u.ID, &u.Email, &u.Role, &u.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return User{}, ErrSessionInvalid
 	}

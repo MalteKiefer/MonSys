@@ -13,10 +13,17 @@ import (
 	"github.com/pressly/goose/v3"
 
 	"github.com/MalteKiefer/MonSys/internal/server/store/migrations"
+	"github.com/MalteKiefer/MonSys/internal/server/webauthn"
 )
 
 type Store struct {
 	Pool *pgxpool.Pool
+
+	// Webauthn is the configured WebAuthn relying-party service, set by
+	// main.go at startup. Nil when WebAuthn isn't configured (env vars
+	// missing); the passkey store methods detect that and return a clear
+	// error so the API layer can surface HTTP 503.
+	Webauthn *webauthn.Service
 }
 
 func Open(ctx context.Context, dsn string) (*Store, error) {
