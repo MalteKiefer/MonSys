@@ -24,6 +24,8 @@ decision supersedes an earlier one, the earlier ADR is marked
 | [ADR-0008](./0008-openapi-source-of-truth-and-drift-gate.md) | OpenAPI as source of truth + spec-drift CI gate | Accepted | 2026-05-12 | build, api, types, ci |
 | [ADR-0009](./0009-distroless-signed-multi-arch-image.md) | Distroless nonroot container + signed multi-arch image via ghcr.io | Accepted | 2026-05-12 | build, security, deployment, supply-chain |
 | [ADR-0010](./0010-user-facing-security-primitives.md) | User-facing security primitives — TOTP, passkeys, sessions, MFA force, avatar, language, email-change, password reset | Accepted | 2026-05-12 | auth, security, ui, schema |
+| [ADR-0011](./0011-pprof-and-benchmark-baselines.md) | Runtime profiling endpoints + benchmark baselines for hot paths | Accepted | 2026-05-12 | observability, performance, security, build |
+| [ADR-0012](./0012-installable-pwa-via-vite-plugin-pwa.md) | Installable PWA via vite-plugin-pwa | Accepted | 2026-05-12 | ui, build, security, deployment |
 
 ## Cross-reference graph
 
@@ -44,6 +46,12 @@ decision supersedes an earlier one, the earlier ADR is marked
 - ADR-0009 (signed container) — supply-chain peer of ADR-0007.
 - ADR-0010 (user-account surface) — descriptive summary linking
   ADR-0001, ADR-0002, ADR-0006.
+- ADR-0011 (pprof + benchmarks) — admin-bearer gate reuses the
+  ADR-0001 / ADR-0010 trust anchor; `/debug/pprof/*` mounts next to
+  the existing `/metrics` endpoint.
+- ADR-0012 (installable PWA) — bearer-in-localStorage from ADR-0001
+  is what lets the offline shell hydrate; SW explicitly refuses to
+  cache `/v1/*` and the other API surfaces.
 
 ## Status legend
 
