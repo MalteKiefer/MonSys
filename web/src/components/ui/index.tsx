@@ -59,12 +59,9 @@ const STATUS_PALETTE: Record<StatusKey, string> = {
   ok: "bg-ok/10 text-ok ring-1 ring-inset ring-ok/30",
   stale: "bg-warn/10 text-warn ring-1 ring-inset ring-warn/30",
   warn: "bg-warn/10 text-warn ring-1 ring-inset ring-warn/30",
-  // TODO(theme): `bg-zinc-700/*` doesn't switch with the palette — replace
-  // with a semantic token (e.g. `bg-offline/30`) in a follow-up.
-  offline: "bg-zinc-700/30 text-fg-muted ring-1 ring-inset ring-border-strong",
+  offline: "bg-offline/20 text-fg-muted ring-1 ring-inset ring-border-strong",
   fail: "bg-fail/10 text-fail ring-1 ring-inset ring-fail/30",
-  // TODO(theme): same as `offline` above — drop the raw zinc utility.
-  unknown: "bg-zinc-700/20 text-fg-subtle ring-1 ring-inset ring-border",
+  unknown: "bg-offline/10 text-fg-subtle ring-1 ring-inset ring-border",
   info: "bg-info/10 text-info ring-1 ring-inset ring-info/30",
 };
 

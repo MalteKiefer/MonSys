@@ -41,10 +41,6 @@ import { api, ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { AdminCreateUserResponse, AdminUser } from "../lib/types";
 
-// TODO(theme): this page still uses raw `zinc-*` Tailwind classes which
-// don't follow the dark/light palette. Migrate to semantic tokens
-// (text-fg-muted, bg-panel, border-border, …) in a follow-up.
-
 type ListResponse = { users: AdminUser[] };
 
 type RoleFilter = "all" | "admin" | "user";

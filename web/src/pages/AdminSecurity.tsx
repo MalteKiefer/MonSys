@@ -19,10 +19,6 @@ import { useT } from "../i18n/useT";
 import { api, ApiError } from "../lib/api";
 import { ForceMode, PasswordPolicy, RevokeAllSessionsResponse, SecurityPolicy } from "../lib/types";
 
-// TODO(theme): this page still uses raw `zinc-*` Tailwind classes which
-// don't follow the dark/light palette. Migrate to semantic tokens
-// (text-fg-muted, bg-panel, border-border, …) in a follow-up.
-
 type TabKey = "password" | "auth" | "sessions";
 
 function isTabKey(v: string | null): v is TabKey {
@@ -368,7 +364,7 @@ export function AdminSecurity() {
                 </label>
 
                 {escalatingToPasskey && (
-                  <div className="flex items-start gap-2 rounded-md border border-yellow-500/40 bg-yellow-500/10 p-3 text-sm text-yellow-200">
+                  <div className="flex items-start gap-2 rounded-md border border-warn/40 bg-warn/10 p-3 text-sm text-warn">
                     <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
                     <span>{t("security.auth.escalation_warning")}</span>
                   </div>

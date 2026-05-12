@@ -56,6 +56,12 @@ func main() {
 		revokeAllSess     = flag.Bool("revoke-all-sessions", false, "revoke every active web session and exit")
 		changeEmail       = flag.Bool("change-email", false, "rewrite a user's email unconditionally (CLI recovery); use --user-email and --new-email")
 		changeEmailNew    = flag.String("new-email", "", "new email for --change-email")
+
+		// Audit chain verification: hashes the audit_log SHA-256 chain and
+		// exits with a status code reflecting integrity. See auditverify.go
+		// for the implementation; this flag dispatches before the regular
+		// server boot so it doesn't bring up the HTTP listener.
+		verifyAuditChain = flag.Bool("verify-audit-chain", false, "verify the audit_log SHA-256 chain and exit (0=intact, 1=broken, 2=op error)")
 	)
 	flag.Parse()
 
@@ -98,6 +104,14 @@ func main() {
 		}
 		slog.Info("openapi spec written", "path", *dumpOpenAPI)
 		return
+	}
+
+	// --- Audit-chain verifier: opens its own pool, prints a one-line
+	// summary, and exits. Runs before the regular DB open + migrations so
+	// operators can verify chain integrity without booting the server (and
+	// so a broken chain doesn't get masked by an unrelated boot error).
+	if *verifyAuditChain {
+		os.Exit(RunAuditChainVerify())
 	}
 
 	if dsn == "" {

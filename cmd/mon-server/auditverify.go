@@ -1,21 +1,9 @@
 package main
 
-// TODO(wiring): main.go owns the flag block (see --print-spec section).
-// A future small wiring task should add a `--verify-audit-chain` flag and,
-// on its presence, call RunAuditChainVerify() and os.Exit() with its return
-// value before the regular server boot. Keeping this file self-contained so
-// the present change does not collide with concurrent edits to main.go.
-//
-// Suggested wiring:
-//
-//	verifyChain := flag.Bool("verify-audit-chain", false,
-//	    "verify the audit_log SHA-256 chain and exit (0=intact, 1=broken)")
-//	...
-//	if *verifyChain {
-//	    os.Exit(RunAuditChainVerify())
-//	}
-//
-// Until then, operators can invoke this from a small main shim or via tests.
+// Audit-chain verifier dispatched by main.go's `--verify-audit-chain` flag.
+// Kept in its own file so the verifier logic stays self-contained — main.go
+// only owns the flag wiring; this file owns the side-effects (pool open,
+// stdout summary, exit code mapping).
 
 import (
 	"context"

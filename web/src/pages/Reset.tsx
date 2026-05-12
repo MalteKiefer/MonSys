@@ -6,10 +6,6 @@ import { Button, ErrorBox, Field, Panel, SuccessBox, TextInput } from "../compon
 import { useT } from "../i18n/useT";
 import { api, ApiError } from "../lib/api";
 
-// TODO(theme): this page still uses raw `zinc-*` Tailwind classes which
-// don't follow the dark/light palette. Migrate to semantic tokens
-// (text-fg-muted, bg-panel, border-border, …) in a follow-up.
-
 export function Reset() {
   const { t } = useT("auth");
   const [params] = useSearchParams();

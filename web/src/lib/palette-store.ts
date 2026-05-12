@@ -1,26 +1,26 @@
 // Zustand store for the Cmd+K command palette.
 //
 // ---------------------------------------------------------------------------
-// Integration contract for Phase A's TopBar
+// Integration topology (single source of truth: this store)
 // ---------------------------------------------------------------------------
 //
-// The TopBar's placeholder "search" / Cmd+K button must call the `toggle`
-// action of this store from its onClick handler. Wire it like this:
+// Three call sites consume this hook today; the store is the single source
+// of truth so they all stay in sync:
 //
-//     import { useCommandPalette } from "../../lib/palette-store";
-//     ...
-//     const togglePalette = useCommandPalette((s) => s.toggle);
-//     ...
-//     <button onClick={togglePalette} aria-label="Open command palette">
+//   1. `<CommandPalette />` — mounted once near the root of the AppShell
+//      (see web/src/App.tsx, where it sits as a sibling of the router).
+//      It reads `open` from this store, owns the global Cmd+K / Ctrl+K
+//      hotkey listener (see useGlobalHotkey in CommandPalette.tsx), and
+//      pushes the user's last selection into `recent` via `addRecent`.
 //
-// The TopBar should NOT manage the modal's open/closed state itself — the
-// store is the single source of truth so the global Cmd+K hotkey (which
-// `<CommandPalette />` registers) and the TopBar button stay in sync.
+//   2. `<TopBar />` — the header's search-shaped button calls the
+//      `toggle` action from this store on click (see TopBar.tsx). It
+//      explicitly does NOT manage open/closed state itself; the store
+//      owns it so the hotkey and the button can't disagree.
 //
-// `<CommandPalette />` itself is mounted once near the root of the AppShell
-// (see the TODO(integration) marker inside CommandPalette.tsx). It reads
-// `open` from the store, owns the hotkey listener, and pushes selections
-// into `recent` via `addRecent`.
+//   3. Any future "open the palette pre-populated" entry points should
+//      use the same pattern: `useCommandPalette((s) => s.setOpen)(true)`
+//      rather than rendering their own modal.
 //
 // Recent items are persisted to localStorage under the key
 // `monsys.palette.recent` so the user's most-used jumps survive reloads.
