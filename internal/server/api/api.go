@@ -187,6 +187,7 @@ func rateLimitByPath() func(http.Handler) http.Handler {
 		"/v1/agents/register":              {},
 		"/v1/auth/webauthn/login/begin":    {},
 		"/v1/auth/webauthn/login/finish":   {},
+		"/v1/auth/email/confirm":           {},
 	}
 
 	return func(next http.Handler) http.Handler {
@@ -280,6 +281,11 @@ func (s *Server) currentUserWithSecurity(ctx context.Context, u store.User) apit
 	complies, grace, _ := s.Store.UserCompliesWithPolicy(ctx, u.ID)
 	out.MustEnroll = !complies
 	out.GraceUntil = grace
+	// Avatar meta is best-effort: a DB hiccup here shouldn't block /me.
+	if hasAvatar, updatedAt, err := s.Store.GetAvatarMeta(ctx, u.ID); err == nil {
+		out.HasAvatar = hasAvatar
+		out.AvatarUpdatedAt = updatedAt
+	}
 	return out
 }
 
@@ -822,6 +828,54 @@ func (s *Server) registerRoutes() {
 		Summary:     "Set a new password via an admin-issued reset/invite token",
 		Tags:        []string{"auth"},
 	}, s.handleConsumeReset)
+
+	// Self-service avatar upload/delete. Both stay in openProtected so a
+	// non-compliant user can still change their picture while sorting out
+	// their 2FA enrollment.
+	huma.Register(s.API, huma.Operation{
+		OperationID: "auth-me-avatar-upload",
+		Method:      http.MethodPost,
+		Path:        "/v1/auth/me/avatar",
+		Summary:     "Upload/replace the caller's avatar (base64-encoded image)",
+		Tags:        []string{"auth"},
+		Middlewares: openProtected,
+	}, s.handleSetAvatar)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "auth-me-avatar-delete",
+		Method:      http.MethodDelete,
+		Path:        "/v1/auth/me/avatar",
+		Summary:     "Delete the caller's avatar",
+		Tags:        []string{"auth"},
+		Middlewares: openProtected,
+	}, s.handleDeleteAvatar)
+
+	// Avatar fetch by user id. Wired on chi directly so we can stream raw
+	// image bytes (huma's content negotiation always wraps replies in a
+	// typed envelope). The handler does its own bearer-token validation
+	// because no huma middleware is in the path.
+	s.Router.Get("/v1/users/{id}/avatar", s.handleGetUserAvatar)
+
+	// Verified email-change flow.
+	// Step 1 — authenticated user posts the new address; we mail a token to
+	// the NEW address proving they control it.
+	huma.Register(s.API, huma.Operation{
+		OperationID: "auth-me-email-request",
+		Method:      http.MethodPost,
+		Path:        "/v1/auth/me/email/request",
+		Summary:     "Request an email change; sends a confirmation link to the new address",
+		Tags:        []string{"auth"},
+		Middlewares: openProtected,
+	}, s.handleRequestEmailChange)
+	// Step 2 — public consume of the token. No auth: the user may already
+	// be logged out, and the token itself is the credential. Rate-limited
+	// by inclusion in authPaths.
+	huma.Register(s.API, huma.Operation{
+		OperationID: "auth-email-confirm",
+		Method:      http.MethodPost,
+		Path:        "/v1/auth/email/confirm",
+		Summary:     "Confirm an email change by presenting the token sent to the new address",
+		Tags:        []string{"auth"},
+	}, s.handleConfirmEmailChange)
 
 	// Admin: user management
 	huma.Register(s.API, huma.Operation{

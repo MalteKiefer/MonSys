@@ -752,13 +752,37 @@ type LoginResponse struct {
 }
 
 type CurrentUser struct {
-	ID           string     `json:"id"             format:"uuid"  maxLength:"36"  readOnly:"true"`
-	Email        string     `json:"email"          format:"email" maxLength:"254"`
-	Role         string     `json:"role"           enum:"admin,user" doc:"admin or user"`
-	TOTPActive   bool       `json:"totp_active"`
-	PasskeyCount int        `json:"passkey_count"`
-	MustEnroll   bool       `json:"must_enroll,omitempty"`
-	GraceUntil   *time.Time `json:"grace_until,omitempty"`
+	ID              string     `json:"id"             format:"uuid"  maxLength:"36"  readOnly:"true"`
+	Email           string     `json:"email"          format:"email" maxLength:"254"`
+	Role            string     `json:"role"           enum:"admin,user" doc:"admin or user"`
+	TOTPActive      bool       `json:"totp_active"`
+	PasskeyCount    int        `json:"passkey_count"`
+	MustEnroll      bool       `json:"must_enroll,omitempty"`
+	GraceUntil      *time.Time `json:"grace_until,omitempty"`
+	HasAvatar       bool       `json:"has_avatar"`
+	AvatarUpdatedAt *time.Time `json:"avatar_updated_at,omitempty" readOnly:"true"`
+}
+
+// AvatarUploadRequest carries a base64-encoded image. The caller (the SPA)
+// is expected to re-encode aggressively (200x200, PNG) before submitting so
+// the 512 KiB cap is never reached in practice.
+type AvatarUploadRequest struct {
+	ContentType string `json:"content_type" enum:"image/png,image/jpeg,image/webp" doc:"MIME type of the encoded bytes"`
+	DataB64     string `json:"data_b64"     maxLength:"1048576" doc:"base64-encoded image, <= 512 KiB decoded"`
+}
+
+// RequestEmailChangeRequest starts the verified email-change flow. The new
+// address receives a one-hour token URL it must POST to /v1/auth/email/confirm
+// to complete the rotation.
+type RequestEmailChangeRequest struct {
+	NewEmail        string `json:"new_email"        format:"email" maxLength:"254"`
+	CurrentPassword string `json:"current_password" maxLength:"128" writeOnly:"true"`
+}
+
+// ConfirmEmailChangeRequest finishes the verified email-change flow. The
+// endpoint is unauthenticated — the user may already have been logged out.
+type ConfirmEmailChangeRequest struct {
+	Token string `json:"token" maxLength:"128"`
 }
 
 // AuthConfig surfaces server-wide auth/notification readiness flags to any

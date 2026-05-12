@@ -54,6 +54,8 @@ func main() {
 		secMaxSessionHrs  = flag.Int("max-session-hours", -1, "for --set-security-policy: 1..8760 (-1 = no change)")
 		secIdleMinutes    = flag.Int("idle-timeout-minutes", -1, "for --set-security-policy: 0..10080 (-1 = no change; 0 = disabled)")
 		revokeAllSess     = flag.Bool("revoke-all-sessions", false, "revoke every active web session and exit")
+		changeEmail       = flag.Bool("change-email", false, "rewrite a user's email unconditionally (CLI recovery); use --user-email and --new-email")
+		changeEmailNew    = flag.String("new-email", "", "new email for --change-email")
 	)
 	flag.Parse()
 
@@ -155,6 +157,19 @@ func main() {
 			os.Exit(1)
 		}
 		slog.Info("password reset", "email", *createUserEmail)
+		return
+	}
+
+	if *changeEmail {
+		if *createUserEmail == "" || *changeEmailNew == "" {
+			slog.Error("--change-email requires --user-email and --new-email")
+			os.Exit(2)
+		}
+		if err := st.SetEmailUnconditional(openCtx, *createUserEmail, *changeEmailNew); err != nil {
+			slog.Error("change email", "err", err)
+			os.Exit(1)
+		}
+		slog.Info("email changed", "from", *createUserEmail, "to", *changeEmailNew)
 		return
 	}
 
