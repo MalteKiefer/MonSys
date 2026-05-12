@@ -252,7 +252,7 @@ func Run(ctx context.Context, o Options) (Result, error) {
 		if isSHAMismatch(err) {
 			m2, mErr := fetchManifest(ctx, o.HTTPClient, o.ServerURL, true)
 			if mErr != nil {
-				return res, fmt.Errorf("%w; force-refresh failed: %v", err, mErr)
+				return res, fmt.Errorf("%w; force-refresh failed: %w", err, mErr)
 			}
 			bin2, ok2 := m2.Binaries[key]
 			if !ok2 || bin2.URL == "" || bin2.SHA256 == "" {
@@ -353,7 +353,7 @@ func Run(ctx context.Context, o Options) (Result, error) {
 	if err := os.Rename(tmpPath, finalPath); err != nil {
 		if cpErr := copyReplace(tmpPath, finalPath); cpErr != nil {
 			_ = os.Remove(tmpPath)
-			return res, fmt.Errorf("install binary: rename=%w copy=%v", err, cpErr)
+			return res, fmt.Errorf("install binary: rename=%w copy=%w", err, cpErr)
 		}
 		_ = os.Remove(tmpPath)
 	}
@@ -379,7 +379,7 @@ func Run(ctx context.Context, o Options) (Result, error) {
 			rbErr := os.Rename(prevPath, finalPath)
 			if rbErr != nil {
 				if cpErr := copyReplace(prevPath, finalPath); cpErr != nil {
-					return res, fmt.Errorf("restart %v: %w (output: %s); rollback failed: rename=%v copy=%v",
+					return res, fmt.Errorf("restart %v: %w (output: %s); rollback failed: rename=%w copy=%w",
 						o.RestartCmd, err, strings.TrimSpace(string(out)), rbErr, cpErr)
 				}
 				_ = os.Remove(prevPath)
@@ -388,7 +388,7 @@ func Run(ctx context.Context, o Options) (Result, error) {
 			res.To = res.From
 			c2 := exec.CommandContext(ctx, o.RestartCmd[0], o.RestartCmd[1:]...) //nolint:gosec // operator-supplied
 			if rOut, rErr := c2.CombinedOutput(); rErr != nil {
-				return res, fmt.Errorf("restart %v failed: %w (output: %s); rolled back to previous binary but post-rollback restart also failed: %v (output: %s)",
+				return res, fmt.Errorf("restart %v failed: %w (output: %s); rolled back to previous binary but post-rollback restart also failed: %w (output: %s)",
 					o.RestartCmd, err, strings.TrimSpace(string(out)), rErr, strings.TrimSpace(string(rOut)))
 			}
 			// Rollback succeeded; the snapshot file has been consumed by
@@ -416,7 +416,7 @@ func fetchManifest(ctx context.Context, cli *http.Client, base string, force boo
 	if force {
 		url += "?fresh=1"
 	}
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -442,7 +442,7 @@ func fetchManifest(ctx context.Context, cli *http.Client, base string, force boo
 // wantHex. The on-disk file is fsynced before close so the subsequent
 // rename is durable.
 func downloadAndVerify(ctx context.Context, cli *http.Client, url, wantHex, dst string) error {
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return err
 	}
@@ -489,7 +489,7 @@ func downloadAndVerify(ctx context.Context, cli *http.Client, url, wantHex, dst 
 // is purely a safety measure against an attacker-controlled redirect
 // handing back a huge payload that might exhaust staging-dir space.
 func downloadFile(ctx context.Context, cli *http.Client, url, dst string) error {
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return err
 	}

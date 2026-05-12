@@ -60,7 +60,7 @@ func Run(ctx context.Context, name string, args ...string) ([]byte, error) {
 	}
 
 	cmd := exec.CommandContext(ctx, bin, args...) //nolint:gosec // safeexec hardens lookup; see package doc
-	cmd.Env = []string{"LC_ALL=C", "LANG=C"} // deterministic output
+	cmd.Env = []string{"LC_ALL=C", "LANG=C"}      // deterministic output
 	cmd.Stdin = nil
 
 	stdout := &boundedBuffer{max: MaxOutputBytes}

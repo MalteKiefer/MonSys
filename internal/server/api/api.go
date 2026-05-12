@@ -9,12 +9,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
-
-	"log/slog"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
@@ -211,13 +210,13 @@ func rateLimitByPath() func(http.Handler) http.Handler {
 	ingestLimiter := httprate.LimitByIP(600, time.Minute)
 
 	authPaths := map[string]struct{}{
-		"/v1/auth/login":                   {},
-		"/v1/auth/2fa/challenge":           {},
-		"/v1/auth/consume-reset":           {},
-		"/v1/agents/register":              {},
-		"/v1/auth/webauthn/login/begin":    {},
-		"/v1/auth/webauthn/login/finish":   {},
-		"/v1/auth/email/confirm":           {},
+		"/v1/auth/login":                 {},
+		"/v1/auth/2fa/challenge":         {},
+		"/v1/auth/consume-reset":         {},
+		"/v1/agents/register":            {},
+		"/v1/auth/webauthn/login/begin":  {},
+		"/v1/auth/webauthn/login/finish": {},
+		"/v1/auth/email/confirm":         {},
 	}
 
 	return func(next http.Handler) http.Handler {
@@ -1400,11 +1399,11 @@ type rangeMetricsInput struct {
 
 type diskMetricsOutput struct {
 	Body struct {
-		HostID  string                 `json:"host_id"`
-		From    time.Time              `json:"from"`
-		To      time.Time              `json:"to"`
-		Devices []string               `json:"devices"`
-		Samples []apitypes.DiskSample  `json:"samples"`
+		HostID  string                `json:"host_id"`
+		From    time.Time             `json:"from"`
+		To      time.Time             `json:"to"`
+		Devices []string              `json:"devices"`
+		Samples []apitypes.DiskSample `json:"samples"`
 	}
 }
 
@@ -2551,12 +2550,14 @@ func (s *Server) handleTOTPDisable(ctx context.Context, in *totpDisableInput) (*
 	return out, nil
 }
 
-type emptyInput struct{}
-type emptyOutput struct {
-	Body struct {
-		OK bool `json:"ok"`
+type (
+	emptyInput  struct{}
+	emptyOutput struct {
+		Body struct {
+			OK bool `json:"ok"`
+		}
 	}
-}
+)
 
 func (s *Server) handleLogout(ctx context.Context, _ *emptyInput) (*emptyOutput, error) {
 	tok, _ := tokenFromContext(ctx)
@@ -3354,11 +3355,11 @@ type adminLogsInput struct {
 
 type adminLogsOutput struct {
 	Body struct {
-		Total   int                `json:"total"   doc:"matching entries before paging"`
-		Limit   int                `json:"limit"`
-		Offset  int                `json:"offset"`
-		Entries []serverlog.Entry  `json:"entries"`
-		Seq     uint64             `json:"seq"     doc:"monotonic write counter; gaps mean entries were dropped"`
+		Total   int               `json:"total"   doc:"matching entries before paging"`
+		Limit   int               `json:"limit"`
+		Offset  int               `json:"offset"`
+		Entries []serverlog.Entry `json:"entries"`
+		Seq     uint64            `json:"seq"     doc:"monotonic write counter; gaps mean entries were dropped"`
 	}
 }
 

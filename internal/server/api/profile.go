@@ -18,6 +18,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"image"
+
 	// audit 2026-05-12 F-4: decoder registrations for the avatar allow-list.
 	// The blank imports register handlers with image.Decode so we can verify
 	// the bytes match the claimed content-type instead of trusting the

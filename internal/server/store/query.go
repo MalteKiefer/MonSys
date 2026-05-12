@@ -633,8 +633,8 @@ func (s *Store) requireHost(ctx context.Context, hostID uuid.UUID) error {
 	return nil
 }
 
-// SearchPackages searches installed packages across hosts (or one host) with
-// optional manager filter and case-insensitive name/version matching.
+// PackageSearchResult is one row of the package search across hosts: the
+// host that has the package installed plus the package's identifying metadata.
 type PackageSearchResult struct {
 	HostID      string
 	Hostname    string
@@ -646,6 +646,8 @@ type PackageSearchResult struct {
 	InstalledAt *time.Time
 }
 
+// SearchPackages searches installed packages across hosts (or one host) with
+// optional manager filter and case-insensitive name/version matching.
 func (s *Store) SearchPackages(ctx context.Context, q, manager string, hostID *uuid.UUID, limit, offset int) ([]PackageSearchResult, int, error) {
 	if limit <= 0 || limit > 1000 {
 		limit = 100

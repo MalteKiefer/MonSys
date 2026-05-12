@@ -58,9 +58,9 @@ func proxmoxAvailable() bool {
 //
 // Sample output:
 //
-//	      VMID NAME                 STATUS     MEM(MB)    BOOTDISK(GB) PID
-//	       100 ubuntu-22.04         running    4096       20.00        12345
-//	       200 windows-server       stopped    8192       50.00        0
+//	VMID NAME                 STATUS     MEM(MB)    BOOTDISK(GB) PID
+//	 100 ubuntu-22.04         running    4096       20.00        12345
+//	 200 windows-server       stopped    8192       50.00        0
 //
 // The header line is detected by a non-numeric first field; this also makes
 // the parser tolerant of stray warning lines that PVE occasionally prints

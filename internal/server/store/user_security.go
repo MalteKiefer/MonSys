@@ -18,8 +18,8 @@ import (
 )
 
 var (
-	ErrTOTPNotPending  = errors.New("no pending TOTP setup; call /v1/auth/2fa/setup first")
-	ErrTOTPCodeInvalid = errors.New("totp code invalid")
+	ErrTOTPNotPending     = errors.New("no pending TOTP setup; call /v1/auth/2fa/setup first")
+	ErrTOTPCodeInvalid    = errors.New("totp code invalid")
 	ErrActionTokenInvalid = errors.New("action token invalid or expired")
 )
 
@@ -59,9 +59,9 @@ func (s *Store) StartTOTPSetup(ctx context.Context, u User) (apitypes.TOTPSetupR
 // at any time (consumed on use).
 func (s *Store) VerifyTOTP(ctx context.Context, userID uuid.UUID, code string) error {
 	var (
-		secret   string
-		enabled  *time.Time
-		backups  []string
+		secret  string
+		enabled *time.Time
+		backups []string
 	)
 	err := s.Pool.QueryRow(ctx,
 		`SELECT secret_b32, enabled_at, backup_codes FROM user_totp WHERE user_id = $1`, userID,

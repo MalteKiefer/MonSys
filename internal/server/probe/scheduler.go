@@ -12,8 +12,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Result fan-out target for the rules engine. Filled in by the scheduler so
-// downstream consumers can subscribe without reaching into the DB.
+// ResultEvent is the result fan-out target for the rules engine. Filled in by
+// the scheduler so downstream consumers can subscribe without reaching into
+// the DB.
 type ResultEvent struct {
 	MonitorID uuid.UUID
 	Type      string

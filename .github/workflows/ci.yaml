@@ -170,3 +170,32 @@ jobs:
             echo "::error::api/openapi.yaml is stale. Run 'make generate-spec' and commit." >&2
             exit 1
           fi
+
+  # AUDIT-102: the 2026-05-05 audit found 0/117 commits signed. Going
+  # forward every commit on a PR must carry a good signature (`G`) or a
+  # good signature with unknown trust (`U`); anything else — `N` no sig,
+  # `B` bad, `X` expired signature, `Y` expired key, `R` revoked key —
+  # fails the job. See docs/COMMIT-SIGNING.md for contributor setup.
+  # Historical pre-gate commits are NOT retroactively required to be
+  # signed; this job only walks base..head of the PR.
+  commit-signing:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false # AUDIT 4.3.1.18
+      - name: verify signatures
+        run: |
+          set -euo pipefail
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.event.pull_request.head.sha }}"
+          unsigned=$(git log "$base..$head" --pretty=format:'%H %G?' \
+            | awk '$2 != "G" && $2 != "U" { print $1 }')
+          if [ -n "$unsigned" ]; then
+            echo "::error::Unsigned commits found:"
+            echo "$unsigned"
+            exit 1
+          fi
+          echo "All commits in PR are signed."

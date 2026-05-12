@@ -64,7 +64,7 @@ func Validate(secretB32, code string) bool {
 func NewBackupCodes(count int) ([]string, error) {
 	out := make([]string, 0, count)
 	buf := make([]byte, 4)
-	for i := 0; i < count; i++ {
+	for range count {
 		if _, err := rand.Read(buf); err != nil {
 			return nil, err
 		}
@@ -95,7 +95,7 @@ func MatchAndConsume(codes []string, code string) (remaining []string, ok bool) 
 
 func canonical(s string) string {
 	out := make([]byte, 0, len(s))
-	for i := 0; i < len(s); i++ {
+	for i := range len(s) {
 		c := s[i]
 		if c == '-' || c == ' ' {
 			continue

@@ -33,10 +33,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/MalteKiefer/MonSys/internal/server/webauthn"
-	"github.com/MalteKiefer/MonSys/internal/shared/apitypes"
 	"github.com/go-webauthn/webauthn/protocol"
 	libwa "github.com/go-webauthn/webauthn/webauthn"
+
+	"github.com/MalteKiefer/MonSys/internal/server/webauthn"
+	"github.com/MalteKiefer/MonSys/internal/shared/apitypes"
 )
 
 // ErrPasskeyNotConfigured is returned by every passkey method when the

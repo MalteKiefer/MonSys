@@ -117,4 +117,3 @@ func encodeAuditDetail(detail string) []byte {
 	b, _ := json.Marshal(map[string]string{"text": detail})
 	return b
 }
-

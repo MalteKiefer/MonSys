@@ -32,15 +32,15 @@ type AgentRegisterResponse struct {
 // Inventory is sent on first call after agent start and whenever the host inventory
 // hash changes (new disk, removed NIC, …).
 type IngestRequest struct {
-	SnapshotAt time.Time            `json:"snapshot_at"          doc:"When the agent assembled this batch"`
-	Inventory  *InventorySnap       `json:"inventory,omitempty"  doc:"Present only when changed"`
-	System     []SystemSample       `json:"system,omitempty"`
-	Disks      []DiskSample         `json:"disks,omitempty"`
-	Nics       []NetSample          `json:"nics,omitempty"`
-	Workloads  []WorkloadSample     `json:"workloads,omitempty"`
-	Packages   *PackageReport       `json:"packages,omitempty"   doc:"Optional package state"`
-	Security   *SecurityReport      `json:"security,omitempty"   doc:"Firewall, fail2ban, crowdsec snapshot"`
-	Logins     []LoginEvent         `json:"logins,omitempty"     doc:"Incremental login/auth events since previous tick"`
+	SnapshotAt time.Time        `json:"snapshot_at"          doc:"When the agent assembled this batch"`
+	Inventory  *InventorySnap   `json:"inventory,omitempty"  doc:"Present only when changed"`
+	System     []SystemSample   `json:"system,omitempty"`
+	Disks      []DiskSample     `json:"disks,omitempty"`
+	Nics       []NetSample      `json:"nics,omitempty"`
+	Workloads  []WorkloadSample `json:"workloads,omitempty"`
+	Packages   *PackageReport   `json:"packages,omitempty"   doc:"Optional package state"`
+	Security   *SecurityReport  `json:"security,omitempty"   doc:"Firewall, fail2ban, crowdsec snapshot"`
+	Logins     []LoginEvent     `json:"logins,omitempty"     doc:"Incremental login/auth events since previous tick"`
 }
 
 type IngestResponse struct {
@@ -96,20 +96,20 @@ type LoginEvent struct {
 }
 
 type SecurityReport struct {
-	Time      time.Time            `json:"time"`
-	Firewalls []FirewallStatus     `json:"firewalls,omitempty"`
-	Fail2ban  []Fail2banJailInfo   `json:"fail2ban,omitempty"`
-	CrowdSec  []CrowdsecDecision   `json:"crowdsec,omitempty"`
+	Time      time.Time          `json:"time"`
+	Firewalls []FirewallStatus   `json:"firewalls,omitempty"`
+	Fail2ban  []Fail2banJailInfo `json:"fail2ban,omitempty"`
+	CrowdSec  []CrowdsecDecision `json:"crowdsec,omitempty"`
 }
 
 type FirewallStatus struct {
-	Engine           string `json:"engine"            enum:"ufw,nftables,iptables"`
-	Active           bool   `json:"active"`
-	DefaultInput     string `json:"default_input,omitempty"   maxLength:"64"`
-	DefaultOutput    string `json:"default_output,omitempty"  maxLength:"64"`
-	DefaultForward   string `json:"default_forward,omitempty" maxLength:"64"`
-	RuleCount        int    `json:"rule_count"`
-	SnapshotExcerpt  string `json:"snapshot_excerpt,omitempty" maxLength:"10000" doc:"First ~4 KiB of the rule dump"`
+	Engine          string `json:"engine"            enum:"ufw,nftables,iptables"`
+	Active          bool   `json:"active"`
+	DefaultInput    string `json:"default_input,omitempty"   maxLength:"64"`
+	DefaultOutput   string `json:"default_output,omitempty"  maxLength:"64"`
+	DefaultForward  string `json:"default_forward,omitempty" maxLength:"64"`
+	RuleCount       int    `json:"rule_count"`
+	SnapshotExcerpt string `json:"snapshot_excerpt,omitempty" maxLength:"10000" doc:"First ~4 KiB of the rule dump"`
 }
 
 type Fail2banJailInfo struct {
@@ -183,31 +183,31 @@ type SystemSample struct {
 }
 
 type DiskSample struct {
-	Time         time.Time `json:"time"`
-	Device       string    `json:"device"     maxLength:"253"`
-	Mountpoint   string    `json:"mountpoint" maxLength:"4096"`
-	UsedBytes    int64     `json:"used_bytes"`
-	FreeBytes    int64     `json:"free_bytes"`
-	InodesUsed   int64     `json:"inodes_used"`
-	InodesFree   int64     `json:"inodes_free"`
-	ReadBytes    int64     `json:"read_bytes"`
-	WriteBytes   int64     `json:"write_bytes"`
-	ReadOps      int64     `json:"read_ops"`
-	WriteOps     int64     `json:"write_ops"`
-	IOTimeMS     int64     `json:"io_time_ms"`
+	Time       time.Time `json:"time"`
+	Device     string    `json:"device"     maxLength:"253"`
+	Mountpoint string    `json:"mountpoint" maxLength:"4096"`
+	UsedBytes  int64     `json:"used_bytes"`
+	FreeBytes  int64     `json:"free_bytes"`
+	InodesUsed int64     `json:"inodes_used"`
+	InodesFree int64     `json:"inodes_free"`
+	ReadBytes  int64     `json:"read_bytes"`
+	WriteBytes int64     `json:"write_bytes"`
+	ReadOps    int64     `json:"read_ops"`
+	WriteOps   int64     `json:"write_ops"`
+	IOTimeMS   int64     `json:"io_time_ms"`
 }
 
 type NetSample struct {
-	Time     time.Time `json:"time"`
-	NicName  string    `json:"nic_name" maxLength:"64"`
-	RxBytes  int64     `json:"rx_bytes"`
-	TxBytes  int64     `json:"tx_bytes"`
-	RxPkts   int64     `json:"rx_pkts"`
-	TxPkts   int64     `json:"tx_pkts"`
-	RxErrs   int64     `json:"rx_errs"`
-	TxErrs   int64     `json:"tx_errs"`
-	RxDrops  int64     `json:"rx_drops"`
-	TxDrops  int64     `json:"tx_drops"`
+	Time    time.Time `json:"time"`
+	NicName string    `json:"nic_name" maxLength:"64"`
+	RxBytes int64     `json:"rx_bytes"`
+	TxBytes int64     `json:"tx_bytes"`
+	RxPkts  int64     `json:"rx_pkts"`
+	TxPkts  int64     `json:"tx_pkts"`
+	RxErrs  int64     `json:"rx_errs"`
+	TxErrs  int64     `json:"tx_errs"`
+	RxDrops int64     `json:"rx_drops"`
+	TxDrops int64     `json:"tx_drops"`
 }
 
 type WorkloadSample struct {
@@ -225,20 +225,20 @@ type WorkloadSample struct {
 }
 
 type PackageReport struct {
-	Time           time.Time          `json:"time"`
-	StateHash      string             `json:"state_hash"          maxLength:"128" doc:"sha256 over sorted (manager,name,version,arch); when unchanged, server may skip processing"`
-	Installed      []InstalledPackage `json:"installed,omitempty" doc:"Full list; omit when state_hash unchanged"`
-	Updates        []PendingUpdate    `json:"updates,omitempty"`
-	RepoStates     []RepoMetaState    `json:"repo_states,omitempty"`
-	Summary        PackageSummary     `json:"summary"`
+	Time       time.Time          `json:"time"`
+	StateHash  string             `json:"state_hash"          maxLength:"128" doc:"sha256 over sorted (manager,name,version,arch); when unchanged, server may skip processing"`
+	Installed  []InstalledPackage `json:"installed,omitempty" doc:"Full list; omit when state_hash unchanged"`
+	Updates    []PendingUpdate    `json:"updates,omitempty"`
+	RepoStates []RepoMetaState    `json:"repo_states,omitempty"`
+	Summary    PackageSummary     `json:"summary"`
 }
 
 type InstalledPackage struct {
-	Manager     string    `json:"manager"     enum:"dpkg,rpm,pacman,apk"`
-	Name        string    `json:"name"        maxLength:"253"`
-	Version     string    `json:"version"     maxLength:"100"`
-	Arch        string    `json:"arch,omitempty" maxLength:"32"`
-	SourceRepo  string    `json:"source_repo,omitempty" maxLength:"253"`
+	Manager     string     `json:"manager"     enum:"dpkg,rpm,pacman,apk"`
+	Name        string     `json:"name"        maxLength:"253"`
+	Version     string     `json:"version"     maxLength:"100"`
+	Arch        string     `json:"arch,omitempty" maxLength:"32"`
+	SourceRepo  string     `json:"source_repo,omitempty" maxLength:"253"`
 	InstalledAt *time.Time `json:"installed_at,omitempty"`
 }
 
@@ -420,13 +420,13 @@ const (
 const conditionTypeEnum = "host_offline,monitor_failed,cert_expiring,login_failed_threshold,security_updates_pending,metric_threshold,agent_outdated,image_update_pending,package_update_available,pending_reboot,repo_metadata_stale,login_anomaly,inventory_drift,firewall_state_change,fail2ban_jail_disappeared,crowdsec_decision_threshold,nic_link_down,nic_bond_degraded,vm_state_change,container_state_change,audit_action,host_flap,unexpected_reboot"
 
 type NotificationRule struct {
-	ID              string         `json:"id"               format:"uuid" maxLength:"36" readOnly:"true"`
-	Name            string         `json:"name"             maxLength:"100"`
-	GroupID         *uuid.UUID     `json:"group_id,omitempty" doc:"set when this rule is one leg of a rule group"`
-	Enabled         bool           `json:"enabled"`
-	ConditionType   string         `json:"condition_type"   enum:"host_offline,monitor_failed,cert_expiring,login_failed_threshold,security_updates_pending,metric_threshold,agent_outdated,image_update_pending,package_update_available,pending_reboot,repo_metadata_stale,login_anomaly,inventory_drift,firewall_state_change,fail2ban_jail_disappeared,crowdsec_decision_threshold,nic_link_down,nic_bond_degraded,vm_state_change,container_state_change,audit_action,host_flap,unexpected_reboot"`
-	ConditionParams map[string]any `json:"condition_params,omitempty"`
-	ChannelIDs      []string       `json:"channel_ids"`
+	ID                string         `json:"id"               format:"uuid" maxLength:"36" readOnly:"true"`
+	Name              string         `json:"name"             maxLength:"100"`
+	GroupID           *uuid.UUID     `json:"group_id,omitempty" doc:"set when this rule is one leg of a rule group"`
+	Enabled           bool           `json:"enabled"`
+	ConditionType     string         `json:"condition_type"   enum:"host_offline,monitor_failed,cert_expiring,login_failed_threshold,security_updates_pending,metric_threshold,agent_outdated,image_update_pending,package_update_available,pending_reboot,repo_metadata_stale,login_anomaly,inventory_drift,firewall_state_change,fail2ban_jail_disappeared,crowdsec_decision_threshold,nic_link_down,nic_bond_degraded,vm_state_change,container_state_change,audit_action,host_flap,unexpected_reboot"`
+	ConditionParams   map[string]any `json:"condition_params,omitempty"`
+	ChannelIDs        []string       `json:"channel_ids"`
 	Severity          string         `json:"severity"            enum:"info,warning,critical"`
 	ThrottleSec       int            `json:"throttle_sec"        minimum:"0" doc:"0 disables throttling"`
 	RepeatIntervalSec int            `json:"repeat_interval_sec" minimum:"0" doc:"0 fires once per outage; >=60 re-sends a reminder while still active"`
@@ -750,11 +750,11 @@ type LoginRequest struct {
 }
 
 type LoginResponse struct {
-	NeedsTOTP      bool      `json:"needs_totp"      doc:"true → call /v1/auth/2fa/challenge with challenge_token + code"`
-	NeedsPasskey   bool      `json:"needs_passkey,omitempty" doc:"true when force_mode=passkey_required and the user has no passkey and no grace remaining"`
-	ChallengeToken string    `json:"challenge_token,omitempty" maxLength:"128" readOnly:"true"`
-	Token          string    `json:"token,omitempty"           maxLength:"128" readOnly:"true" doc:"Session token; pass as Authorization: Bearer …"`
-	ExpiresAt      time.Time `json:"expires_at,omitempty"      readOnly:"true" doc:"Session expiry (UTC)"`
+	NeedsTOTP      bool        `json:"needs_totp"      doc:"true → call /v1/auth/2fa/challenge with challenge_token + code"`
+	NeedsPasskey   bool        `json:"needs_passkey,omitempty" doc:"true when force_mode=passkey_required and the user has no passkey and no grace remaining"`
+	ChallengeToken string      `json:"challenge_token,omitempty" maxLength:"128" readOnly:"true"`
+	Token          string      `json:"token,omitempty"           maxLength:"128" readOnly:"true" doc:"Session token; pass as Authorization: Bearer …"`
+	ExpiresAt      time.Time   `json:"expires_at,omitempty"      readOnly:"true" doc:"Session expiry (UTC)"`
 	User           CurrentUser `json:"user"`
 }
 
@@ -873,17 +873,17 @@ type AdminCreateUserResponse struct {
 }
 
 type AdminResetPasswordResponse struct {
-	ResetURL    string `json:"reset_url,omitempty" format:"uri" maxLength:"2048" readOnly:"true"`
-	InviteSent  bool   `json:"invite_sent"`
+	ResetURL   string `json:"reset_url,omitempty" format:"uri" maxLength:"2048" readOnly:"true"`
+	InviteSent bool   `json:"invite_sent"`
 }
 
 type PasswordPolicy struct {
-	MinLength      int  `json:"min_length"      minimum:"4" maximum:"128"`
-	RequireUpper   bool `json:"require_upper"`
-	RequireLower   bool `json:"require_lower"`
-	RequireDigit   bool `json:"require_digit"`
-	RequireSymbol  bool `json:"require_symbol"`
-	MaxAgeDays     int  `json:"max_age_days"    minimum:"0" doc:"0 disables age check"`
+	MinLength     int  `json:"min_length"      minimum:"4" maximum:"128"`
+	RequireUpper  bool `json:"require_upper"`
+	RequireLower  bool `json:"require_lower"`
+	RequireDigit  bool `json:"require_digit"`
+	RequireSymbol bool `json:"require_symbol"`
+	MaxAgeDays    int  `json:"max_age_days"    minimum:"0" doc:"0 disables age check"`
 }
 
 type ConsumeResetTokenRequest struct {
@@ -907,14 +907,14 @@ type AuditEntry struct {
 // Host detail (single-host view)
 
 type HostDetail struct {
-	Host             Host                 `json:"host"`
-	Disks            []DiskRow            `json:"disks"`
-	Nics             []NicRow             `json:"nics"`
-	Workloads        []WorkloadRow        `json:"workloads"`
-	VMs              []VMRow              `json:"vms"`
-	Users            []ObservedUser       `json:"users"`
-	PackagesSummary  *PackageSummaryRow   `json:"packages_summary,omitempty"`
-	RepoStates       []RepoMetaState      `json:"repo_states"`
+	Host            Host               `json:"host"`
+	Disks           []DiskRow          `json:"disks"`
+	Nics            []NicRow           `json:"nics"`
+	Workloads       []WorkloadRow      `json:"workloads"`
+	VMs             []VMRow            `json:"vms"`
+	Users           []ObservedUser     `json:"users"`
+	PackagesSummary *PackageSummaryRow `json:"packages_summary,omitempty"`
+	RepoStates      []RepoMetaState    `json:"repo_states"`
 }
 
 type DiskRow struct {
@@ -926,9 +926,9 @@ type DiskRow struct {
 	IsRemovable bool      `json:"is_removable"`
 	LastSeenAt  time.Time `json:"last_seen_at" readOnly:"true"`
 	// Latest sample (joined; zero values if no metric yet).
-	LatestTime  *time.Time `json:"latest_time,omitempty" readOnly:"true"`
-	UsedBytes   int64      `json:"used_bytes"`
-	FreeBytes   int64      `json:"free_bytes"`
+	LatestTime *time.Time `json:"latest_time,omitempty" readOnly:"true"`
+	UsedBytes  int64      `json:"used_bytes"`
+	FreeBytes  int64      `json:"free_bytes"`
 }
 
 type NicRow struct {
@@ -946,17 +946,17 @@ type NicRow struct {
 }
 
 type WorkloadRow struct {
-	ID         string            `json:"id"          format:"uuid" maxLength:"36" readOnly:"true"`
-	Kind       string            `json:"kind"        maxLength:"64"`
-	ExternalID string            `json:"external_id" maxLength:"253"`
-	Name       string            `json:"name"        maxLength:"253"`
-	Image      string            `json:"image,omitempty" maxLength:"500"`
-	State      string            `json:"state"       maxLength:"64"`
-	Labels     map[string]string `json:"labels,omitempty"`
-	LastSeenAt time.Time         `json:"last_seen_at"  readOnly:"true"`
-	LatestTime *time.Time        `json:"latest_time,omitempty" readOnly:"true"`
-	CPUUsagePct float64          `json:"cpu_usage_pct"`
-	MemUsedBytes int64            `json:"mem_used_bytes"`
+	ID           string            `json:"id"          format:"uuid" maxLength:"36" readOnly:"true"`
+	Kind         string            `json:"kind"        maxLength:"64"`
+	ExternalID   string            `json:"external_id" maxLength:"253"`
+	Name         string            `json:"name"        maxLength:"253"`
+	Image        string            `json:"image,omitempty" maxLength:"500"`
+	State        string            `json:"state"       maxLength:"64"`
+	Labels       map[string]string `json:"labels,omitempty"`
+	LastSeenAt   time.Time         `json:"last_seen_at"  readOnly:"true"`
+	LatestTime   *time.Time        `json:"latest_time,omitempty" readOnly:"true"`
+	CPUUsagePct  float64           `json:"cpu_usage_pct"`
+	MemUsedBytes int64             `json:"mem_used_bytes"`
 	// CurrentDigest is the digest the container is currently running on; it
 	// matches the local image at start time. Empty until the agent reports
 	// it once.
@@ -1027,24 +1027,24 @@ type PackageRow struct {
 }
 
 type Host struct {
-	ID            string            `json:"id"            format:"uuid" maxLength:"36" readOnly:"true"`
-	Hostname      string            `json:"hostname"      maxLength:"253"`
-	Distro        string            `json:"distro"        maxLength:"253"`
-	Arch          string            `json:"arch"          maxLength:"32"`
-	CPUCores      int               `json:"cpu_cores"`
-	RAMTotalBytes int64             `json:"ram_total_bytes"`
-	AgentVersion  string            `json:"agent_version" maxLength:"64"`
-	FirstSeenAt   time.Time         `json:"first_seen_at" readOnly:"true"`
-	LastSeenAt    time.Time         `json:"last_seen_at"  readOnly:"true"`
-	Status        string            `json:"status"        enum:"online,stale,offline,unknown"`
-	StatusSince   time.Time         `json:"status_since,omitempty"  readOnly:"true"`
-	Labels        map[string]string `json:"labels"`
-	Tags          []string          `json:"tags"        doc:"Operator-set tags; managed via /v1/hosts/{id}/tags"`
-	Groups        []HostGroupRef    `json:"groups"      doc:"Groups this host belongs to"`
-	DistroFamily  string            `json:"distro_family,omitempty" maxLength:"32" doc:"arch/debian/ubuntu/fedora/rhel/alpine/suse — derived"`
-	Services      []string          `json:"services,omitempty"      doc:"Detected services (postgres, redis, nginx, …)"`
-	PendingUpdates  *int `json:"pending_updates,omitempty"  readOnly:"true" doc:"OS package updates pending; null when no package data"`
-	SecurityUpdates *int `json:"security_updates,omitempty" readOnly:"true" doc:"OS security updates pending; null when no package data"`
+	ID              string            `json:"id"            format:"uuid" maxLength:"36" readOnly:"true"`
+	Hostname        string            `json:"hostname"      maxLength:"253"`
+	Distro          string            `json:"distro"        maxLength:"253"`
+	Arch            string            `json:"arch"          maxLength:"32"`
+	CPUCores        int               `json:"cpu_cores"`
+	RAMTotalBytes   int64             `json:"ram_total_bytes"`
+	AgentVersion    string            `json:"agent_version" maxLength:"64"`
+	FirstSeenAt     time.Time         `json:"first_seen_at" readOnly:"true"`
+	LastSeenAt      time.Time         `json:"last_seen_at"  readOnly:"true"`
+	Status          string            `json:"status"        enum:"online,stale,offline,unknown"`
+	StatusSince     time.Time         `json:"status_since,omitempty"  readOnly:"true"`
+	Labels          map[string]string `json:"labels"`
+	Tags            []string          `json:"tags"        doc:"Operator-set tags; managed via /v1/hosts/{id}/tags"`
+	Groups          []HostGroupRef    `json:"groups"      doc:"Groups this host belongs to"`
+	DistroFamily    string            `json:"distro_family,omitempty" maxLength:"32" doc:"arch/debian/ubuntu/fedora/rhel/alpine/suse — derived"`
+	Services        []string          `json:"services,omitempty"      doc:"Detected services (postgres, redis, nginx, …)"`
+	PendingUpdates  *int              `json:"pending_updates,omitempty"  readOnly:"true" doc:"OS package updates pending; null when no package data"`
+	SecurityUpdates *int              `json:"security_updates,omitempty" readOnly:"true" doc:"OS security updates pending; null when no package data"`
 }
 
 type HostGroupRef struct {
@@ -1074,12 +1074,12 @@ type HostTagsInput struct {
 // to agents via /v1/agent/config. Fields are optional so that a per-host
 // override can change just one knob without re-stating the rest.
 type AgentConfig struct {
-	IntervalSeconds  *int                  `json:"interval_seconds,omitempty"  minimum:"5"  maximum:"3600"`
-	BufferMaxMB      *int                  `json:"buffer_max_mb,omitempty"     minimum:"1"  maximum:"4096"`
-	Packages         *AgentPackagesConfig  `json:"packages,omitempty"`
-	QuietHours       *AgentQuietHours      `json:"quiet_hours,omitempty"`
-	Schedules        []AgentSchedule       `json:"schedules,omitempty"`
-	Labels           map[string]string     `json:"labels,omitempty"`
+	IntervalSeconds *int                 `json:"interval_seconds,omitempty"  minimum:"5"  maximum:"3600"`
+	BufferMaxMB     *int                 `json:"buffer_max_mb,omitempty"     minimum:"1"  maximum:"4096"`
+	Packages        *AgentPackagesConfig `json:"packages,omitempty"`
+	QuietHours      *AgentQuietHours     `json:"quiet_hours,omitempty"`
+	Schedules       []AgentSchedule      `json:"schedules,omitempty"`
+	Labels          map[string]string    `json:"labels,omitempty"`
 }
 
 type AgentPackagesConfig struct {
@@ -1096,7 +1096,7 @@ type AgentQuietHours struct {
 	Start   string `json:"start" maxLength:"5" pattern:"^([01]?[0-9]|2[0-3]):[0-5][0-9]$"`
 	End     string `json:"end"   maxLength:"5" pattern:"^([01]?[0-9]|2[0-3]):[0-5][0-9]$"`
 	// Days of week when quiet hours apply, 0 = Sun..6 = Sat. Empty = every day.
-	Days    []int  `json:"days,omitempty"`
+	Days []int `json:"days,omitempty"`
 }
 
 // AgentSchedule lets operators raise or lower the tick rate during a window.
@@ -1146,11 +1146,11 @@ type GroupMembersInput struct {
 // payload is single-use; default_tags / default_group_ids / default_label are
 // applied when the agent first calls /v1/agents/register and never again.
 type AgentEnrollmentInput struct {
-	Label           string   `json:"label,omitempty"        maxLength:"100" doc:"Optional human label, displayed until the host is renamed"`
-	Tags            []string `json:"tags,omitempty"         doc:"Tags applied on first registration"`
-	GroupIDs        []string `json:"group_ids,omitempty"    doc:"Group memberships applied on first registration"`
-	TTLMinutes      int      `json:"ttl_minutes,omitempty"  minimum:"5" maximum:"1440" doc:"Token lifetime; default 30, clamped to [5, 1440]"`
-	Description     string   `json:"description,omitempty"  maxLength:"200" doc:"Free-form note shown in the enrollment list"`
+	Label       string   `json:"label,omitempty"        maxLength:"100" doc:"Optional human label, displayed until the host is renamed"`
+	Tags        []string `json:"tags,omitempty"         doc:"Tags applied on first registration"`
+	GroupIDs    []string `json:"group_ids,omitempty"    doc:"Group memberships applied on first registration"`
+	TTLMinutes  int      `json:"ttl_minutes,omitempty"  minimum:"5" maximum:"1440" doc:"Token lifetime; default 30, clamped to [5, 1440]"`
+	Description string   `json:"description,omitempty"  maxLength:"200" doc:"Free-form note shown in the enrollment list"`
 }
 
 // AgentEnrollment is the resource returned after creation. The plain-text token

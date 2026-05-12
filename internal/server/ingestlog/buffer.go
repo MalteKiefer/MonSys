@@ -104,7 +104,7 @@ func (b *Buffer) Get(hostID string, idxFromNewest int) (Entry, bool) {
 		count = b.idx
 	}
 	seen := 0
-	for i := 0; i < count; i++ {
+	for i := range count {
 		pos := (b.idx - 1 - i + b.size) % b.size
 		e := b.entries[pos]
 		if hostID != "" && e.HostID != hostID {

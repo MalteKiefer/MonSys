@@ -99,8 +99,8 @@ func main() {
 			slog.Error("bootstrap failed", "err", err)
 			os.Exit(1)
 		}
-		// Best-effort wipe of the in-memory token.
-		token = ""
+		// Best-effort wipe of the env reference; the local `token` string is
+		// immutable so we can't truly zero it, only stop referencing it.
 		_ = os.Unsetenv("MON_BOOTSTRAP_TOKEN")
 	}
 

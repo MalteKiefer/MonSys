@@ -15,9 +15,7 @@ import (
 	"github.com/MalteKiefer/MonSys/internal/shared/apitypes"
 )
 
-var (
-	ErrChannelNotFound = errors.New("notification channel not found")
-)
+var ErrChannelNotFound = errors.New("notification channel not found")
 
 // ListChannels returns channels visible to the caller. Admins see every
 // channel (own + others' user-owned + shared). Non-admin users see their own

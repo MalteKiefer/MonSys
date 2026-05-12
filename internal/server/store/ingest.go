@@ -149,8 +149,10 @@ func (s *Store) SaveIngest(ctx context.Context, hostID uuid.UUID, req apitypes.I
 	return tx.Commit(ctx)
 }
 
-type diskKey struct{ Device, Mountpoint string }
-type workloadKey struct{ Kind, ExternalID string }
+type (
+	diskKey     struct{ Device, Mountpoint string }
+	workloadKey struct{ Kind, ExternalID string }
+)
 
 func saveInventoryTx(ctx context.Context, tx pgx.Tx, hostID uuid.UUID, snap apitypes.InventorySnap) error {
 	if snap.Hostname != "" || snap.Kernel != "" || snap.Distro != "" || snap.AgentVersion != "" || len(snap.Labels) > 0 {

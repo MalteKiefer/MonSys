@@ -13,10 +13,7 @@ import (
 	"github.com/MalteKiefer/MonSys/internal/shared/apitypes"
 )
 
-type System struct {
-	// last is used to compute usage between consecutive Collects.
-	lastCPU []cpu.TimesStat
-}
+type System struct{}
 
 func NewSystem() *System { return &System{} }
 

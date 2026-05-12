@@ -112,7 +112,8 @@ func (SMTP) Send(ctx context.Context, ch Channel, m Message) error {
 	var conn net.Conn
 	var err error
 	if useTLS {
-		conn, err = tls.DialWithDialer(dialer, "tcp", addr, tlsCfg)
+		tlsDialer := &tls.Dialer{NetDialer: dialer, Config: tlsCfg}
+		conn, err = tlsDialer.DialContext(ctx, "tcp", addr)
 	} else {
 		conn, err = dialer.DialContext(ctx, "tcp", addr)
 	}
@@ -287,7 +288,7 @@ func (Ntfy) Send(ctx context.Context, ch Channel, m Message) error {
 	url := strings.TrimRight(server, "/") + "/" + topic
 	priority := ntfyPriority(m.Severity)
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(m.Body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(m.Body))
 	if err != nil {
 		return err
 	}
@@ -331,7 +332,7 @@ func postJSON(ctx context.Context, url string, payload any) error {
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}

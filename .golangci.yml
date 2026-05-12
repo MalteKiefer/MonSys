@@ -76,6 +76,9 @@ linters:
         - fmt.Fprint
         - fmt.Fprintf
         - fmt.Fprintln
+        # pgx idiom: `defer tx.Rollback(ctx)` after BeginTx is documented as a
+        # no-op once Commit has fired. We don't want to handle that error.
+        - (github.com/jackc/pgx/v5.Tx).Rollback
 
     funlen:
       # Soft limits — some collector / API handlers legitimately reach

@@ -14,7 +14,7 @@ import (
 //	                 detail::text || at::text )
 //
 // where prev_hash for the first row is 32 zero bytes, and NULL string columns
-// are coalesced to ''. The actual hash bytes were produced by Postgres'
+// are coalesced to ”. The actual hash bytes were produced by Postgres'
 // pgcrypto digest() in the BEFORE INSERT trigger, so to avoid timestamp-format
 // drift between Go and Postgres we ask Postgres to recompute the canonical
 // byte string; we then sha256 it in Go and compare to the stored hash. That

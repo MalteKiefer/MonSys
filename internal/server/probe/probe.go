@@ -30,10 +30,10 @@ const (
 )
 
 type Probe struct {
-	Type     string
-	Target   string
-	Params   map[string]any
-	Timeout  time.Duration
+	Type    string
+	Target  string
+	Params  map[string]any
+	Timeout time.Duration
 }
 
 type Result struct {
@@ -111,14 +111,14 @@ var privateCIDRs = func() []*net.IPNet {
 // to enable. All resolved IPs are checked, which partially mitigates DNS
 // rebinding (a hostname returning multiple A records mixing public and
 // private addresses is rejected if any is private).
-func denyDestination(host string) error {
+func denyDestination(ctx context.Context, host string) error {
 	if host == "" {
 		return nil
 	}
 	allow := os.Getenv("MON_PROBE_ALLOW_INTERNAL")
 	deny := os.Getenv("MON_PROBE_DENY_INTERNAL")
 	// Default = allow. Only enforce when the operator opts in.
-	if !(allow == "0" || deny == "1") {
+	if allow != "0" && deny != "1" {
 		return nil
 	}
 
@@ -135,11 +135,14 @@ func denyDestination(host string) error {
 	if ip := net.ParseIP(h); ip != nil {
 		ips = []net.IP{ip}
 	} else {
-		resolved, err := net.LookupIP(h)
+		addrs, err := net.DefaultResolver.LookupIPAddr(ctx, h)
 		if err != nil {
 			return fmt.Errorf("resolve %q: %w", h, err)
 		}
-		ips = resolved
+		ips = make([]net.IP, 0, len(addrs))
+		for _, a := range addrs {
+			ips = append(ips, a.IP)
+		}
 	}
 	for _, ip := range ips {
 		for _, n := range privateCIDRs {
@@ -172,7 +175,7 @@ func targetHost(s string) string {
 // --- TCP -------------------------------------------------------------------
 
 func runTCP(ctx context.Context, p Probe) Result {
-	if err := denyDestination(targetHost(p.Target)); err != nil {
+	if err := denyDestination(ctx, targetHost(p.Target)); err != nil {
 		return Result{Status: StatusFail, Detail: err.Error()}
 	}
 	var d net.Dialer
@@ -194,7 +197,7 @@ func runHTTP(ctx context.Context, p Probe) Result {
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return Result{Status: StatusFail, Detail: "url must be http(s)"}
 	}
-	if err := denyDestination(u.Hostname()); err != nil {
+	if err := denyDestination(ctx, u.Hostname()); err != nil {
 		return Result{Status: StatusFail, Detail: err.Error()}
 	}
 
@@ -210,7 +213,7 @@ func runHTTP(ctx context.Context, p Probe) Result {
 	}
 	c := &http.Client{Transport: tr, Timeout: p.Timeout}
 
-	req, err := http.NewRequestWithContext(ctx, method, p.Target, nil)
+	req, err := http.NewRequestWithContext(ctx, method, p.Target, http.NoBody)
 	if err != nil {
 		return Result{Status: StatusFail, Detail: err.Error()}
 	}
@@ -222,8 +225,10 @@ func runHTTP(ctx context.Context, p Probe) Result {
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 16<<10))
 
 	if resp.StatusCode != expected {
-		return Result{Status: StatusFail,
-			Detail: fmt.Sprintf("status %d (want %d)", resp.StatusCode, expected)}
+		return Result{
+			Status: StatusFail,
+			Detail: fmt.Sprintf("status %d (want %d)", resp.StatusCode, expected),
+		}
 	}
 	return Result{Status: StatusOK, Detail: fmt.Sprintf("status %d", resp.StatusCode)}
 }
@@ -241,7 +246,7 @@ func runCert(ctx context.Context, p Probe) Result {
 	if err != nil {
 		return Result{Status: StatusFail, Detail: "target must be host:port: " + err.Error()}
 	}
-	if err := denyDestination(host); err != nil {
+	if err := denyDestination(ctx, host); err != nil {
 		return Result{Status: StatusFail, Detail: err.Error()}
 	}
 	if serverName == "" {
@@ -325,7 +330,7 @@ func runMySQL(ctx context.Context, p Probe) Result {
 	if !strings.Contains(target, ":") {
 		target += ":3306"
 	}
-	if err := denyDestination(targetHost(target)); err != nil {
+	if err := denyDestination(ctx, targetHost(target)); err != nil {
 		return Result{Status: StatusFail, Detail: err.Error()}
 	}
 
@@ -381,7 +386,7 @@ func runMongoDB(ctx context.Context, p Probe) Result {
 	if !strings.Contains(target, ":") {
 		target += ":27017"
 	}
-	if err := denyDestination(targetHost(target)); err != nil {
+	if err := denyDestination(ctx, targetHost(target)); err != nil {
 		return Result{Status: StatusFail, Detail: err.Error()}
 	}
 
@@ -497,7 +502,7 @@ func indexOfBytes(haystack, needle []byte) int {
 	}
 	for i := 0; i+len(needle) <= len(haystack); i++ {
 		ok := true
-		for j := 0; j < len(needle); j++ {
+		for j := range len(needle) {
 			if haystack[i+j] != needle[j] {
 				ok = false
 				break

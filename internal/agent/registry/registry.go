@@ -178,8 +178,7 @@ func (c *Client) LatestDigest(ctx context.Context, imageRef string) (string, err
 	}
 	cacheKey := ref.cacheKey()
 	if v, ok := c.cache.Load(cacheKey); ok {
-		ce := v.(cacheEntry)
-		if time.Now().Before(ce.expiresAt) {
+		if ce, ok := v.(cacheEntry); ok && time.Now().Before(ce.expiresAt) {
 			return ce.digest, nil
 		}
 	}
@@ -292,7 +291,7 @@ func (c *Client) fetchDigest(ctx context.Context, ref imageRef) (string, error) 
 // WWW-Authenticate header (for challenge parsing), and any transport
 // error.
 func (c *Client) headManifest(ctx context.Context, manifestURL, bearer string) (string, int, string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodHead, manifestURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, manifestURL, http.NoBody)
 	if err != nil {
 		return "", 0, "", fmt.Errorf("registry: build head: %w", err)
 	}
@@ -346,7 +345,7 @@ func (c *Client) fetchToken(ctx context.Context, wwwAuth string, ref imageRef) (
 	q.Set("scope", scope)
 	u.RawQuery = q.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), http.NoBody)
 	if err != nil {
 		return "", fmt.Errorf("registry: build token request: %w", err)
 	}

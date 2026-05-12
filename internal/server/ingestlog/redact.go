@@ -15,7 +15,7 @@ import (
 //   - inventory.users[].shell      → "***"
 //   - inventory.users[].home       → "***"
 //   - logins[].source_ip           → IPv4: last octet masked (e.g. 192.168.1.0)
-//                                     IPv6: low 80 bits zeroed (best-effort)
+//     IPv6: low 80 bits zeroed (best-effort)
 //
 // inventory.users[].last_login_at is intentionally kept (timestamp, low value).
 func Redact(payload []byte) []byte {

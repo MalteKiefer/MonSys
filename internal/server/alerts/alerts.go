@@ -54,24 +54,24 @@ type Engine struct {
 	// tailing, inventory drift). Lost on restart by design — the first tick
 	// after boot simply rebuilds baseline state and the next change fires.
 	stateMu        sync.Mutex
-	containerState map[string]string             // host:external_id -> state
-	vmState        map[string]string             // host:external_id -> state
-	nicSpeed       map[string]int                // host:nic_name -> last speed_mbps
-	nicMembers     map[string]int                // host:nic_name -> last len(members)
-	fail2banSeen   map[string]map[string]bool    // host -> jail -> currently present
-	firewallActive map[string]bool               // host:engine -> active
-	firewallPolicy map[string]string             // host:engine -> default_input
-	firewallRules  map[string]int                // host:engine -> rule_count
-	hostUptime     map[uuid.UUID]int64           // host_id -> last uptime_sec
-	unexpReboot    map[uuid.UUID]time.Time       // host_id -> last fired_at (cooldown)
-	auditLastAt    map[uuid.UUID]time.Time       // rule_id -> last seen audit.at
-	invUsers       map[uuid.UUID]map[string]bool // host_id -> username set
-	invSudoers     map[uuid.UUID]map[string]bool // host_id -> sudoer username set
-	invDisks       map[uuid.UUID]map[string]bool // host_id -> mountpoint set
-	invNics        map[uuid.UUID]map[string]bool // host_id -> nic name set
+	containerState map[string]string               // host:external_id -> state
+	vmState        map[string]string               // host:external_id -> state
+	nicSpeed       map[string]int                  // host:nic_name -> last speed_mbps
+	nicMembers     map[string]int                  // host:nic_name -> last len(members)
+	fail2banSeen   map[string]map[string]bool      // host -> jail -> currently present
+	firewallActive map[string]bool                 // host:engine -> active
+	firewallPolicy map[string]string               // host:engine -> default_input
+	firewallRules  map[string]int                  // host:engine -> rule_count
+	hostUptime     map[uuid.UUID]int64             // host_id -> last uptime_sec
+	unexpReboot    map[uuid.UUID]time.Time         // host_id -> last fired_at (cooldown)
+	auditLastAt    map[uuid.UUID]time.Time         // rule_id -> last seen audit.at
+	invUsers       map[uuid.UUID]map[string]bool   // host_id -> username set
+	invSudoers     map[uuid.UUID]map[string]bool   // host_id -> sudoer username set
+	invDisks       map[uuid.UUID]map[string]bool   // host_id -> mountpoint set
+	invNics        map[uuid.UUID]map[string]bool   // host_id -> nic name set
 	invMacs        map[uuid.UUID]map[string]string // host_id -> nic name -> mac
-	invKernel      map[uuid.UUID]string          // host_id -> kernel
-	invDistro      map[uuid.UUID]string          // host_id -> distro
+	invKernel      map[uuid.UUID]string            // host_id -> kernel
+	invDistro      map[uuid.UUID]string            // host_id -> distro
 
 	// Bounded login-IP seen-set + per-(host,user) first-seen lookup.
 	// F-6: loginNewIPSeen had no upper bound and grew unbounded with the
@@ -80,9 +80,9 @@ type Engine struct {
 	// F-20: replace the O(n) prefix scan over loginNewIPSeen with a
 	// per-(host,user) first-seen-IP map for constant-time "have we ever
 	// seen any IP for this user on this host?" lookups.
-	loginNewIPSeen   map[string]bool   // host:username:source_ip -> previously seen
-	loginNewIPOrder  []string          // insertion order for FIFO eviction
-	loginUserSeen    map[string]string // host:username -> first source_ip we ever saw
+	loginNewIPSeen  map[string]bool   // host:username:source_ip -> previously seen
+	loginNewIPOrder []string          // insertion order for FIFO eviction
+	loginUserSeen   map[string]string // host:username -> first source_ip we ever saw
 
 	// F-17: fetchHostScope cache. Per-tick storms (one breach producing one
 	// query per host) used to do N round-trips for tags + group_id. Now
@@ -122,22 +122,22 @@ func New(pool *pgxpool.Pool, livenessOut <-chan liveness.Transition, monitorOut 
 		MonitorOut:       monitorOut,
 		PeriodicInterval: 60 * time.Second,
 
-		containerState: map[string]string{},
-		vmState:        map[string]string{},
-		nicSpeed:       map[string]int{},
-		nicMembers:     map[string]int{},
-		fail2banSeen:   map[string]map[string]bool{},
-		firewallActive: map[string]bool{},
-		firewallPolicy: map[string]string{},
-		firewallRules:  map[string]int{},
-		hostUptime:     map[uuid.UUID]int64{},
-		unexpReboot:    map[uuid.UUID]time.Time{},
-		auditLastAt:    map[uuid.UUID]time.Time{},
-		invUsers:       map[uuid.UUID]map[string]bool{},
-		invSudoers:     map[uuid.UUID]map[string]bool{},
-		invDisks:       map[uuid.UUID]map[string]bool{},
-		invNics:        map[uuid.UUID]map[string]bool{},
-		invMacs:        map[uuid.UUID]map[string]string{},
+		containerState:  map[string]string{},
+		vmState:         map[string]string{},
+		nicSpeed:        map[string]int{},
+		nicMembers:      map[string]int{},
+		fail2banSeen:    map[string]map[string]bool{},
+		firewallActive:  map[string]bool{},
+		firewallPolicy:  map[string]string{},
+		firewallRules:   map[string]int{},
+		hostUptime:      map[uuid.UUID]int64{},
+		unexpReboot:     map[uuid.UUID]time.Time{},
+		auditLastAt:     map[uuid.UUID]time.Time{},
+		invUsers:        map[uuid.UUID]map[string]bool{},
+		invSudoers:      map[uuid.UUID]map[string]bool{},
+		invDisks:        map[uuid.UUID]map[string]bool{},
+		invNics:         map[uuid.UUID]map[string]bool{},
+		invMacs:         map[uuid.UUID]map[string]string{},
 		invKernel:       map[uuid.UUID]string{},
 		invDistro:       map[uuid.UUID]string{},
 		loginNewIPSeen:  map[string]bool{},
@@ -1260,12 +1260,12 @@ func truncate(s string, max int) string {
 //
 // All queries follow the same skeleton:
 //
-//   SELECT host_id [, partition_key, max(time)]
-//   FROM <hypertable>
-//   WHERE time > now() - make_interval(secs => $1)
-//   GROUP BY host_id [, partition_key]
-//   HAVING bool_and(<metric_expr> <op> $2)
-//      AND count(*) >= 2
+//	SELECT host_id [, partition_key, max(time)]
+//	FROM <hypertable>
+//	WHERE time > now() - make_interval(secs => $1)
+//	GROUP BY host_id [, partition_key]
+//	HAVING bool_and(<metric_expr> <op> $2)
+//	   AND count(*) >= 2
 //
 // We bind windowSec (or forSec when sustained-for is shorter than window)
 // as $1 and the threshold as $2. bool_and() returns TRUE only when every
@@ -1902,10 +1902,10 @@ func (e *Engine) evalUnexpectedReboot(ctx context.Context) {
 	}
 	defer rows.Close()
 	type hit struct {
-		hostID  uuid.UUID
-		newUp   int64
-		oldUp   int64
-		at      time.Time
+		hostID uuid.UUID
+		newUp  int64
+		oldUp  int64
+		at     time.Time
 	}
 	var hits []hit
 	for rows.Next() {
@@ -2010,9 +2010,9 @@ func (e *Engine) evalContainerStateChange(ctx context.Context) {
 	}
 	defer rows.Close()
 	type cs struct {
-		hostID            uuid.UUID
-		externalID, name  string
-		image, state      string
+		hostID           uuid.UUID
+		externalID, name string
+		image, state     string
 	}
 	var snapshot []cs
 	for rows.Next() {
@@ -2071,10 +2071,10 @@ func (e *Engine) evalVMStateChange(ctx context.Context) {
 	}
 	defer rows.Close()
 	type vs struct {
-		hostID                  uuid.UUID
-		externalID, name, kind  string
-		state                   string
-		autostart               bool
+		hostID                 uuid.UUID
+		externalID, name, kind string
+		state                  string
+		autostart              bool
 	}
 	var snapshot []vs
 	for rows.Next() {
@@ -2967,15 +2967,15 @@ func (e *Engine) loginAnomalySudo(ctx context.Context, r ruleRow, windowSec, thr
 //
 // F-3 (audit_action regex DoS — defence in depth):
 //
-//   1. Patterns are length-capped (256) and Go-regexp validated at rule write
-//      time in store.validateAuditActionParams, so catastrophic-backtracking
-//      constructs are rejected before they reach the DB.
+//  1. Patterns are length-capped (256) and Go-regexp validated at rule write
+//     time in store.validateAuditActionParams, so catastrophic-backtracking
+//     constructs are rejected before they reach the DB.
 //
-//   2. We additionally bind the audit query to a 2-second per-statement
-//      timeout via SET LOCAL statement_timeout inside a transaction. If a
-//      pattern that slipped past validation (e.g. the rule predates this
-//      hardening) pins the Postgres POSIX regex engine, the backend frees
-//      itself after 2 s instead of staying wedged.
+//  2. We additionally bind the audit query to a 2-second per-statement
+//     timeout via SET LOCAL statement_timeout inside a transaction. If a
+//     pattern that slipped past validation (e.g. the rule predates this
+//     hardening) pins the Postgres POSIX regex engine, the backend frees
+//     itself after 2 s instead of staying wedged.
 //
 // F-13 (audit action filter — safe by construction): `action = ANY($N)`
 // with a []string parameter is parameterised through pgx — no concatenation,
@@ -3024,7 +3024,7 @@ func (e *Engine) evalAuditAction(ctx context.Context) {
 		// so a slipped pathological regex can't pin a backend. tx is
 		// read-only by construction (single SELECT) — rolled back at end
 		// of scope.
-		var maxAt time.Time = cursor
+		maxAt := cursor
 		func() {
 			tx, terr := e.Pool.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
 			if terr != nil {

@@ -24,7 +24,7 @@ const (
 )
 
 var (
-	ErrTokenInvalid   = errors.New("bootstrap token invalid or expired")
+	ErrTokenInvalid    = errors.New("bootstrap token invalid or expired")
 	ErrAgentKeyInvalid = errors.New("agent key invalid or revoked")
 )
 
@@ -95,8 +95,8 @@ func (s *Store) RegisterAgent(ctx context.Context, token string, req apitypes.Ag
 
 	// 1) Validate token: not used and not expired.
 	var (
-		tokenID  uuid.UUID
-		usedAt   *time.Time
+		tokenID uuid.UUID
+		usedAt  *time.Time
 	)
 	err = tx.QueryRow(ctx,
 		`SELECT id, used_at FROM agent_tokens WHERE token_hash = $1 AND expires_at > now()`,

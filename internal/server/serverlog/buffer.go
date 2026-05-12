@@ -17,7 +17,7 @@ import (
 // a jsonb-style object to the client.
 type Entry struct {
 	Time  time.Time      `json:"time"`
-	Level string         `json:"level"`  // DEBUG | INFO | WARN | ERROR
+	Level string         `json:"level"` // DEBUG | INFO | WARN | ERROR
 	Msg   string         `json:"msg"`
 	Attrs map[string]any `json:"attrs,omitempty"`
 }
@@ -55,11 +55,11 @@ func (b *Buffer) append(e Entry) {
 // Filter narrows a snapshot. Empty fields are no-ops; case-insensitive
 // substring on Msg + any string-typed Attr.
 type Filter struct {
-	Since   time.Time
-	Until   time.Time
+	Since    time.Time
+	Until    time.Time
 	MinLevel slog.Level
-	Q       string
-	HostID  string
+	Q        string
+	HostID   string
 }
 
 // Snapshot copies entries matching f, newest first. The full ring is locked
@@ -78,7 +78,7 @@ func (b *Buffer) Snapshot(f Filter) (entries []Entry, totalSeq uint64) {
 	q := strings.ToLower(strings.TrimSpace(f.Q))
 
 	// Walk newest → oldest. Newest entry sits at idx-1.
-	for i := 0; i < count; i++ {
+	for i := range count {
 		pos := (b.idx - 1 - i + b.size) % b.size
 		e := b.entries[pos]
 		if !f.Since.IsZero() && e.Time.Before(f.Since) {

@@ -81,9 +81,7 @@ func bridgeBondTopology(name string) (members []string, master string) {
 	// Bond: slaves are space-separated in bonding/slaves.
 	if len(members) == 0 {
 		if data, err := os.ReadFile(filepath.Join(base, "bonding", "slaves")); err == nil {
-			for _, f := range strings.Fields(string(data)) {
-				members = append(members, f)
-			}
+			members = append(members, strings.Fields(string(data))...)
 		}
 	}
 

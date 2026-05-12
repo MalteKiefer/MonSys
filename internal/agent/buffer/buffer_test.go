@@ -14,7 +14,7 @@ func TestSpoolAppendAndDrain(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if err := s.Append(map[string]int{"i": i}); err != nil {
 			t.Fatal(err)
 		}
@@ -50,7 +50,7 @@ func TestSpoolAppendAndDrain(t *testing.T) {
 func TestSpoolDrainStopsOnError(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := New(dir, 1<<20)
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		_ = s.Append(map[string]int{"i": i})
 	}
 	called := 0
@@ -75,7 +75,7 @@ func TestSpoolQuotaEvictsOldest(t *testing.T) {
 	dir := t.TempDir()
 	// Quota = 200 bytes; each payload ~ 30 bytes.
 	s, _ := New(dir, 200)
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		_ = s.Append(map[string]string{"x": strings.Repeat("a", 20)})
 	}
 	if got := s.Len(); got >= 50 {

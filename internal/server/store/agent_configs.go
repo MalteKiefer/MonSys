@@ -13,9 +13,7 @@ import (
 	"github.com/MalteKiefer/MonSys/internal/shared/apitypes"
 )
 
-var (
-	ErrAgentConfigNotFound = errors.New("agent config not found")
-)
+var ErrAgentConfigNotFound = errors.New("agent config not found")
 
 // ListAgentConfigs returns every config row, joined with target name when
 // the scope is group or host so the UI can render meaningful labels.

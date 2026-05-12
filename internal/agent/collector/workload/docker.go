@@ -139,7 +139,7 @@ func (d *Docker) Name() string { return "docker" }
 func (d *Docker) Available(ctx context.Context) bool {
 	ctx, cancel := context.WithTimeout(ctx, pingTimeout)
 	defer cancel()
-	req, err := d.req(ctx, "GET", "/_ping", nil)
+	req, err := d.req(ctx, "/_ping", nil)
 	if err != nil {
 		return false
 	}
@@ -346,7 +346,7 @@ func (d *Docker) probeOne(ctx context.Context, c dockerContainer) updateProbe {
 // the one that actually compares apples-to-apples with the registry's
 // Docker-Content-Digest header.
 func (d *Docker) imageDigestForContainer(ctx context.Context, containerID string) (string, error) {
-	req, err := d.req(ctx, "GET", "/containers/"+containerID+"/json", nil)
+	req, err := d.req(ctx, "/containers/"+containerID+"/json", nil)
 	if err != nil {
 		return "", err
 	}
@@ -390,10 +390,10 @@ func newHTTPClient(endpoint string) *http.Client {
 	return &http.Client{Transport: tr, Timeout: httpClientTimeout}
 }
 
-// req builds an HTTP request bound to the configured endpoint. For unix
+// req builds a GET request bound to the configured endpoint. For unix
 // sockets the host is irrelevant; "docker" is a stable placeholder Go's
 // URL parser will accept.
-func (d *Docker) req(ctx context.Context, method, path string, q url.Values) (*http.Request, error) {
+func (d *Docker) req(ctx context.Context, path string, q url.Values) (*http.Request, error) {
 	host := "docker"
 	if strings.HasPrefix(d.endpoint, "tcp://") {
 		host = strings.TrimPrefix(d.endpoint, "tcp://")
@@ -402,7 +402,7 @@ func (d *Docker) req(ctx context.Context, method, path string, q url.Values) (*h
 	if q != nil {
 		u.RawQuery = q.Encode()
 	}
-	return http.NewRequestWithContext(ctx, method, u.String(), nil)
+	return http.NewRequestWithContext(ctx, http.MethodGet, u.String(), http.NoBody)
 }
 
 // dockerContainer is the subset of /containers/json we consume. Other fields
@@ -421,7 +421,7 @@ type dockerContainer struct {
 func (d *Docker) listContainers(ctx context.Context) ([]dockerContainer, error) {
 	q := url.Values{}
 	q.Set("all", "true")
-	req, err := d.req(ctx, "GET", "/containers/json", q)
+	req, err := d.req(ctx, "/containers/json", q)
 	if err != nil {
 		return nil, err
 	}
@@ -485,7 +485,7 @@ type blkioEntry struct {
 func (d *Docker) containerStats(ctx context.Context, id string) (*dockerStats, error) {
 	q := url.Values{}
 	q.Set("stream", "false")
-	req, err := d.req(ctx, "GET", "/containers/"+id+"/stats", q)
+	req, err := d.req(ctx, "/containers/"+id+"/stats", q)
 	if err != nil {
 		return nil, err
 	}

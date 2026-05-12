@@ -48,7 +48,7 @@ func validateAuditActionParams(params map[string]any) error {
 			return fmt.Errorf("%s exceeds %d-character limit", key, auditActionPatternMaxLen)
 		}
 		if _, err := regexp.Compile(pat); err != nil {
-			return fmt.Errorf("%s is not a valid regex: %v", key, err)
+			return fmt.Errorf("%s is not a valid regex: %w", key, err)
 		}
 	}
 	return nil
@@ -462,7 +462,7 @@ func (s *Store) CreateRuleGroup(ctx context.Context, in apitypes.NotificationRul
 		}
 		if c.ConditionType == apitypes.ConditionAuditAction {
 			if err := validateAuditActionParams(c.ConditionParams); err != nil {
-				return apitypes.NotificationRuleGroupResponse{}, fmt.Errorf("condition %d: %v", i, err)
+				return apitypes.NotificationRuleGroupResponse{}, fmt.Errorf("condition %d: %w", i, err)
 			}
 		}
 		rowName := rowNames[i]

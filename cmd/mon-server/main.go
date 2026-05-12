@@ -29,15 +29,15 @@ import (
 
 func main() {
 	var (
-		showVersion       = flag.Bool("version", false, "print version and exit")
-		printSpec         = flag.Bool("print-spec", false, "print the OpenAPI spec (YAML) to stdout and exit")
-		dumpOpenAPI       = flag.String("dump-openapi", "", "write OpenAPI spec to this path (YAML by extension or JSON) and exit")
-		newToken          = flag.Bool("new-token", false, "issue a new bootstrap token, print it, and exit")
-		newTokenDesc      = flag.String("token-description", "", "description for the new bootstrap token")
-		newTokenTTLString = flag.String("token-ttl", "24h", "lifetime of the new bootstrap token")
-		createUser        = flag.Bool("create-user", false, "create a web user (interactive password unless --password is given) and exit")
-		createUserEmail   = flag.String("user-email", "", "email for --create-user")
-		createUserRole    = flag.String("user-role", "user", "role for --create-user (admin|user)")
+		showVersion        = flag.Bool("version", false, "print version and exit")
+		printSpec          = flag.Bool("print-spec", false, "print the OpenAPI spec (YAML) to stdout and exit")
+		dumpOpenAPI        = flag.String("dump-openapi", "", "write OpenAPI spec to this path (YAML by extension or JSON) and exit")
+		newToken           = flag.Bool("new-token", false, "issue a new bootstrap token, print it, and exit")
+		newTokenDesc       = flag.String("token-description", "", "description for the new bootstrap token")
+		newTokenTTLString  = flag.String("token-ttl", "24h", "lifetime of the new bootstrap token")
+		createUser         = flag.Bool("create-user", false, "create a web user (interactive password unless --password is given) and exit")
+		createUserEmail    = flag.String("user-email", "", "email for --create-user")
+		createUserRole     = flag.String("user-role", "user", "role for --create-user (admin|user)")
 		createUserPassword = flag.String("user-password", "", "password for --create-user; if empty, read from stdin")
 		resetPassword      = flag.Bool("reset-password", false, "reset a user's password (use --user-email + --user-password) and exit")
 		// audit 2026-05-12 F-17: bypass the configured password policy on
@@ -524,7 +524,7 @@ func readLine(r *os.File) (string, error) {
 	for {
 		n, err := r.Read(buf)
 		if n > 0 {
-			for i := 0; i < n; i++ {
+			for i := range n {
 				if buf[i] == '\n' {
 					out = append(out, buf[:i]...)
 					return string(out), nil
