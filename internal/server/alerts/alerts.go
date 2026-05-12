@@ -28,6 +28,13 @@ import (
 	"github.com/MalteKiefer/MonSys/internal/server/probe"
 )
 
+// OnAlertFired is an optional metric-emission hook called from fire()
+// after the dedup/quiet-hours filters let an alert through. The api
+// package wires it at init time (see internal/server/api/metrics.go)
+// to feed mon_alerts_fired_total without dragging the api package into
+// our import graph. Nil-safe: every call sites guards before invoking.
+var OnAlertFired func(conditionType, severity string)
+
 // Engine ties inputs to rule evaluation. It is constructed once at server
 // start; Run(ctx) is the single goroutine that drives everything.
 type Engine struct {
@@ -495,6 +502,15 @@ func (e *Engine) fire(ctx context.Context, r ruleRow, subject, body, dedup strin
 	severity := r.Severity
 	if severity == "" {
 		severity = "warning"
+	}
+
+	// Observability: counter for every fire that made it past the
+	// throttle/recently-fired filter. We count quiet-hour-suppressed
+	// alerts too because the operator still benefits from knowing the
+	// rule tripped — the channel-delivery cardinality is captured via
+	// the alert_history table.
+	if OnAlertFired != nil {
+		OnAlertFired(r.ConditionType, severity)
 	}
 
 	// Quiet-hour gate. We still write an alert_history row so the audit trail
@@ -1000,6 +1016,7 @@ func (e *Engine) recentlyFired(ctx context.Context, dedup string, within time.Du
 type ruleRow struct {
 	ID                uuid.UUID
 	Name              string
+	ConditionType     string
 	ConditionParams   map[string]any
 	ChannelIDs        []string
 	Severity          string
@@ -1062,6 +1079,9 @@ func (e *Engine) loadRules(ctx context.Context, conditionType string) ([]ruleRow
 			&r.TargetHostIDs, &r.TargetTags, &r.TargetGroupIDs); err != nil {
 			return nil, err
 		}
+		// We already filtered by condition_type in the SELECT, so just
+		// stash the caller's argument so fire() can label its metric.
+		r.ConditionType = conditionType
 		r.ConditionParams = map[string]any{}
 		if len(paramsRaw) > 0 {
 			if err := json.Unmarshal(paramsRaw, &r.ConditionParams); err != nil {

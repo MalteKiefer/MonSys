@@ -23,6 +23,7 @@ import (
 	"github.com/MalteKiefer/MonSys/internal/server/probe"
 	"github.com/MalteKiefer/MonSys/internal/server/serverlog"
 	"github.com/MalteKiefer/MonSys/internal/server/store"
+	"github.com/MalteKiefer/MonSys/internal/server/telemetry"
 	"github.com/MalteKiefer/MonSys/internal/server/webauthn"
 	"github.com/MalteKiefer/MonSys/internal/shared/version"
 )
@@ -85,6 +86,32 @@ func main() {
 	dsn := envOr("MON_DSN", "")
 	tlsCert := os.Getenv("MON_TLS_CERT")
 	tlsKey := os.Getenv("MON_TLS_KEY")
+
+	// OpenTelemetry bootstrap. Default-off: with MON_OTLP_ENDPOINT empty,
+	// Init installs no-op providers so the server starts cleanly in dev
+	// without an OTLP collector. When set (e.g. otel-collector:4317), spans
+	// and metrics flow out via OTLP/gRPC. The /metrics endpoint is wired
+	// inside the API and is independent of this knob — admins can scrape
+	// Prometheus even without OTLP export configured.
+	otlpCtx, otlpCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer otlpCancel()
+	telShutdown, err := telemetry.Init(otlpCtx, telemetry.Config{
+		OTLPEndpoint:   os.Getenv("MON_OTLP_ENDPOINT"),
+		ServiceName:    "mon-server",
+		ServiceVersion: version.Version,
+		Environment:    envOr("MON_ENV", "production"),
+	})
+	if err != nil {
+		slog.Error("telemetry init", "err", err)
+		os.Exit(1)
+	}
+	defer func() {
+		sCtx, sCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer sCancel()
+		if err := telShutdown(sCtx); err != nil {
+			slog.Warn("telemetry shutdown", "err", err)
+		}
+	}()
 
 	// --- OpenAPI dump shortcut: skip DB; build a stub server with nil store. ---
 	if *printSpec {

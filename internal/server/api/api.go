@@ -21,6 +21,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/httprate"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/MalteKiefer/MonSys/internal/server/agentupdate"
 	"github.com/MalteKiefer/MonSys/internal/server/alerts"
@@ -29,6 +30,7 @@ import (
 	"github.com/MalteKiefer/MonSys/internal/server/serverlog"
 	"github.com/MalteKiefer/MonSys/internal/server/spa"
 	"github.com/MalteKiefer/MonSys/internal/server/store"
+	"github.com/MalteKiefer/MonSys/internal/server/telemetry"
 	"github.com/MalteKiefer/MonSys/internal/shared/apitypes"
 	"github.com/MalteKiefer/MonSys/internal/shared/version"
 )
@@ -326,7 +328,21 @@ func (s *Server) currentUserWithSecurity(ctx context.Context, u store.User) apit
 	return out
 }
 
-func (s *Server) Handler() http.Handler { return s.Router }
+// Handler returns the public HTTP handler with OTel HTTP instrumentation
+// wrapped around the chi router. otelhttp must wrap AFTER all middleware
+// has been installed on the router (Use() before route registration is
+// chi's contract), so we wrap once here at serve time. Each request gets
+// a server span with http.method, http.route, http.status_code, plus the
+// usual otelhttp trace/parent linking.
+func (s *Server) Handler() http.Handler {
+	return otelhttp.NewHandler(s.Router, "mon-server",
+		// span name is server-side; format as "GET /v1/hosts" rather than
+		// the raw path, which is noisier in the trace viewer.
+		otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
+			return r.Method + " " + r.URL.Path
+		}),
+	)
+}
 
 func (s *Server) registerRoutes() {
 	// Middleware bundles. See per-stack docs at first use below.
@@ -360,7 +376,8 @@ func (s *Server) registerRoutes() {
 	s.Router.Handle("/*", spa.Handler())
 }
 
-// registerHealthRoutes wires the unauthenticated liveness/readiness probes.
+// registerHealthRoutes wires the unauthenticated liveness/readiness probes
+// plus the admin-gated Prometheus scrape endpoint.
 func (s *Server) registerHealthRoutes() {
 	s.Router.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -380,6 +397,44 @@ func (s *Server) registerHealthRoutes() {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ready\n"))
 	})
+
+	// /metrics — Prometheus scrape endpoint. Admin-gated because the
+	// runtime metrics (go_goroutines, process_resident_memory_bytes, ...)
+	// plus our domain metrics (mon_login_failures_total{reason},
+	// mon_ingest_requests_total{host_id}) are operationally sensitive.
+	// Scrape from inside the network with a session bearer token belonging
+	// to an admin user. AUDIT-066-style: never publicly exposed.
+	s.Router.Get("/metrics", s.requireAdminBearer(telemetry.PromHandler()))
+}
+
+// requireAdminBearer is a chi-style auth gate for the /metrics endpoint.
+// It mirrors the huma-side requireAdmin/requireUser pipeline but lives on
+// the raw chi router because /metrics is not registered through humachi.
+// Missing/invalid bearer -> 404 (matches requireSessionForDocs so we
+// don't leak the endpoint's existence to unauth callers); valid session
+// but non-admin -> 403.
+func (s *Server) requireAdminBearer(next http.Handler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.Store == nil {
+			http.NotFound(w, r)
+			return
+		}
+		tok, ok := bearer(r.Header.Get("Authorization"))
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		u, err := s.Store.ValidateSession(r.Context(), tok)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		if u.Role != "admin" {
+			http.Error(w, "admin role required", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	}
 }
 
 // registerAgentLifecycleRoutes wires agent registration, ingest, and self-update
@@ -1429,6 +1484,11 @@ func (s *Server) handleIngest(ctx context.Context, in *ingestInput) (*ingestOutp
 			"snapshot_at", b.SnapshotAt)
 		return nil, internalErr(ctx, "ingest persist failed", err)
 	}
+
+	// Observability: count accepted ingests per host so operators can see
+	// who's pushing what frequency. Recorded after the successful persist
+	// so we don't double-count retried failures.
+	MetricIngestAccepted(hostID.String())
 
 	// Stash the canonical re-marshal in the ingest ring so admins can see
 	// exactly what the agent uploaded. Re-encoding is fine — the parsed

@@ -38,6 +38,20 @@ var (
 	ErrUserLockedOut = errors.New("account temporarily locked")
 )
 
+// OnSessionIssued and OnLoginFailure are metric-emission hooks wired by
+// the api package at init time. Nil-safe; we guard before invoking. We
+// keep them in the store layer (rather than at every call site in api)
+// so AuthenticateUser and IssueSession can be instrumented without the
+// api package having to know about every error branch.
+//
+// OnLoginFailure receives a coarse "reason" label drawn from a bounded
+// enum {not_found, bad_password, locked_out, disabled, error} — see
+// the comments on AuthenticateUser for the precise mapping.
+var (
+	OnSessionIssued func()
+	OnLoginFailure  func(reason string)
+)
+
 // FailedLoginAttempts is an in-memory tracker for AUDIT-013. Keyed by
 // case-folded email so an attacker cannot toggle the lockout off by varying
 // case. Persisted to DB is intentionally out of scope for this commit; the
@@ -292,6 +306,9 @@ func (s *Store) AuthenticateUser(ctx context.Context, email, password string) (U
 			_ = bcrypt.CompareHashAndPassword(
 				[]byte("$2a$12$DTH4XIQv0vP3AEIp0OPvO.8uDCCO7EM77NMwgVDkdcL3lKkNn7w8a"),
 				[]byte(password))
+			if OnLoginFailure != nil {
+				OnLoginFailure("locked_out")
+			}
 			return User{}, ErrUserLockedOut
 		}
 	}
@@ -318,17 +335,29 @@ func (s *Store) AuthenticateUser(ctx context.Context, email, password string) (U
 		// Count the attempt against the supplied email so an attacker
 		// guessing a valid user's address cannot hide behind unknown ones.
 		s.failedLogins().RecordFailedLogin(email)
+		if OnLoginFailure != nil {
+			OnLoginFailure("not_found")
+		}
 		return User{}, ErrUserNotFound
 	}
 	if err != nil {
+		if OnLoginFailure != nil {
+			OnLoginFailure("error")
+		}
 		return User{}, fmt.Errorf("user lookup: %w", err)
 	}
 	if disabledAt != nil {
 		u.Disabled = true
+		if OnLoginFailure != nil {
+			OnLoginFailure("disabled")
+		}
 		return u, ErrUserDisabled
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(password)); err != nil {
 		s.failedLogins().RecordFailedLogin(email)
+		if OnLoginFailure != nil {
+			OnLoginFailure("bad_password")
+		}
 		return User{}, ErrPasswordMismatch
 	}
 	s.failedLogins().ClearFailedLogins(email)
@@ -702,6 +731,10 @@ func (s *Store) IssueSession(ctx context.Context, u User, userAgent, remoteIP st
 		map[string]any{"ttl_hours": int(ttl / time.Hour), "user_agent": userAgent, "remote_ip": remoteIP},
 	); aerr != nil {
 		slog.Warn("audit_log insert (session.issued)", "err", aerr)
+	}
+
+	if OnSessionIssued != nil {
+		OnSessionIssued()
 	}
 
 	return plaintext, nil

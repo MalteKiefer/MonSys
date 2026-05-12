@@ -131,6 +131,16 @@ gunzip -c backup-XXX.sql.gz | docker compose exec -T timescaledb \
   psql -U mon -d mon -v ON_ERROR_STOP=1
 ```
 
+Migration round-trip tests run on every CI build against TimescaleDB
+`latest-pg16` (same digest as `deploy/docker-compose.yaml`). Trust but
+verify after every migration change with `make test-migrations` — it
+exercises Up -> Down -> Up plus a per-migration Down-from-mid check
+inside a real container, and is the cheapest way to catch a Down
+statement that drops too much before it hits production. Migrations
+flagged in `internal/server/store/migrations_test.go::knownUnreversible`
+are exercised but skip the byte-identical schema comparison; the file
+documents each entry.
+
 ### Open a `psql` shell
 
 ```sh
