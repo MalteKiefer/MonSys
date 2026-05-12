@@ -1,4 +1,5 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { KeyRound, Pencil, Trash2 } from "lucide-react";
 import { ChangeEvent, FormEvent, ReactNode, useState } from "react";
 
 import {
@@ -14,7 +15,8 @@ import {
 } from "../components/ui";
 import { api, ApiError } from "../lib/api";
 import { DensityProvider, useDensityStore, type Density } from "../lib/density-store";
-import { CurrentUser, TOTPSetup } from "../lib/types";
+import { CurrentUser, ListPasskeysResponse, Passkey, TOTPSetup } from "../lib/types";
+import { registerPasskey, supported as webauthnSupported } from "../lib/webauthn";
 
 type Msg = { kind: "ok" | "err"; text: string } | null;
 
@@ -53,6 +55,7 @@ export function Profile() {
       <ChangeEmailCard onSuccess={() => qc.invalidateQueries({ queryKey: ["me"] })} />
       <ChangePasswordCard />
       <TwoFactorCard active={user.totp_active} onSuccess={() => qc.invalidateQueries({ queryKey: ["me"] })} />
+      <PasskeysCard />
       <DisplayCard />
     </div>
   );
@@ -324,6 +327,241 @@ function TwoFactorCard({ active, onSuccess }: { active: boolean; onSuccess: () =
         </div>
       )}
     </ProfilePanel>
+  );
+}
+
+function PasskeysCard() {
+  const qc = useQueryClient();
+  const [name, setName] = useState("");
+  const [msg, setMsg] = useState<Msg>(null);
+
+  const passkeys = useQuery({
+    queryKey: ["passkeys"],
+    queryFn: () => api<ListPasskeysResponse>("/v1/auth/me/passkeys"),
+    enabled: webauthnSupported(),
+  });
+
+  const addPasskey = useMutation({
+    mutationFn: async (n: string) => registerPasskey(n),
+    onSuccess: () => {
+      setName("");
+      setMsg({ kind: "ok", text: "Passkey hinzugefügt." });
+      qc.invalidateQueries({ queryKey: ["passkeys"] });
+      qc.invalidateQueries({ queryKey: ["me"] });
+    },
+    onError: (err) => {
+      setMsg({ kind: "err", text: err instanceof ApiError ? err.detail : (err as Error).message });
+    },
+  });
+
+  const renamePasskey = useMutation({
+    mutationFn: ({ id, name: n }: { id: string; name: string }) =>
+      api<{ ok: boolean }>(`/v1/auth/me/passkeys/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ name: n }),
+      }),
+    onSuccess: () => {
+      setMsg(null);
+      qc.invalidateQueries({ queryKey: ["passkeys"] });
+    },
+    onError: (err) => {
+      setMsg({ kind: "err", text: err instanceof ApiError ? err.detail : (err as Error).message });
+    },
+  });
+
+  const deletePasskey = useMutation({
+    mutationFn: (id: string) =>
+      api<{ ok: boolean }>(`/v1/auth/me/passkeys/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      setMsg(null);
+      qc.invalidateQueries({ queryKey: ["passkeys"] });
+      qc.invalidateQueries({ queryKey: ["me"] });
+    },
+    onError: (err) => {
+      setMsg({ kind: "err", text: err instanceof ApiError ? err.detail : (err as Error).message });
+    },
+  });
+
+  async function submitAdd(e: FormEvent) {
+    e.preventDefault();
+    setMsg(null);
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setMsg({ kind: "err", text: "Bitte einen Namen vergeben." });
+      return;
+    }
+    addPasskey.mutate(trimmed);
+  }
+
+  if (!webauthnSupported()) {
+    return (
+      <ProfilePanel title="Passkeys">
+        <div className="space-y-2">
+          <p className="text-sm text-fg-muted">
+            Sicherer und schneller Login ohne Passwort. Browser oder Hardware-Key.
+          </p>
+          <p className="text-sm text-fg-subtle">Dein Browser unterstützt keine Passkeys.</p>
+        </div>
+      </ProfilePanel>
+    );
+  }
+
+  const list = passkeys.data?.passkeys ?? [];
+
+  return (
+    <ProfilePanel title="Passkeys">
+      <div className="space-y-4">
+        <p className="text-sm text-fg-muted">
+          Sicherer und schneller Login ohne Passwort. Browser oder Hardware-Key.
+        </p>
+
+        <form onSubmit={submitAdd} className="flex flex-wrap items-end gap-2">
+          <div className="flex-1 min-w-[12rem]">
+            <Field label="Passkey-Name">
+              <TextInput
+                type="text"
+                placeholder="z.B. Laptop, YubiKey 5C"
+                value={name}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => setName(e.target.value)}
+                disabled={addPasskey.isPending}
+              />
+            </Field>
+          </div>
+          <Button type="submit" variant="primary" disabled={addPasskey.isPending}>
+            <KeyRound className="h-3.5 w-3.5" />
+            {addPasskey.isPending ? "Registriere…" : "Passkey hinzufügen"}
+          </Button>
+        </form>
+
+        {msg && <Message msg={msg} />}
+
+        {passkeys.isLoading ? (
+          <Skeleton className="h-16" />
+        ) : passkeys.error ? (
+          <ErrorBox>{(passkeys.error as Error).message}</ErrorBox>
+        ) : list.length === 0 ? (
+          <p className="text-sm text-fg-subtle">Noch keine Passkeys registriert.</p>
+        ) : (
+          <ul className="divide-y divide-border rounded border border-border bg-bg">
+            {list.map((pk) => (
+              <PasskeyRow
+                key={pk.id}
+                passkey={pk}
+                onRename={(newName) => renamePasskey.mutate({ id: pk.id, name: newName })}
+                onDelete={() => deletePasskey.mutate(pk.id)}
+                renaming={renamePasskey.isPending}
+                deleting={deletePasskey.isPending}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
+    </ProfilePanel>
+  );
+}
+
+function PasskeyRow({
+  passkey,
+  onRename,
+  onDelete,
+  renaming,
+  deleting,
+}: {
+  passkey: Passkey;
+  onRename: (name: string) => void;
+  onDelete: () => void;
+  renaming: boolean;
+  deleting: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(passkey.name);
+
+  function saveName(e: FormEvent) {
+    e.preventDefault();
+    const trimmed = draft.trim();
+    if (!trimmed || trimmed === passkey.name) {
+      setEditing(false);
+      setDraft(passkey.name);
+      return;
+    }
+    onRename(trimmed);
+    setEditing(false);
+  }
+
+  function confirmDelete() {
+    if (window.confirm(`Passkey "${passkey.name}" wirklich löschen?`)) {
+      onDelete();
+    }
+  }
+
+  const lastUsed = passkey.last_used_at
+    ? new Date(passkey.last_used_at).toLocaleString()
+    : "—";
+
+  return (
+    <li className="flex flex-wrap items-center gap-3 px-3 py-2 text-sm">
+      <div className="flex flex-1 min-w-[12rem] items-center gap-2">
+        <KeyRound className="h-4 w-4 text-fg-subtle" aria-hidden />
+        {editing ? (
+          <form onSubmit={saveName} className="flex flex-1 items-center gap-2">
+            <TextInput
+              type="text"
+              autoFocus
+              value={draft}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => setDraft(e.target.value)}
+              disabled={renaming}
+              className="flex-1"
+            />
+            <Button type="submit" variant="primary" disabled={renaming}>
+              {renaming ? "…" : "Save"}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setEditing(false);
+                setDraft(passkey.name);
+              }}
+              disabled={renaming}
+            >
+              Cancel
+            </Button>
+          </form>
+        ) : (
+          <>
+            <span className="font-medium text-fg">{passkey.name}</span>
+            {passkey.aaguid && (
+              <span className="font-mono text-xs text-fg-subtle">{passkey.aaguid.slice(0, 8)}</span>
+            )}
+          </>
+        )}
+      </div>
+      {!editing && (
+        <>
+          <span className="text-xs text-fg-muted">Last used: {lastUsed}</span>
+          <div className="flex items-center gap-1">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setEditing(true)}
+              disabled={renaming || deleting}
+              aria-label="Rename passkey"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              type="button"
+              variant="danger"
+              onClick={confirmDelete}
+              disabled={renaming || deleting}
+              aria-label="Delete passkey"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </>
+      )}
+    </li>
   );
 }
 

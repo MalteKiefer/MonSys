@@ -1,11 +1,16 @@
-import { Activity, KeyRound } from "lucide-react";
-import { FormEvent, useState } from "react";
+import { Activity, Fingerprint, KeyRound } from "lucide-react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { Button, ErrorBox, Field, Panel, TextInput } from "../components/ui";
 import { api, ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { LoginResponse } from "../lib/types";
+import {
+  conditionalAutofill,
+  loginWithPasskey,
+  supported as webauthnSupported,
+} from "../lib/webauthn";
 
 type Stage = { kind: "password" } | { kind: "totp"; challengeToken: string };
 
@@ -19,6 +24,26 @@ export function Login() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Conditional-mediation autofill: if the browser supports WebAuthn, kick off
+  // a passive `get()` call tied to the email field's `autocomplete="username
+  // webauthn"`. The browser will surface saved passkeys alongside username
+  // suggestions; the abort controller cancels the call when the component
+  // unmounts (or when the explicit passkey button is clicked).
+  const abortRef = useRef<AbortController | null>(null);
+  useEffect(() => {
+    if (!webauthnSupported()) return;
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    (async () => {
+      const resp = await conditionalAutofill(ctrl.signal);
+      if (!resp?.token) return;
+      setSession(resp.token, resp.user);
+      navigate("/", { replace: true });
+    })();
+    return () => ctrl.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function handlePassword(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -29,6 +54,12 @@ export function Login() {
         skipAuth: true,
         body: JSON.stringify({ email, password }),
       });
+      if (resp.needs_passkey) {
+        setError(
+          "Administrator requires a passkey. Please sign in with your passkey.",
+        );
+        return;
+      }
       if (resp.needs_totp && resp.challenge_token) {
         setStage({ kind: "totp", challengeToken: resp.challenge_token });
         return;
@@ -82,7 +113,7 @@ export function Login() {
           {stage.kind === "password" ? (
             <form onSubmit={handlePassword} className="space-y-4">
               <Field label="Email">
-                <TextInput type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+                <TextInput type="email" autoComplete="username webauthn" required value={email} onChange={(e) => setEmail(e.target.value)} />
               </Field>
               <Field label="Password">
                 <TextInput type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
@@ -91,6 +122,46 @@ export function Login() {
               <Button type="submit" variant="primary" disabled={submitting} className="w-full">
                 {submitting ? "Signing in…" : "Sign in"}
               </Button>
+              {webauthnSupported() && (
+                <>
+                  <div className="my-3 flex items-center gap-2 text-xs text-fg-muted">
+                    <span className="h-px flex-1 bg-border" />
+                    <span>or</span>
+                    <span className="h-px flex-1 bg-border" />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={submitting}
+                    onClick={async () => {
+                      setError(null);
+                      setSubmitting(true);
+                      try {
+                        // Aborting the conditional-mediation call avoids the
+                        // "InvalidStateError — operation already in flight"
+                        // some browsers raise when both calls are pending.
+                        abortRef.current?.abort();
+                        const resp = await loginWithPasskey();
+                        if (!resp.token) throw new Error("server did not return a session");
+                        setSession(resp.token, resp.user);
+                        navigate("/", { replace: true });
+                      } catch (err: any) {
+                        if (err?.name === "NotAllowedError") {
+                          // User cancelled — silent.
+                        } else {
+                          setError(err?.message ?? "passkey login failed");
+                        }
+                      } finally {
+                        setSubmitting(false);
+                      }
+                    }}
+                    className="w-full"
+                  >
+                    <Fingerprint className="mr-2 inline h-4 w-4" />
+                    Mit Passkey anmelden
+                  </Button>
+                </>
+              )}
             </form>
           ) : (
             <form onSubmit={handleTOTP} className="space-y-4">

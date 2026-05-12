@@ -4,6 +4,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 
 import { AppShell } from "./components/layout/AppShell";
 import { CommandPalette } from "./components/CommandPalette";
+import { EnforcementGuard } from "./components/EnforcementGuard";
 import { RequireAdmin } from "./components/RequireAdmin";
 import { AdminMonitors } from "./pages/AdminMonitors";
 import { AlertsPage, ChannelsPage, RulesPage } from "./pages/notifications";
@@ -112,6 +113,7 @@ export function App() {
     <AppShell>
       <DensityProvider />
       <CommandPalette />
+      <EnforcementGuard>
       <Routes>
         <Route path="/" element={<Dashboard />} />
         <Route path="/hosts" element={<Hosts />} />
@@ -148,6 +150,7 @@ export function App() {
         <Route path="/reset" element={<Reset />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </EnforcementGuard>
     </AppShell>
   );
 }

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import type { CurrentUser } from "./types";
 
 // We persist the session token in localStorage. Two reasons:
 //   1) the API issues opaque tokens (sha256-hashed server-side), so an XSS
@@ -9,12 +10,10 @@ import { persist } from "zustand/middleware";
 // If you want HttpOnly-cookie auth later, swap this for a cookie-based path
 // and have the server set Set-Cookie on /v1/auth/login.
 
-export type CurrentUser = {
-  id: string;
-  email: string;
-  role: string;
-  totp_active?: boolean;
-};
+// CurrentUser is defined once in ./types — re-export so callers that imported
+// it from this module (e.g. `import type { CurrentUser } from "./auth"`)
+// continue to work.
+export type { CurrentUser };
 
 type AuthState = {
   token: string | null;

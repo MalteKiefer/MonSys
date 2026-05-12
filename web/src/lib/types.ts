@@ -38,6 +38,49 @@ export type CurrentUser = {
   email: string;
   role: string;
   totp_active: boolean;
+  passkey_count?: number;
+  must_enroll?: boolean;
+  grace_until?: string | null;
+};
+
+// Passkey (WebAuthn credential) summary returned by /v1/auth/passkeys.
+export type Passkey = {
+  id: string;
+  name: string;
+  aaguid?: string;
+  transports?: string[];
+  backup_eligible: boolean;
+  backup_state: boolean;
+  created_at: string;
+  last_used_at?: string | null;
+};
+
+export type ListPasskeysResponse = { passkeys: Passkey[] };
+
+// Admin-managed security policy. force_mode controls whether 2FA / passkeys
+// are required server-wide; grace_days is how long new users have to enroll
+// before their account is gated. max_session_hours and idle_timeout_minutes
+// bound the lifetime of issued tokens.
+export type ForceMode = "off" | "2fa_any" | "passkey_required";
+export type SecurityPolicy = {
+  force_mode: ForceMode;
+  grace_days: number;
+  max_session_hours: number;
+  idle_timeout_minutes: number;
+};
+
+export type RevokeAllSessionsResponse = { revoked: number };
+
+// WebAuthn begin-step responses. `options` is the raw PublicKeyCredential*
+// dict the browser feeds to navigator.credentials.create/get — keep it typed
+// as `unknown` here; the webauthn.ts helper does the heavy lifting.
+export type WebAuthnRegisterBeginResponse = {
+  challenge_token: string;
+  options: unknown;
+};
+export type WebAuthnLoginBeginResponse = {
+  challenge_token: string;
+  options: unknown;
 };
 
 // Server-wide auth/notification readiness flags surfaced to any logged-in
@@ -50,6 +93,7 @@ export type AuthConfig = {
 
 export type LoginResponse = {
   needs_totp: boolean;
+  needs_passkey?: boolean;
   challenge_token?: string;
   token?: string;
   expires_at: string;
