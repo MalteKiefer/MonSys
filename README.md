@@ -319,6 +319,14 @@ honoured.
 
 ---
 
+## Release verification
+
+Release artifacts (binaries, container image, SBOMs) ship with detached
+minisign signatures and a Sigstore cosign keyless signature on the
+container manifest. See [docs/RELEASE.md](./docs/RELEASE.md) for the
+exact `cosign verify` and `minisign -V` commands, and for how to pin a
+signed image via `deploy/docker-compose.prod.yaml`.
+
 ## Reporting vulnerabilities
 
 See [SECURITY.md](./SECURITY.md) for the disclosure policy, scope, and

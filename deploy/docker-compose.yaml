@@ -23,6 +23,22 @@ services:
       - db_pw
     networks:
       - mon-internal
+    # AUDIT 4.3.1.9: container hardening for timescaledb.
+    #   - no-new-privileges blocks setuid escalation inside the container.
+    #   - cap_drop ALL + cap_add of just the caps Postgres actually needs:
+    #       CHOWN/SETUID/SETGID  - chown data dir + drop to `postgres` user
+    #                              during entrypoint
+    #       DAC_OVERRIDE         - read socket/lock files across uid changes
+    #       FOWNER               - chmod files in the data dir at init
+    #   - read_only is intentionally NOT set: Postgres needs to write to
+    #     /var/lib/postgresql/data, /var/run/postgresql (unix socket dir),
+    #     and /tmp (pg_stat_tmp, sort spills). A read_only rootfs + targeted
+    #     tmpfs mounts is doable but brittle across Timescale image bumps,
+    #     so we accept a writable rootfs in exchange for the caps drop.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETUID, SETGID, DAC_OVERRIDE, FOWNER]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U mon -d mon"]
       interval: 10s

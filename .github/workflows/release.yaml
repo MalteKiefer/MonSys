@@ -4,6 +4,14 @@ name: release
 # push to main and on every pushed tag. The "latest" GitHub Release is
 # updated on main pushes (so auto-update clients can pin to it). Tags
 # (v*.*.*) cut a permanent immutable release with the same artifacts.
+#
+# Supply-chain bits added in audit pass 2026-05-12 (§4.3.1):
+#   - CycloneDX SBOM per binary + per source tree (4.3.1.7)
+#   - signed container image to ghcr.io via cosign keyless (4.3.1.8)
+#   - SHA-pinned minisign download instead of apt-get (4.3.1.14)
+#   - workflow concurrency group (4.3.1.17)
+#   - explicit persist-credentials: false on non-pushing checkouts (4.3.1.18)
+#   - Go pinned to a patch version matching go.mod (4.3.1.19)
 
 on:
   push:
@@ -11,8 +19,20 @@ on:
     tags: ['v*.*.*']
   workflow_dispatch:
 
+# AUDIT 4.3.1.17: never cancel an in-flight release — partial releases are
+# worse than serialised ones. Tag pushes and main pushes both group on ref
+# so a re-pushed tag waits for the first run to finish.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
+
+# NOTE: Go patch pin (4.3.1.19) — keep go-version in lockstep with go.mod's
+# `go <X.Y.Z>` line. Bump procedure: update go.mod, then sweep this file for
+# `go-version: 'X.Y.Z'` and update all occurrences. Annual review: confirm
+# 1.26.x is still security-supported on each scheduled audit pass.
 
 jobs:
   build:
@@ -24,9 +44,10 @@ jobs:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
         with:
           fetch-depth: 0
+          persist-credentials: false # AUDIT 4.3.1.18
       - uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
         with:
-          go-version: '1.26.x'
+          go-version: '1.26.2'
           cache: true
 
       - name: derive version
@@ -69,6 +90,32 @@ jobs:
           sha256sum "mon-agent-linux-${ARCH}"  > "mon-agent-linux-${ARCH}.sha256"
           sha256sum "mon-server-linux-${ARCH}" > "mon-server-linux-${ARCH}.sha256"
 
+      # AUDIT 4.3.1.7: CycloneDX SBOM per binary. anchore/sbom-action wraps
+      # syft; SHA-pinned to v0.17.9 (latest stable in the v0.17.x line as of
+      # 2026-05-12). Bump procedure: resolve a new tag's commit SHA via
+      #   gh api repos/anchore/sbom-action/git/refs/tags/v0.17.X --jq .object.sha
+      # and update both occurrences (here + sbom-source job) in this file.
+      - name: sbom (mon-server binary)
+        uses: anchore/sbom-action@df80a981bc6edbc4e220a492d3cbe9f5547a6e75 # v0.17.9
+        with:
+          format: cyclonedx-json
+          output-file: SBOM-mon-server-linux-${{ matrix.goarch }}.cdx.json
+          file: out/mon-server-linux-${{ matrix.goarch }}
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: sbom (mon-agent binary)
+        uses: anchore/sbom-action@df80a981bc6edbc4e220a492d3cbe9f5547a6e75 # v0.17.9
+        with:
+          format: cyclonedx-json
+          output-file: SBOM-mon-agent-linux-${{ matrix.goarch }}.cdx.json
+          file: out/mon-agent-linux-${{ matrix.goarch }}
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: stage SBOMs alongside binaries
+        run: mv SBOM-*.cdx.json out/
+
       # AUDIT-401: detached minisign signatures alongside each binary. The
       # agent updater pulls these from the same release URL and verifies
       # them against the public key compiled into the binary. We skip
@@ -87,8 +134,24 @@ jobs:
             echo "::warning title=minisign skipped::MONSYS_MINISIGN_SECRET_KEY and/or MONSYS_MINISIGN_PASSWORD not set; release will publish without signatures."
             exit 0
           fi
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends minisign
+          # AUDIT 4.3.1.14: pin minisign by SHA256 instead of apt-get. The
+          # distro package may lag on security fixes and is unverified
+          # against the upstream maintainer's signatures. Downloading the
+          # release tarball and SHA256-checking it before extraction is the
+          # closest we can get to a reproducible install in CI without
+          # building from source. Hash captured from upstream 2026-05-12:
+          #   curl -fsSL https://github.com/jedisct1/minisign/releases/download/0.11/minisign-0.11-linux.tar.gz | sha256sum
+          # Annual review: bump to current latest, refresh hash, document
+          # date of capture.
+          curl -fsSL --proto '=https' --tlsv1.2 \
+            -o /tmp/minisign.tar.gz \
+            https://github.com/jedisct1/minisign/releases/download/0.11/minisign-0.11-linux.tar.gz
+          echo "f0a0954413df8531befed169e447a66da6868d79052ed7e892e50a4291af7ae0  /tmp/minisign.tar.gz" \
+            | sha256sum -c -
+          tar -xzf /tmp/minisign.tar.gz -C /tmp/
+          sudo cp /tmp/minisign-linux/x86_64/minisign /usr/local/bin/minisign
+          sudo chmod 0755 /usr/local/bin/minisign
+          minisign -v
           KEYFILE="${RUNNER_TEMP}/mon-agent.key"
           umask 077
           printf '%s' "$MINISIGN_SECRET_KEY" > "$KEYFILE"
@@ -103,10 +166,151 @@ jobs:
           name: bin-linux-${{ matrix.goarch }}
           path: out/
 
-  publish:
-    needs: build
+  # AUDIT 4.3.1.7: source-tree SBOM is produced once per release (not per
+  # arch). Runs in parallel with the per-arch build jobs.
+  sbom-source:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          persist-credentials: false # AUDIT 4.3.1.18
+      - name: sbom (source tree)
+        uses: anchore/sbom-action@df80a981bc6edbc4e220a492d3cbe9f5547a6e75 # v0.17.9
+        with:
+          format: cyclonedx-json
+          output-file: SBOM-source.cdx.json
+          path: .
+          upload-artifact: false
+          upload-release-assets: false
+      - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: sbom-source
+          path: SBOM-source.cdx.json
+
+  # AUDIT 4.3.1.8: build, push, and keyless-sign a container image for the
+  # mon-server distroless deployment. Image is published to GHCR under the
+  # repo owner's namespace. Tags:
+  #   - on tag push:  ghcr.io/.../monsys-server:vX.Y.Z  AND  :latest
+  #   - on main push: ghcr.io/.../monsys-server:sha-<abbrev>
+  # Operators can pin to a tag in deploy/docker-compose.prod.yaml and verify
+  # the signature with the `cosign verify` command documented in
+  # docs/RELEASE.md.
+  container:
+    needs: build
+    runs-on: ubuntu-latest
+    # AUDIT 4.3.1.8: scoped permissions for this job only — id-token: write
+    # enables cosign keyless OIDC signing against the public sigstore Fulcio
+    # instance; packages: write enables GHCR push.
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false # AUDIT 4.3.1.18
+
+      - name: derive version + image tags
+        id: ver
+        env:
+          REF: ${{ github.ref }}
+          REPO_OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          owner_lc="${REPO_OWNER,,}"
+          image="ghcr.io/${owner_lc}/monsys-server"
+          if [[ "$REF" == refs/tags/* ]]; then
+            tag="${REF##refs/tags/}"
+            tags="${image}:${tag}"$'\n'"${image}:latest"
+          else
+            short="$(git rev-parse --short HEAD)"
+            tag="sha-${short}"
+            tags="${image}:${tag}"
+          fi
+          {
+            echo "image=${image}"
+            echo "primary_tag=${tag}"
+            echo "tags<<EOF"
+            printf '%s\n' "$tags"
+            echo "EOF"
+            echo "commit=$(git rev-parse --short HEAD)"
+            echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: setup buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: login to ghcr
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: build + push
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: deploy/Dockerfile.server
+          push: true
+          tags: ${{ steps.ver.outputs.tags }}
+          platforms: linux/amd64,linux/arm64
+          build-args: |
+            VERSION=${{ steps.ver.outputs.primary_tag }}
+            COMMIT=${{ steps.ver.outputs.commit }}
+            DATE=${{ steps.ver.outputs.date }}
+          provenance: true
+          sbom: true
+
+      # AUDIT 4.3.1.8: keyless cosign signature via GitHub OIDC identity.
+      # The signature lives in the registry next to the image (Sigstore
+      # bundle) and is verifiable with no shared secret. Pinned to v3.10.1.
+      - name: install cosign
+        uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
+
+      - name: sign image
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          TAGS: ${{ steps.ver.outputs.tags }}
+        run: |
+          set -euo pipefail
+          # Sign each pushed tag's manifest digest. `cosign sign` with --yes
+          # bypasses the interactive transparency-log prompt; the OIDC token
+          # is fetched automatically because id-token: write is granted.
+          while IFS= read -r tag; do
+            [ -z "$tag" ] && continue
+            cosign sign --yes "${tag}@${DIGEST}"
+          done <<< "$TAGS"
+
+      - name: write digest asset
+        env:
+          IMAGE: ${{ steps.ver.outputs.image }}
+          TAG: ${{ steps.ver.outputs.primary_tag }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          {
+            echo "image: ${IMAGE}"
+            echo "tag: ${TAG}"
+            echo "digest: ${DIGEST}"
+            echo "pull-by-digest: ${IMAGE}@${DIGEST}"
+          } > container-digest.txt
+          cat container-digest.txt
+
+      - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: container-digest
+          path: container-digest.txt
+
+  publish:
+    needs: [build, sbom-source, container]
+    runs-on: ubuntu-latest
+    steps:
+      # NOTE: this checkout intentionally does NOT set persist-credentials:
+      # false because the `release (latest)` step below uses `gh release
+      # upload`, which needs GITHUB_TOKEN credentials in the local git
+      # config. AUDIT 4.3.1.18 carve-out.
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
@@ -153,6 +357,12 @@ jobs:
             artifacts/mon-server-linux-amd64
             artifacts/mon-server-linux-arm64
             artifacts/SHA256SUMS
+            artifacts/SBOM-mon-server-linux-amd64.cdx.json
+            artifacts/SBOM-mon-server-linux-arm64.cdx.json
+            artifacts/SBOM-mon-agent-linux-amd64.cdx.json
+            artifacts/SBOM-mon-agent-linux-arm64.cdx.json
+            artifacts/SBOM-source.cdx.json
+            artifacts/container-digest.txt
             ${{ steps.sigs.outputs.files }}
           generate_release_notes: true
           fail_on_unmatched_files: true
@@ -174,6 +384,12 @@ jobs:
             artifacts/mon-server-linux-amd64
             artifacts/mon-server-linux-arm64
             artifacts/SHA256SUMS
+            artifacts/SBOM-mon-server-linux-amd64.cdx.json
+            artifacts/SBOM-mon-server-linux-arm64.cdx.json
+            artifacts/SBOM-mon-agent-linux-amd64.cdx.json
+            artifacts/SBOM-mon-agent-linux-arm64.cdx.json
+            artifacts/SBOM-source.cdx.json
+            artifacts/container-digest.txt
           )
           # AUDIT-401: include any minisig files that were produced.
           for f in mon-agent-linux-amd64.minisig mon-agent-linux-arm64.minisig \

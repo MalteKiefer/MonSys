@@ -5,8 +5,19 @@ on:
     branches: [main]
   pull_request:
 
+# AUDIT 4.3.1.17: a fresh push to the same ref cancels prior in-flight CI
+# runs; we only ever care about the latest commit's status.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
+
+# NOTE: Go patch pin (4.3.1.19) — keep go-version in lockstep with go.mod's
+# `go <X.Y.Z>` line. Bump procedure: update go.mod, then sweep this file for
+# `go-version: 'X.Y.Z'` and update all occurrences. Annual review: confirm
+# 1.26.x is still security-supported on each scheduled audit pass.
 
 jobs:
   build-test:
@@ -16,9 +27,11 @@ jobs:
         goarch: [amd64, arm64]
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          persist-credentials: false # AUDIT 4.3.1.18
       - uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
         with:
-          go-version: '1.26.x'
+          go-version: '1.26.2'
           cache: true
 
       - name: vet
@@ -45,12 +58,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          persist-credentials: false # AUDIT 4.3.1.18
       - uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
         with:
-          go-version: '1.26.x'
+          go-version: '1.26.2'
+      # AUDIT 4.3.1.13: pin govulncheck to a specific tag rather than @latest
+      # so a malicious or accidental upstream tag move can't silently land in
+      # CI. Annual review: bump to current latest on each scheduled audit pass
+      # and verify the release notes for any rule changes that warrant new
+      # `-show` flags or exclusions.
       - name: govulncheck
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install golang.org/x/vuln/cmd/govulncheck@v1.3.0
           govulncheck ./...
 
   # golangci-lint runs the curated baseline declared in .golangci.yml.
@@ -61,9 +81,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          persist-credentials: false # AUDIT 4.3.1.18
       - uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
         with:
-          go-version: '1.26.x'
+          go-version: '1.26.2'
           cache: false # golangci-lint-action manages its own caches
       - uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
         with:
@@ -73,12 +95,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          persist-credentials: false # AUDIT 4.3.1.18
       - uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
         with:
-          go-version: '1.26.x'
+          go-version: '1.26.2'
+      # AUDIT 4.3.1.12: severity floor lowered from "high" to "medium" so we
+      # don't silently miss medium-severity findings. Any newly-surfaced
+      # medium false positive must be added to -exclude with an inline
+      # rationale (same convention as the existing high-severity block).
+      # AUDIT 4.3.1.13: gosec pinned to a specific tag. Annual review: bump
+      # to current latest on each scheduled audit pass.
       - name: gosec
         run: |
-          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          go install github.com/securego/gosec/v2/cmd/gosec@v2.26.1
           # Excluded rules with rationale:
           #   G115 - kernel uint64 -> int64 conversions in collectors are
           #          bounded; auditing each call site is pure noise.
@@ -87,12 +117,17 @@ jobs:
           #   G402 - InsecureSkipVerify is opt-in operator config (SMTP +
           #          monitors + probes), labelled in the UI.
           #   G703 - pwFile path is operator-set MON_DSN_PASSWORD_FILE env.
-          gosec -severity=high -exclude=G115,G123,G402,G703 ./...
+          # If new medium-severity findings appear after the 4.3.1.12 floor
+          # lowering, document each here before adding it to the exclude
+          # list. Do NOT add a rule without a rationale comment.
+          gosec -severity=medium -exclude=G115,G123,G402,G703 ./...
 
   web-lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          persist-credentials: false # AUDIT 4.3.1.18
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '20'
@@ -104,13 +139,20 @@ jobs:
   # AUDIT-203 / AUDIT-210: catch operators who change a route or schema
   # but forget to regenerate api/openapi.yaml. The committed spec must
   # match what `mon-server --print-spec` produces.
+  #
+  # AUDIT 4.3.1.11: `mon-server --print-spec` now pins info.version to "dev"
+  # at runtime (see cmd/mon-server/main.go), so the committed spec is byte-
+  # stable regardless of whether ldflags stamped a real version. No post-hoc
+  # sed normalisation is required here — the bypass closes at the source.
   spec-drift:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          persist-credentials: false # AUDIT 4.3.1.18
       - uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
         with:
-          go-version: '1.26.x'
+          go-version: '1.26.2'
           cache: true
       - name: regenerate spec
         run: |

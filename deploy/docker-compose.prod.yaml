@@ -1,0 +1,34 @@
+# AUDIT 4.3.1.8: production overlay that pulls a signed image from GHCR
+# instead of building the server locally. Apply with:
+#
+#   MONSYS_TAG=v0.4.2 \
+#     docker compose \
+#       -f docker-compose.yaml \
+#       -f docker-compose.prod.yaml \
+#       up -d
+#
+# Verify the image signature first (see docs/RELEASE.md for the full
+# command). Skipping the verify is acceptable on a once-bootstrapped host
+# only if `cosign verify` was run against the digest you're about to pull.
+#
+# Compose v2 interpolates ${MONSYS_TAG} from the env at `compose up` time;
+# we deliberately do NOT default it so a missing tag fails loudly rather
+# than silently pulling `:latest`. Use the explicit value once you've
+# verified that exact tag's signature.
+
+name: mon
+
+services:
+  mon-server:
+    # Override the `build:` from docker-compose.yaml with a pinned image.
+    # Compose-spec semantics: when both `image:` and `build:` are present,
+    # `docker compose up --no-build` (or `pull`) uses the image; we DON'T
+    # use the compose-spec `!reset` extension on `build:` because it
+    # breaks generic YAML linters used in CI.  Operators should run
+    #   docker compose -f docker-compose.yaml -f docker-compose.prod.yaml \
+    #     pull mon-server
+    #   docker compose -f docker-compose.yaml -f docker-compose.prod.yaml \
+    #     up -d --no-build
+    # to bring the stack up against the pulled, signed image.
+    image: ghcr.io/maltekiefer/monsys-server:${MONSYS_TAG:?set MONSYS_TAG to the verified release tag}
+    pull_policy: always
