@@ -451,6 +451,7 @@ type LoginRequest struct {
 
 type LoginResponse struct {
 	NeedsTOTP      bool      `json:"needs_totp"      doc:"true → call /v1/auth/2fa/challenge with challenge_token + code"`
+	NeedsPasskey   bool      `json:"needs_passkey,omitempty" doc:"true when force_mode=passkey_required and the user has no passkey and no grace remaining"`
 	ChallengeToken string    `json:"challenge_token,omitempty" maxLength:"128" readOnly:"true"`
 	Token          string    `json:"token,omitempty"           maxLength:"128" readOnly:"true" doc:"Session token; pass as Authorization: Bearer …"`
 	ExpiresAt      time.Time `json:"expires_at,omitempty"      readOnly:"true" doc:"Session expiry (UTC)"`
@@ -458,10 +459,13 @@ type LoginResponse struct {
 }
 
 type CurrentUser struct {
-	ID         string `json:"id"             format:"uuid"  maxLength:"36"  readOnly:"true"`
-	Email      string `json:"email"          format:"email" maxLength:"254"`
-	Role       string `json:"role"           enum:"admin,user" doc:"admin or user"`
-	TOTPActive bool   `json:"totp_active"`
+	ID           string     `json:"id"             format:"uuid"  maxLength:"36"  readOnly:"true"`
+	Email        string     `json:"email"          format:"email" maxLength:"254"`
+	Role         string     `json:"role"           enum:"admin,user" doc:"admin or user"`
+	TOTPActive   bool       `json:"totp_active"`
+	PasskeyCount int        `json:"passkey_count"`
+	MustEnroll   bool       `json:"must_enroll,omitempty"`
+	GraceUntil   *time.Time `json:"grace_until,omitempty"`
 }
 
 // AuthConfig surfaces server-wide auth/notification readiness flags to any
@@ -843,4 +847,83 @@ type AgentEnrollmentCreateResponse struct {
 	Token          string          `json:"token"           maxLength:"128" readOnly:"true" doc:"One-shot bootstrap token. Shown once; cannot be retrieved later."`
 	InstallCommand string          `json:"install_command" maxLength:"4096" readOnly:"true" doc:"Single-line shell command the operator runs on the target host"`
 	InstallURL     string          `json:"install_url"     format:"uri" maxLength:"2048" readOnly:"true" doc:"URL of the installer script (token included as ?t=…)"`
+}
+
+// --- WebAuthn / Passkeys ---------------------------------------------------
+
+// WebAuthnRegisterBeginRequest carries the human-readable name to associate
+// with the new credential, e.g. "MacBook Touch ID".
+type WebAuthnRegisterBeginRequest struct {
+	Name string `json:"name"`
+}
+
+// WebAuthnRegisterBeginResponse returns the PublicKeyCredentialCreationOptions
+// the browser feeds to navigator.credentials.create(). The challenge_token is
+// our server-side handle that ties register/finish to the same challenge.
+type WebAuthnRegisterBeginResponse struct {
+	ChallengeToken string         `json:"challenge_token"`
+	Options        map[string]any `json:"options"` // raw WebAuthn options JSON
+}
+
+// WebAuthnRegisterFinishRequest carries the browser's PublicKeyCredential
+// response back to the server for verification. Name is the human-friendly
+// label applied to the new credential (defaults to "Passkey" if empty); the
+// user can rename later via PUT /v1/auth/me/passkeys/{id}.
+type WebAuthnRegisterFinishRequest struct {
+	ChallengeToken string         `json:"challenge_token"`
+	Credential     map[string]any `json:"credential"`
+	Name           string         `json:"name,omitempty"`
+}
+
+// WebAuthnLoginBeginResponse — discoverable credential flow, no email needed.
+type WebAuthnLoginBeginResponse struct {
+	ChallengeToken string         `json:"challenge_token"`
+	Options        map[string]any `json:"options"`
+}
+
+type WebAuthnLoginFinishRequest struct {
+	ChallengeToken string         `json:"challenge_token"`
+	Credential     map[string]any `json:"credential"`
+}
+
+// Passkey is the per-credential summary returned to settings UIs.
+type Passkey struct {
+	ID             string     `json:"id"`
+	Name           string     `json:"name"`
+	AAGUID         string     `json:"aaguid,omitempty"`
+	Transports     []string   `json:"transports,omitempty"`
+	BackupEligible bool       `json:"backup_eligible"`
+	BackupState    bool       `json:"backup_state"`
+	CreatedAt      time.Time  `json:"created_at"`
+	LastUsedAt     *time.Time `json:"last_used_at,omitempty"`
+}
+
+type ListPasskeysResponse struct {
+	Passkeys []Passkey `json:"passkeys"`
+}
+
+type RenamePasskeyRequest struct {
+	Name string `json:"name"`
+}
+
+// --- Security policy (admin) ----------------------------------------------
+
+// SecurityPolicy is the global enforcement config admins can tune. Lives in
+// the settings KV table; defaults are returned when no row exists.
+//
+//	force_mode: "off" | "2fa_any" | "passkey_required"
+//	grace_days: how long after first login under the new policy a user is
+//	            allowed read-only access without an enrolled method
+//	max_session_hours: hard cap for IssueSession ttl
+//	idle_timeout_minutes: 0 = disabled; otherwise sessions inactive for >
+//	                     this many minutes are rejected by ValidateSession
+type SecurityPolicy struct {
+	ForceMode          string `json:"force_mode"`
+	GraceDays          int    `json:"grace_days"`
+	MaxSessionHours    int    `json:"max_session_hours"`
+	IdleTimeoutMinutes int    `json:"idle_timeout_minutes"`
+}
+
+type RevokeAllSessionsResponse struct {
+	Revoked int `json:"revoked"`
 }
