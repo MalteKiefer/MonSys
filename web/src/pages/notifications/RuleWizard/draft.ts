@@ -23,13 +23,13 @@ import { asRecord, type Params } from "./coerce";
 
 export type Step = 1 | 2 | 3;
 
-export type DraftCondition = {
+export interface DraftCondition {
   conditionType: NotificationConditionType | "";
   conditionParams: Params;
   expertMode: boolean;
-};
+}
 
-export type RuleDraft = {
+export interface RuleDraft {
   step: Step;
   name: string;
   enabled: boolean;
@@ -49,7 +49,7 @@ export type RuleDraft = {
   targetGroupIds: string[];
   targetHostIds: string[];
   channelIds: string[];
-};
+}
 
 export const EMPTY_BUFFER: DraftCondition = {
   conditionType: "",

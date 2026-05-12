@@ -2,9 +2,10 @@ import { useQuery } from "@tanstack/react-query";
 import { HardDrive } from "lucide-react";
 import { useMemo, useState } from "react";
 
+import type {
+  ChartSeries} from "../../components/Chart";
 import {
   ChartLine,
-  ChartSeries,
   colorFor,
   formatBytes,
   formatBytesPerSec,
@@ -26,7 +27,7 @@ import {
 } from "../../components/ui";
 import { useT } from "../../i18n/useT";
 import { api } from "../../lib/api";
-import { DiskRow, DiskSample } from "../../lib/types";
+import type { DiskRow, DiskSample } from "../../lib/types";
 
 import { useHostDetail } from "./HostLayout";
 
@@ -110,7 +111,7 @@ function DiskIOPanel({ samples, disks, loading }: { samples: DiskSample[]; disks
       byMount.set(s.mountpoint, cur);
     }
     const timeSet = new Set<number>();
-    byMount.forEach((v) => v.times.forEach((ts) => timeSet.add(ts)));
+    byMount.forEach((v) => { v.times.forEach((ts) => timeSet.add(ts)); });
     const times = Array.from(timeSet).sort((a, b) => a - b);
     const seriesArr: ChartSeries[] = [];
     const cols: number[][] = [times];

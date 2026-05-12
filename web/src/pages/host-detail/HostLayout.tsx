@@ -10,13 +10,14 @@ import {
   ShieldCheck,
   Users as UsersIcon,
 } from "lucide-react";
-import { ComponentType, createContext, useContext, useMemo } from "react";
+import type { ComponentType} from "react";
+import { createContext, useContext, useMemo } from "react";
 import { NavLink, Outlet, useNavigate, useParams } from "react-router-dom";
 
 import { Skeleton } from "../../components/ui";
 import { useT } from "../../i18n/useT";
 import { api } from "../../lib/api";
-import { HostDetail as HostDetailT, HostSecurity } from "../../lib/types";
+import type { HostDetail as HostDetailT, HostSecurity } from "../../lib/types";
 
 import { HostHeader } from "./HostHeader";
 
@@ -24,12 +25,12 @@ import { HostHeader } from "./HostHeader";
 // /v1/hosts/:id once at the layout level and threading the response through
 // context keeps the wire load constant when the user flips tabs — each tab
 // would otherwise re-fetch the same blob via its own React Query key.
-type HostDetailContextValue = {
+interface HostDetailContextValue {
   detail: HostDetailT;
   security: HostSecurity | undefined;
   securityLoading: boolean;
   hostId: string;
-};
+}
 
 const HostDetailContext = createContext<HostDetailContextValue | null>(null);
 
@@ -83,7 +84,7 @@ export function HostLayout() {
     );
   }
   if (detail.error || !detail.data) {
-    return <p className="p-6 text-sm text-fail">{(detail.error as Error)?.message ?? t("hostDetail:header.hostNotFound")}</p>;
+    return <p className="p-6 text-sm text-fail">{(detail.error)?.message ?? t("hostDetail:header.hostNotFound")}</p>;
   }
 
   const d = detail.data;
@@ -107,7 +108,7 @@ export function HostLayout() {
 
 // ---- Sub-tab nav ---------------------------------------------------------
 
-type SubTab = {
+interface SubTab {
   to: string;
   end?: boolean;
   label: string;
@@ -115,7 +116,7 @@ type SubTab = {
   count?: number;
   /** When true, render dimmed to signal "no data" without hiding the link. */
   dim?: boolean;
-};
+}
 
 function SubTabs({ detail }: { detail: HostDetailT }) {
   const id = detail.host.id;

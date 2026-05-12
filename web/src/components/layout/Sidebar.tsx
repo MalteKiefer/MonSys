@@ -38,25 +38,25 @@ import { useT } from "../../i18n/useT";
 // namespace; we keep a small `key` field on groups for stable React keys
 // and accordion ids (the resolved translated string is unsuitable for use
 // as a DOM id, so we keep an English-stable identifier).
-type NavItem = {
+interface NavItem {
   to: string;
   labelKey: string;
   icon: typeof LayoutDashboard;
   end?: boolean;
-};
+}
 
-type NavGroup = {
+interface NavGroup {
   key: string;
   labelKey: string;
   items: NavItem[];
-};
+}
 
-type AdminSubGroup = {
+interface AdminSubGroup {
   key: string;
   labelKey: string;
   icon: typeof LayoutDashboard;
   items: NavItem[];
-};
+}
 
 export const NOTIFICATION_GROUP: NavGroup = {
   key: "notifications",
@@ -136,11 +136,11 @@ export const ADMIN_SUBGROUPS: AdminSubGroup[] = [
 
 // Lightweight visual helper so MobileDrawer can re-use the same primitive
 // without inheriting the desktop's collapsed-icon-only rules.
-type LinkProps = {
+interface LinkProps {
   item: NavItem;
   collapsed: boolean;
   onNavigate?: () => void;
-};
+}
 
 function NavItemLink({ item, collapsed, onNavigate }: LinkProps) {
   const { t } = useT("nav");
@@ -182,12 +182,12 @@ function GroupLabel({ children, collapsed }: { children: React.ReactNode; collap
   );
 }
 
-type AdminAccordionProps = {
+interface AdminAccordionProps {
   group: AdminSubGroup;
   collapsed: boolean;
   pathname: string;
   onNavigate?: () => void;
-};
+}
 
 function AdminAccordion({ group, collapsed, pathname, onNavigate }: AdminAccordionProps) {
   const { t } = useT("nav");
@@ -228,7 +228,7 @@ function AdminAccordion({ group, collapsed, pathname, onNavigate }: AdminAccordi
         id={buttonId}
         aria-expanded={open}
         aria-controls={panelId}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => { setOpen((v) => !v); }}
         className={[
           "flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors duration-150",
           childActive ? "text-fg" : "text-fg-muted hover:bg-panel hover:text-fg",
@@ -442,7 +442,7 @@ export function Sidebar({ forceCollapsed = false }: { forceCollapsed?: boolean }
         // Collapse only when focus leaves the entire aside, not when moving
         // between children. relatedTarget is null for pointer-driven blurs
         // — the mouseleave handler covers those.
-        if (forceCollapsed && !e.currentTarget.contains(e.relatedTarget as Node | null)) {
+        if (forceCollapsed && !e.currentTarget.contains(e.relatedTarget)) {
           setHoverExpanded(false);
         }
       }}

@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Bell, Hash, Mail, MessageCircle, MessageSquare } from "lucide-react";
-import { FormEvent, useState } from "react";
+import type { FormEvent} from "react";
+import { useState } from "react";
 
 import {
   Button,
@@ -19,7 +20,7 @@ import {
 import { useT } from "../../i18n/useT";
 import { api, ApiError } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
-import {
+import type {
   AuthConfig,
   ChannelType,
   NotificationChannel,
@@ -37,7 +38,7 @@ import {
 // in the admin-managed SMTP settings.
 // Labels come from the i18n bundle — we keep the field-key list static here
 // and translate inside the render closure.
-type FieldDef = { key: string; labelKey: string; type?: string; placeholder?: string; help?: string };
+interface FieldDef { key: string; labelKey: string; type?: string; placeholder?: string; help?: string }
 const CHANNEL_FIELDS: Record<Exclude<ChannelType, "email">, FieldDef[]> = {
   slack: [
     { key: "webhook_url", labelKey: "webhook_url", type: "password", placeholder: "https://hooks.slack.com/…" },
@@ -61,10 +62,10 @@ const CHANNEL_FIELDS: Record<Exclude<ChannelType, "email">, FieldDef[]> = {
 
 // Card data for the channel-type picker. Order matches the previous select.
 // Labels and descriptions come from i18n; we just declare value+icon here.
-const CHANNEL_TYPE_CARDS: Array<{
+const CHANNEL_TYPE_CARDS: {
   value: ChannelType;
   icon: typeof Mail;
-}> = [
+}[] = [
   { value: "email", icon: Mail },
   { value: "slack", icon: MessageSquare },
   { value: "mattermost", icon: MessageCircle },
@@ -144,7 +145,7 @@ export function ChannelForm({
       });
     },
     onSuccess: onSaved,
-    onError: (err) => setError(err instanceof ApiError ? err.detail : t("notifications:channels.form.error_generic")),
+    onError: (err) => { setError(err instanceof ApiError ? err.detail : t("notifications:channels.form.error_generic")); },
   });
 
   function submit(e: FormEvent) {
@@ -196,14 +197,14 @@ export function ChannelForm({
               <TextInput
                 required
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => { setName(e.target.value); }}
                 placeholder={t("notifications:channels.form.name_placeholder")}
               />
             </Field>
 
             {type === "email" ? (
               <>
-                {authConfig.data && authConfig.data.smtp_configured === false && (
+                {authConfig.data?.smtp_configured === false && (
                   <p className="rounded-md border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-warn">
                     {t("notifications:channels.form.smtp_warning")}
                   </p>
@@ -216,7 +217,7 @@ export function ChannelForm({
                     type="email"
                     required
                     value={recipientEmail}
-                    onChange={(e) => setRecipientEmail(e.target.value)}
+                    onChange={(e) => { setRecipientEmail(e.target.value); }}
                     placeholder={myEmail}
                   />
                 </Field>
@@ -238,7 +239,7 @@ export function ChannelForm({
                         type={f.type || "text"}
                         placeholder={f.placeholder}
                         value={config[f.key] ?? ""}
-                        onChange={(e) => setConfig({ ...config, [f.key]: e.target.value })}
+                        onChange={(e) => { setConfig({ ...config, [f.key]: e.target.value }); }}
                         className={f.type === "password" ? "font-mono" : ""}
                       />
                     </Field>

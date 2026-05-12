@@ -140,19 +140,19 @@ function LanguageSwitcher() {
       key: "auto",
       label: t("nav:topbar.lang_auto"),
       icon: isAuto ? Check : Globe,
-      onClick: () => choose("auto"),
+      onClick: () => { choose("auto"); },
     },
     {
       key: "en",
       label: t("nav:topbar.lang_en"),
       icon: !isAuto && current === "en" ? Check : Globe,
-      onClick: () => choose("en"),
+      onClick: () => { choose("en"); },
     },
     {
       key: "de",
       label: t("nav:topbar.lang_de"),
       icon: !isAuto && current === "de" ? Check : Globe,
-      onClick: () => choose("de"),
+      onClick: () => { choose("de"); },
     },
   ];
 

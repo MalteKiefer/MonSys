@@ -13,7 +13,7 @@ import {
   Table,
 } from "../../components/ui";
 import { useT } from "../../i18n/useT";
-import { VMRow } from "../../lib/types";
+import type { VMRow } from "../../lib/types";
 
 import { useHostDetail } from "./HostLayout";
 

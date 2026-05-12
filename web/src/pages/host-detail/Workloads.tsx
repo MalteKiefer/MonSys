@@ -14,7 +14,7 @@ import {
   Table,
 } from "../../components/ui";
 import { useT } from "../../i18n/useT";
-import { WorkloadRow } from "../../lib/types";
+import type { WorkloadRow } from "../../lib/types";
 
 import { useHostDetail } from "./HostLayout";
 

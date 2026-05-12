@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Activity, Lock, Shield, ShieldAlert } from "lucide-react";
-import { FormEvent, useEffect, useState } from "react";
+import type { FormEvent} from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import {
@@ -17,7 +18,7 @@ import {
 } from "../components/ui";
 import { useT } from "../i18n/useT";
 import { api, ApiError } from "../lib/api";
-import { ForceMode, PasswordPolicy, RevokeAllSessionsResponse, SecurityPolicy } from "../lib/types";
+import type { ForceMode, PasswordPolicy, RevokeAllSessionsResponse, SecurityPolicy } from "../lib/types";
 
 type TabKey = "password" | "auth" | "sessions";
 
@@ -29,7 +30,7 @@ export function AdminSecurity() {
   const { t } = useT(["admin", "common"]);
   const qc = useQueryClient();
 
-  const TAB_ITEMS: ReadonlyArray<TabItem<TabKey>> = [
+  const TAB_ITEMS: readonly TabItem<TabKey>[] = [
     { key: "password", label: t("security.tabs.password"), icon: Lock },
     { key: "auth", label: t("security.tabs.auth"), icon: Shield },
     { key: "sessions", label: t("security.tabs.sessions"), icon: Activity },
@@ -70,10 +71,10 @@ export function AdminSecurity() {
       void qc.invalidateQueries({ queryKey: ["password-policy"] });
     },
     onError: (err) =>
-      setMsg({
+      { setMsg({
         kind: "err",
         text: err instanceof ApiError ? err.detail : t("security.password.generic_failure"),
-      }),
+      }); },
   });
 
   // Force-Modus & Session-Limits ------------------------------------------------
@@ -100,10 +101,10 @@ export function AdminSecurity() {
       void qc.invalidateQueries({ queryKey: ["security-policy"] });
     },
     onError: (err) =>
-      setSecMsg({
+      { setSecMsg({
         kind: "err",
         text: err instanceof ApiError ? err.detail : t("security.auth.generic_failure"),
-      }),
+      }); },
   });
 
   const revokeAll = useMutation({
@@ -112,15 +113,15 @@ export function AdminSecurity() {
         method: "POST",
       }),
     onSuccess: (data) =>
-      setSecMsg({
+      { setSecMsg({
         kind: "ok",
         text: t("security.sessions.revoked_toast", { count: data.revoked }),
-      }),
+      }); },
     onError: (err) =>
-      setSecMsg({
+      { setSecMsg({
         kind: "err",
         text: err instanceof ApiError ? err.detail : t("security.auth.generic_failure"),
-      }),
+      }); },
   });
 
   if (policy.isLoading || !draft || sec.isLoading || !secDraft)
@@ -135,7 +136,7 @@ export function AdminSecurity() {
   const set =
     <K extends keyof PasswordPolicy>(key: K) =>
     (value: PasswordPolicy[K]) =>
-      setDraft({ ...draft, [key]: value });
+      { setDraft({ ...draft, [key]: value }); };
 
   function submit(e: FormEvent) {
     e.preventDefault();
@@ -148,7 +149,7 @@ export function AdminSecurity() {
   const setSec =
     <K extends keyof SecurityPolicy>(key: K) =>
     (value: SecurityPolicy[K]) =>
-      setSecDraft({ ...secDraft!, [key]: value });
+      { setSecDraft({ ...secDraft, [key]: value }); };
 
   function submitSec(e: FormEvent) {
     e.preventDefault();
@@ -225,7 +226,7 @@ export function AdminSecurity() {
                     min={4}
                     max={128}
                     value={draft.min_length}
-                    onChange={(e) => set("min_length")(parseInt(e.target.value || "0", 10))}
+                    onChange={(e) => { set("min_length")(parseInt(e.target.value || "0", 10)); }}
                     className="w-32"
                   />
                 </label>
@@ -261,7 +262,7 @@ export function AdminSecurity() {
                     type="number"
                     min={0}
                     value={draft.max_age_days}
-                    onChange={(e) => set("max_age_days")(parseInt(e.target.value || "0", 10))}
+                    onChange={(e) => { set("max_age_days")(parseInt(e.target.value || "0", 10)); }}
                     className="w-32"
                   />
                 </label>
@@ -301,7 +302,7 @@ export function AdminSecurity() {
                   </span>
                   <select
                     value={secDraft.force_mode}
-                    onChange={(e) => setSec("force_mode")(e.target.value as ForceMode)}
+                    onChange={(e) => { setSec("force_mode")(e.target.value as ForceMode); }}
                     className={selectCls}
                   >
                     <option value="off">{t("security.auth.force_off")}</option>
@@ -318,7 +319,7 @@ export function AdminSecurity() {
                   </span>
                   <select
                     value={secDraft.grace_days}
-                    onChange={(e) => setSec("grace_days")(parseInt(e.target.value, 10))}
+                    onChange={(e) => { setSec("grace_days")(parseInt(e.target.value, 10)); }}
                     className={selectCls}
                   >
                     <option value={0}>{t("security.auth.grace_0")}</option>
@@ -338,7 +339,7 @@ export function AdminSecurity() {
                     max={720}
                     value={secDraft.max_session_hours}
                     onChange={(e) =>
-                      setSec("max_session_hours")(parseInt(e.target.value || "0", 10))
+                      { setSec("max_session_hours")(parseInt(e.target.value || "0", 10)); }
                     }
                     className="w-32"
                   />
@@ -354,7 +355,7 @@ export function AdminSecurity() {
                     max={10080}
                     value={secDraft.idle_timeout_minutes}
                     onChange={(e) =>
-                      setSec("idle_timeout_minutes")(parseInt(e.target.value || "0", 10))
+                      { setSec("idle_timeout_minutes")(parseInt(e.target.value || "0", 10)); }
                     }
                     className="w-32"
                   />
@@ -445,7 +446,7 @@ function Toggle(props: { label: string; value: boolean; onChange: (v: boolean) =
       <input
         type="checkbox"
         checked={props.value}
-        onChange={(e) => props.onChange(e.target.checked)}
+        onChange={(e) => { props.onChange(e.target.checked); }}
       />
       {props.label}
     </label>

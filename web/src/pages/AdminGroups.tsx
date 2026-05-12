@@ -1,7 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Layers, PencilLine, Plus, Trash2, Users as UsersIcon, X } from "lucide-react";
-import { FormEvent, useMemo, useState } from "react";
+import type { FormEvent} from "react";
+import { useMemo, useState } from "react";
 
+import type {
+  TabItem} from "../components/ui";
 import {
   Button,
   Empty,
@@ -16,13 +19,12 @@ import {
   TH,
   THead,
   Table,
-  TabItem,
   Tabs,
   TextInput,
 } from "../components/ui";
 import { useT } from "../i18n/useT";
 import { api, ApiError } from "../lib/api";
-import { Host, HostGroup } from "../lib/types";
+import type { Host, HostGroup } from "../lib/types";
 import { hostDisplay } from "../lib/utils";
 
 type TabKey = "list" | "create";
@@ -43,7 +45,7 @@ export function AdminGroups() {
   const [editing, setEditing] = useState<HostGroup | null>(null);
   const [members, setMembers] = useState<HostGroup | null>(null);
 
-  const tabs: ReadonlyArray<TabItem<TabKey>> = useMemo(
+  const tabs: readonly TabItem<TabKey>[] = useMemo(
     () => [
       { key: "list", label: t("admin:groups.tabs.list"), icon: Layers },
       { key: "create", label: t("admin:groups.tabs.create"), icon: Plus },
@@ -69,7 +71,7 @@ export function AdminGroups() {
           {editing && (
             <GroupForm
               initial={editing}
-              onCancel={() => setEditing(null)}
+              onCancel={() => { setEditing(null); }}
               onSaved={() => {
                 void qc.invalidateQueries({ queryKey: ["groups"] });
                 setEditing(null);
@@ -81,7 +83,7 @@ export function AdminGroups() {
             <MembersPanel
               group={members}
               allHosts={hosts.data?.hosts ?? []}
-              onClose={() => setMembers(null)}
+              onClose={() => { setMembers(null); }}
               onSaved={() => {
                 void qc.invalidateQueries({ queryKey: ["groups"] });
               }}
@@ -117,10 +119,10 @@ export function AdminGroups() {
                         <TD className="tabular-nums text-fg-muted">{g.member_ids.length}</TD>
                         <TD className="text-right">
                           <div className="inline-flex items-center gap-1">
-                            <Button onClick={() => setMembers(g)}>
+                            <Button onClick={() => { setMembers(g); }}>
                               <UsersIcon className="h-3.5 w-3.5" /> {t("admin:groups.list.membersBtn")}
                             </Button>
-                            <Button onClick={() => setEditing(g)}>
+                            <Button onClick={() => { setEditing(g); }}>
                               <PencilLine className="h-3.5 w-3.5" /> {t("admin:groups.list.editBtn")}
                             </Button>
                             <Button
@@ -182,7 +184,7 @@ function GroupForm({
     },
     onSuccess: onSaved,
     onError: (err) =>
-      setError(err instanceof ApiError ? err.detail : t("admin:groups.form.failed")),
+      { setError(err instanceof ApiError ? err.detail : t("admin:groups.form.failed")); },
   });
 
   function submit(e: FormEvent) {
@@ -203,10 +205,10 @@ function GroupForm({
       <PanelBody>
         <form onSubmit={submit} className="space-y-3">
           <Field label={t("admin:groups.form.name")}>
-            <TextInput required value={name} onChange={(e) => setName(e.target.value)} />
+            <TextInput required value={name} onChange={(e) => { setName(e.target.value); }} />
           </Field>
           <Field label={t("admin:groups.form.description")}>
-            <TextInput value={description} onChange={(e) => setDescription(e.target.value)} />
+            <TextInput value={description} onChange={(e) => { setDescription(e.target.value); }} />
           </Field>
           {error && <ErrorBox>{error}</ErrorBox>}
           <div className="flex items-center gap-2">
@@ -274,7 +276,7 @@ function MembersPanel({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="primary" onClick={() => save.mutate()} disabled={save.isPending}>
+          <Button variant="primary" onClick={() => { save.mutate(); }} disabled={save.isPending}>
             {save.isPending ? t("admin:groups.members.saving") : t("admin:groups.members.save")}
           </Button>
           <Button onClick={onClose}>{t("admin:groups.members.cancel")}</Button>
@@ -294,9 +296,9 @@ function MembersPanel({
             {allHosts.map((h) => {
               const checked = selected.has(h.id);
               return (
-                <tr key={h.id} className="cursor-pointer hover:bg-panel-2" onClick={() => toggle(h.id)}>
+                <tr key={h.id} className="cursor-pointer hover:bg-panel-2" onClick={() => { toggle(h.id); }}>
                   <TD>
-                    <input type="checkbox" checked={checked} onChange={() => toggle(h.id)} />
+                    <input type="checkbox" checked={checked} onChange={() => { toggle(h.id); }} />
                   </TD>
                   <TD className="font-medium">{hostDisplay(h)}</TD>
                   <TD className="text-fg-muted">{h.distro || "—"}</TD>
@@ -419,7 +421,7 @@ function CreateGroupPanel({
       onCreated();
     },
     onError: (err) =>
-      setError(err instanceof ApiError ? err.detail : t("admin:groups.create.failed")),
+      { setError(err instanceof ApiError ? err.detail : t("admin:groups.create.failed")); },
   });
 
   function submit(e: FormEvent) {
@@ -444,14 +446,14 @@ function CreateGroupPanel({
                 required
                 placeholder={t("admin:groups.create.namePh")}
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => { setName(e.target.value); }}
               />
             </Field>
             <Field label={t("admin:groups.form.description")}>
               <TextInput
                 placeholder={t("admin:groups.create.descriptionPh")}
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                onChange={(e) => { setDescription(e.target.value); }}
               />
             </Field>
           </div>
@@ -466,7 +468,7 @@ function CreateGroupPanel({
                   <button
                     key={m}
                     type="button"
-                    onClick={() => setTagMatch(m)}
+                    onClick={() => { setTagMatch(m); }}
                     className={`rounded px-2 py-0.5 font-medium transition-colors duration-150 ${
                       tagMatch === m
                         ? "bg-panel-2 text-fg shadow-panel"
@@ -490,7 +492,7 @@ function CreateGroupPanel({
                     <button
                       key={tag}
                       type="button"
-                      onClick={() => toggleTag(tag)}
+                      onClick={() => { toggleTag(tag); }}
                       className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[11px] transition-colors duration-150 ${
                         on
                           ? "border-accent/40 bg-accent/10 text-accent"
@@ -519,7 +521,7 @@ function CreateGroupPanel({
                   className="w-44"
                   placeholder={t("admin:groups.create.searchPh")}
                   value={search}
-                  onChange={(e) => setSearch(e.target.value)}
+                  onChange={(e) => { setSearch(e.target.value); }}
                 />
                 <Button type="button" size="sm" onClick={selectAllVisible} disabled={visibleHosts.length === 0}>
                   {t("admin:groups.create.selectVisible")}
@@ -550,9 +552,9 @@ function CreateGroupPanel({
                     {visibleHosts.map((h) => {
                       const checked = selected.has(h.id);
                       return (
-                        <tr key={h.id} className="cursor-pointer hover:bg-panel-2" onClick={() => toggleHost(h.id)}>
+                        <tr key={h.id} className="cursor-pointer hover:bg-panel-2" onClick={() => { toggleHost(h.id); }}>
                           <TD>
-                            <input type="checkbox" checked={checked} onChange={() => toggleHost(h.id)} />
+                            <input type="checkbox" checked={checked} onChange={() => { toggleHost(h.id); }} />
                           </TD>
                           <TD className="font-medium">{hostDisplay(h)}</TD>
                           <TD className="text-fg-muted">{h.distro || "—"}</TD>

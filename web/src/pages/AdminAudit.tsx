@@ -1,6 +1,7 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { ClipboardList } from "lucide-react";
-import { ReactNode, useEffect, useMemo, useState } from "react";
+import type { ReactNode} from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { EmptyState, ErrorState, Page } from "../components/page";
 import {
@@ -17,14 +18,14 @@ import {
 } from "../components/ui";
 import { useT } from "../i18n/useT";
 import { api } from "../lib/api";
-import { AuditEntry } from "../lib/types";
+import type { AuditEntry } from "../lib/types";
 
 const PAGE_SIZE = 100;
 
-type Resp = {
+interface Resp {
   entries: AuditEntry[];
   total: number;
-};
+}
 
 // AdminAuditContent renders the filter + table panel without the outer
 // `<Page>` wrapper. The consolidated /admin/logs view mounts it inside a
@@ -39,14 +40,14 @@ export function AdminAuditContent({ onMeta }: { onMeta?: (node: ReactNode) => vo
 
   // Debounce filters so typing doesn't fire a request per keystroke.
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedActor(actor.trim()), 250);
-    return () => clearTimeout(t);
+    const t = setTimeout(() => { setDebouncedActor(actor.trim()); }, 250);
+    return () => { clearTimeout(t); };
   }, [actor]);
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedAction(action.trim()), 250);
-    return () => clearTimeout(t);
+    const t = setTimeout(() => { setDebouncedAction(action.trim()); }, 250);
+    return () => { clearTimeout(t); };
   }, [action]);
-  useEffect(() => setOffset(0), [debouncedActor, debouncedAction]);
+  useEffect(() => { setOffset(0); }, [debouncedActor, debouncedAction]);
 
   const params = useMemo(() => {
     const u = new URLSearchParams();
@@ -75,7 +76,7 @@ export function AdminAuditContent({ onMeta }: { onMeta?: (node: ReactNode) => vo
         {t("admin:audit.meta", { count: total })}
       </span>,
     );
-    return () => onMeta(null);
+    return () => { onMeta(null); };
   }, [onMeta, total, t]);
 
   return (
@@ -88,7 +89,7 @@ export function AdminAuditContent({ onMeta }: { onMeta?: (node: ReactNode) => vo
                   type="search"
                   placeholder={t("admin:audit.filter_actor_placeholder")}
                   value={actor}
-                  onChange={(e) => setActor(e.target.value)}
+                  onChange={(e) => { setActor(e.target.value); }}
                 />
               </Field>
             </div>
@@ -98,7 +99,7 @@ export function AdminAuditContent({ onMeta }: { onMeta?: (node: ReactNode) => vo
                   type="search"
                   placeholder={t("admin:audit.filter_action_placeholder")}
                   value={action}
-                  onChange={(e) => setAction(e.target.value)}
+                  onChange={(e) => { setAction(e.target.value); }}
                 />
               </Field>
             </div>
@@ -110,7 +111,7 @@ export function AdminAuditContent({ onMeta }: { onMeta?: (node: ReactNode) => vo
           ) : audit.error ? (
             <div className="p-5">
               <ErrorState
-                message={(audit.error as Error).message}
+                message={(audit.error).message}
                 onRetry={() => { void audit.refetch(); }}
               />
             </div>
@@ -170,7 +171,7 @@ export function AdminAuditContent({ onMeta }: { onMeta?: (node: ReactNode) => vo
               <button
                 aria-label={t("admin:audit.prev_aria")}
                 disabled={offset === 0}
-                onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+                onClick={() => { setOffset(Math.max(0, offset - PAGE_SIZE)); }}
                 className="rounded-md border border-border px-2 py-1 hover:bg-panel-2 disabled:opacity-40"
               >
                 {t("admin:audit.prev")}
@@ -178,7 +179,7 @@ export function AdminAuditContent({ onMeta }: { onMeta?: (node: ReactNode) => vo
               <button
                 aria-label={t("admin:audit.next_aria")}
                 disabled={offset + PAGE_SIZE >= total}
-                onClick={() => setOffset(offset + PAGE_SIZE)}
+                onClick={() => { setOffset(offset + PAGE_SIZE); }}
                 className="rounded-md border border-border px-2 py-1 hover:bg-panel-2 disabled:opacity-40"
               >
                 {t("admin:audit.next")}

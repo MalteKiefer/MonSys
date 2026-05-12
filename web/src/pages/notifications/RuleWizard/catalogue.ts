@@ -29,11 +29,11 @@ import {
 import type { ChannelType, NotificationConditionType } from "../../../lib/types";
 import { asNumberOrEmpty, asString, asStringArray, type Params } from "./coerce";
 
-export const CONDITION_TYPES: Array<{
+export const CONDITION_TYPES: {
   value: NotificationConditionType;
   label: string;
   description: string;
-}> = [
+}[] = [
   { value: "host_offline", label: "Host offline", description: "Fires when liveness watcher classifies a host as offline." },
   { value: "monitor_failed", label: "Monitor failed", description: "Active probe (cert/http/tcp/db) reports non-OK." },
   { value: "cert_expiring", label: "Cert expiring", description: "TLS cert remaining days < threshold." },
@@ -93,12 +93,12 @@ export const CATEGORY_MAP: Record<CategoryKey, NotificationConditionType[]> = {
   inventory: ["inventory_drift"],
 };
 
-export const CATEGORY_CARDS: Array<{
+export const CATEGORY_CARDS: {
   key: CategoryKey;
   label: string;
   blurb: string;
   icon: typeof Activity;
-}> = [
+}[] = [
   { key: "metrics", label: "Metrics", blurb: "CPU, RAM, disk, network thresholds.", icon: Activity },
   { key: "availability", label: "Availability", blurb: "Host offline, flaps, monitors.", icon: Server },
   { key: "updates", label: "Updates", blurb: "Pkg updates, certs, reboots.", icon: Package },
@@ -118,11 +118,11 @@ export function categoryOf(ct: NotificationConditionType): CategoryKey | null {
 // const block so dropdown ordering is stable. Each entry can advertise which
 // optional `scope.*` keys make sense, so the metric_threshold pane can show
 // the right sub-inputs.
-export const METRIC_KINDS: Array<{
+export const METRIC_KINDS: {
   value: string;
   label: string;
   scopeHint?: ("mountpoint" | "nic" | "workload_id" | "monitor_id")[];
-}> = [
+}[] = [
   { value: "cpu_usage_pct", label: "CPU usage %" },
   { value: "cpu_per_core_pct", label: "CPU per-core % (any core)" },
   { value: "load_1", label: "Load average (1 min)" },
@@ -233,7 +233,7 @@ export function conditionSummary(
       const v = value === "" ? "?" : String(value);
       let s = `${metricLabel} ${comparator} ${v}`;
       if (win !== "") {
-        const minutes = Math.round((win as number) / 60);
+        const minutes = Math.round((win) / 60);
         s += ` for ${minutes >= 1 ? `${minutes} min` : `${win}s`}`;
       }
       return s;
@@ -243,9 +243,9 @@ export function conditionSummary(
     case "host_flap": {
       const win = asNumberOrEmpty(params.window_sec);
       const thr = asNumberOrEmpty(params.threshold);
-      const winSec = win === "" ? 1800 : (win as number);
+      const winSec = win === "" ? 1800 : (win);
       const minutes = Math.round(winSec / 60);
-      const t = thr === "" ? 6 : (thr as number);
+      const t = thr === "" ? 6 : (thr);
       return `Host flaps > ${t} times within ${minutes} min`;
     }
     case "unexpected_reboot":
@@ -281,7 +281,7 @@ export function conditionSummary(
       return "Host has a pending reboot";
     case "repo_metadata_stale": {
       const s = asNumberOrEmpty(params.threshold_sec);
-      const secs = s === "" ? 86400 : (s as number);
+      const secs = s === "" ? 86400 : (s);
       const hours = Math.round(secs / 3600);
       return `Repository metadata older than ${hours}h`;
     }

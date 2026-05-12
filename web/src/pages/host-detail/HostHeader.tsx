@@ -16,7 +16,7 @@ import { ServiceBadges } from "../../components/icons/ServiceIcon";
 import { Panel, StatusPill } from "../../components/ui";
 import { useT } from "../../i18n/useT";
 import { hostDisplay } from "../../lib/utils";
-import { HostDetail as HostDetailT } from "../../lib/types";
+import type { HostDetail as HostDetailT } from "../../lib/types";
 
 // HostHeader is the chrome shared across every sub-route. It deliberately
 // stays *display-only* — interactive flows that mutate host state (tag edit,
@@ -81,7 +81,7 @@ function ActionMenu({ hostId }: { hostId: string }) {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     }
     document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
+    return () => { document.removeEventListener("mousedown", onDoc); };
   }, [open]);
 
   // Close on Escape so keyboard users aren't trapped.
@@ -91,7 +91,7 @@ function ActionMenu({ hostId }: { hostId: string }) {
       if (e.key === "Escape") setOpen(false);
     }
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => { window.removeEventListener("keydown", onKey); };
   }, [open]);
 
   function close() { setOpen(false); }
@@ -103,7 +103,7 @@ function ActionMenu({ hostId }: { hostId: string }) {
         aria-label={t("hostDetail:header.hostActionsAria")}
         aria-haspopup="menu"
         aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => { setOpen((v) => !v); }}
         className="rounded-md border border-border bg-panel p-1.5 text-fg-muted transition-colors hover:bg-panel-2 hover:text-fg"
       >
         <MoreVertical className="h-4 w-4" />

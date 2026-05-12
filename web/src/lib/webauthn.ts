@@ -1,5 +1,5 @@
 import { api } from "./api";
-import { LoginResponse, Passkey } from "./types";
+import type { LoginResponse, Passkey } from "./types";
 
 // --- base64url helpers ------------------------------------------------------
 
@@ -15,7 +15,7 @@ function b64urlToBytes(s: string): Uint8Array {
 function bytesToB64url(buf: ArrayBuffer): string {
   const bytes = new Uint8Array(buf);
   let bin = "";
-  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  for (const byte of bytes) bin += String.fromCharCode(byte);
   return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 

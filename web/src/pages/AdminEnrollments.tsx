@@ -9,7 +9,8 @@ import {
   Ticket,
   Trash2,
 } from "lucide-react";
-import { FormEvent, useCallback, useState } from "react";
+import type { FormEvent} from "react";
+import { useCallback, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
 import { EmptyState, ErrorState, Page } from "../components/page";
@@ -33,7 +34,7 @@ import {
 } from "../components/ui";
 import { useT } from "../i18n/useT";
 import { api, ApiError } from "../lib/api";
-import {
+import type {
   AgentEnrollment,
   AgentEnrollmentCreateResponse,
   AgentEnrollmentInput,
@@ -53,7 +54,7 @@ import {
 //   consumed — history of used + expired tokens
 //   create   — form to mint a new bootstrap token (label/desc/ttl/tags/groups)
 
-type ListResponse = { enrollments: AgentEnrollment[] };
+interface ListResponse { enrollments: AgentEnrollment[] }
 
 type Lifecycle = "consumed" | "expired" | "pending";
 
@@ -120,7 +121,7 @@ export default function AdminEnrollments() {
   const activeEnrollments = enrollments.filter((e) => lifecycle(e) === "pending");
   const consumedEnrollments = enrollments.filter((e) => lifecycle(e) !== "pending");
 
-  const tabs: ReadonlyArray<TabItem<TabKey>> = [
+  const tabs: readonly TabItem<TabKey>[] = [
     {
       key: "active",
       label: t("admin:enrollments.tabs.active"),
@@ -157,11 +158,11 @@ export default function AdminEnrollments() {
         <ActiveTokensPanel
           enrollments={activeEnrollments}
           loading={list.isLoading}
-          error={list.error as Error | null}
+          error={list.error}
           onRetry={() => { void list.refetch(); }}
           groupNameById={groupNameById}
           onRevoke={onRevoke}
-          revokingId={revoke.isPending ? (revoke.variables as string | undefined) : undefined}
+          revokingId={revoke.isPending ? (revoke.variables) : undefined}
         />
       )}
 
@@ -169,7 +170,7 @@ export default function AdminEnrollments() {
         <HistoryPanel
           enrollments={consumedEnrollments}
           loading={list.isLoading}
-          error={list.error as Error | null}
+          error={list.error}
           onRetry={() => { void list.refetch(); }}
           groupNameById={groupNameById}
         />
@@ -180,7 +181,7 @@ export default function AdminEnrollments() {
           onCreated={() => {
             void qc.invalidateQueries({ queryKey: ["admin-enrollments"] });
           }}
-          onSwitchToActive={() => setTab("active")}
+          onSwitchToActive={() => { setTab("active"); }}
         />
       )}
     </Page>
@@ -278,7 +279,7 @@ function ActiveRow({
     try {
       await navigator.clipboard.writeText(enrollment.id);
       setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      setTimeout(() => { setCopied(false); }, 1500);
     } catch {
       /* clipboard may be unavailable on insecure origins; ignore */
     }
@@ -341,7 +342,7 @@ function ActiveRow({
             size="sm"
             variant="danger"
             disabled={revoking}
-            onClick={() => onRevoke(enrollment.id)}
+            onClick={() => { onRevoke(enrollment.id); }}
           >
             <Trash2 className="h-3.5 w-3.5" />
             {revoking
@@ -483,7 +484,7 @@ function CreateTokenPanel({
   const { t } = useT(["admin", "common"]);
   const tagsQuery = useQuery({
     queryKey: ["tags"],
-    queryFn: () => api<{ tags: Array<{ tag: string; count: number }> }>("/v1/tags"),
+    queryFn: () => api<{ tags: { tag: string; count: number }[] }>("/v1/tags"),
   });
   const groupsQuery = useQuery({
     queryKey: ["groups"],
@@ -525,7 +526,7 @@ function CreateTokenPanel({
       setCreated(r);
       onCreated();
     },
-    onError: (err) => setError(err instanceof ApiError ? err.detail : (err as Error).message),
+    onError: (err) => { setError(err instanceof ApiError ? err.detail : (err).message); },
   });
 
   function submit(e: FormEvent) {
@@ -548,7 +549,7 @@ function CreateTokenPanel({
     try {
       await navigator.clipboard.writeText(text);
       setFlag(true);
-      setTimeout(() => setFlag(false), 1500);
+      setTimeout(() => { setFlag(false); }, 1500);
     } catch {
       /* clipboard may be unavailable on insecure origins; ignore */
     }
@@ -626,7 +627,7 @@ function CreateTokenPanel({
               >
                 <TextInput
                   value={label}
-                  onChange={(e) => setLabel(e.target.value)}
+                  onChange={(e) => { setLabel(e.target.value); }}
                   placeholder={t("admin:enrollments.create.fields.labelPh")}
                   maxLength={120}
                 />
@@ -640,7 +641,7 @@ function CreateTokenPanel({
                   min={5}
                   max={1440}
                   value={ttlMinutes}
-                  onChange={(e) => setTTLMinutes(parseInt(e.target.value || "0", 10))}
+                  onChange={(e) => { setTTLMinutes(parseInt(e.target.value || "0", 10)); }}
                 />
               </Field>
             </div>
@@ -653,7 +654,7 @@ function CreateTokenPanel({
             >
               <TextInput
                 value={description}
-                onChange={(e) => setDescription(e.target.value.slice(0, 200))}
+                onChange={(e) => { setDescription(e.target.value.slice(0, 200)); }}
                 placeholder={t("admin:enrollments.create.fields.descriptionPh")}
                 maxLength={200}
               />
@@ -674,7 +675,7 @@ function CreateTokenPanel({
             >
               <TextInput
                 value={tagsRaw}
-                onChange={(e) => setTagsRaw(e.target.value)}
+                onChange={(e) => { setTagsRaw(e.target.value); }}
                 placeholder={t("admin:enrollments.create.fields.tagsPh")}
                 className="font-mono"
               />
@@ -686,7 +687,7 @@ function CreateTokenPanel({
                 size={Math.min(5, Math.max(2, groupsQuery.data?.groups.length ?? 2))}
                 value={groupIDs}
                 onChange={(e) =>
-                  setGroupIDs(Array.from(e.target.selectedOptions).map((o) => o.value))
+                  { setGroupIDs(Array.from(e.target.selectedOptions).map((o) => o.value)); }
                 }
                 className="w-full rounded-md border border-border bg-panel px-3 py-2 text-sm focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
               >

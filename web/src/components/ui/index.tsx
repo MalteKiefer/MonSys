@@ -5,10 +5,11 @@
 export { Avatar } from "./Avatar";
 
 import { Check } from "lucide-react";
-import {
+import type {
   ComponentPropsWithoutRef,
   KeyboardEvent,
-  ReactNode,
+  ReactNode} from "react";
+import {
   useEffect,
   useId,
   useMemo,
@@ -205,7 +206,7 @@ export function SuccessBox({ children }: { children: ReactNode }) {
 
 // Shared by host detail charts. The range value is a duration in seconds —
 // the consumer subtracts it from `now` to compute `from`.
-export type RangeOption = { label: string; seconds: number };
+export interface RangeOption { label: string; seconds: number }
 
 export const DEFAULT_RANGES: RangeOption[] = [
   { label: "15m", seconds: 15 * 60 },
@@ -242,7 +243,7 @@ export function TimeRangeSelector({
             key={opt.label}
             role="tab"
             aria-selected={active}
-            onClick={() => onChange(opt.seconds)}
+            onClick={() => { onChange(opt.seconds); }}
             className={`rounded px-2.5 py-1 text-xs font-medium transition-colors duration-150 ${
               active ? "bg-panel-2 text-fg shadow-panel" : "text-fg-subtle hover:text-fg"
             }`}
@@ -315,13 +316,13 @@ export function Skeleton({ className = "" }: { className?: string }) {
 
 // ---- Tabs ----------------------------------------------------------------
 
-export type TabItem<T extends string> = {
+export interface TabItem<T extends string> {
   key: T;
   label: string;
   icon?: React.ComponentType<{ className?: string }>;
   badge?: ReactNode;
   hidden?: boolean;
-};
+}
 
 export function Tabs<T extends string>({
   items,
@@ -331,7 +332,7 @@ export function Tabs<T extends string>({
   idPrefix = "tab",
   panelIdPrefix = "panel",
 }: {
-  items: ReadonlyArray<TabItem<T>>;
+  items: readonly TabItem<T>[];
   value: T;
   onChange: (v: T) => void;
   className?: string;
@@ -374,7 +375,7 @@ export function Tabs<T extends string>({
             aria-selected={active}
             aria-controls={`${panelIdPrefix}-${key}`}
             tabIndex={active ? 0 : -1}
-            onClick={() => onChange(key)}
+            onClick={() => { onChange(key); }}
             className={`inline-flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors duration-150 ${
               active
                 ? "bg-panel-2 text-fg shadow-panel"
@@ -411,7 +412,7 @@ export function Kbd({ children }: { children: ReactNode }) {
 // is supplied, completed steps can be clicked and Arrow Left/Right cycles
 // focus; future steps are disabled. Without `onJump` the row is purely
 // presentational — the buttons render disabled but no click handler runs.
-export type StepperItem = { key: string; label: string; description?: string };
+export interface StepperItem { key: string; label: string; description?: string }
 
 export function Stepper({
   items,
@@ -420,9 +421,9 @@ export function Stepper({
   onJump,
   className = "",
 }: {
-  items: ReadonlyArray<StepperItem>;
+  items: readonly StepperItem[];
   current: number;
-  completed?: ReadonlyArray<number>;
+  completed?: readonly number[];
   onJump?: (idx: number) => void;
   className?: string;
 }) {
@@ -548,7 +549,7 @@ export function Stepper({
 // span so consumers can pass either a styled <button> or a plain icon — the
 // keyboard handler is attached to the wrapper.
 
-export type DropdownItem = {
+export interface DropdownItem {
   key: string;
   label: string;
   icon?: React.ComponentType<{ className?: string }>;
@@ -558,7 +559,7 @@ export type DropdownItem = {
   // When set, shows as a native title tooltip on the disabled item so the
   // user can discover *why* the action is unavailable.
   disabledReason?: string;
-};
+}
 
 export function DropdownMenu({
   trigger,
@@ -566,13 +567,13 @@ export function DropdownMenu({
   align = "right",
 }: {
   trigger: ReactNode;
-  items: ReadonlyArray<DropdownItem>;
+  items: readonly DropdownItem[];
   align?: "left" | "right";
 }) {
   const [open, setOpen] = useState(false);
   const [activeIdx, setActiveIdx] = useState<number>(-1);
   const wrapRef = useRef<HTMLDivElement | null>(null);
-  const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const menuId = useId();
 
   // Build a sparse refs array sized to the current items list so roving
@@ -689,7 +690,7 @@ export function DropdownMenu({
     >
       <div
         data-dropdown-trigger
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => { setOpen((v) => !v); }}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}

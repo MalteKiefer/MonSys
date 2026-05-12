@@ -1,9 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Activity, Clock, PencilLine, Plus, Trash2, X } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import type { FormEvent} from "react";
+import { useEffect, useMemo, useState } from "react";
 
-import { ChartLine, ChartSeries, colorFor } from "../components/Chart";
+import type { ChartSeries} from "../components/Chart";
+import { ChartLine, colorFor } from "../components/Chart";
 import { Page } from "../components/page";
+import type {
+  TabItem} from "../components/ui";
 import {
   Button,
   Empty,
@@ -18,14 +22,13 @@ import {
   TH,
   THead,
   Table,
-  TabItem,
   Tabs,
   TextInput,
   TimeRangeSelector,
 } from "../components/ui";
 import { useT } from "../i18n/useT";
 import { api, ApiError } from "../lib/api";
-import { HostGroup, Monitor, MonitorInput, MonitorResult } from "../lib/types";
+import type { HostGroup, Monitor, MonitorInput, MonitorResult } from "../lib/types";
 
 type TabKey = "active" | "create" | "history";
 
@@ -43,7 +46,7 @@ const TARGET_HINT_KEYS: Record<Monitor["type"], string> = {
 };
 
 const TYPE_FIELDS: Partial<
-  Record<Monitor["type"], Array<{ key: string; labelKey: string; placeholder?: string }>>
+  Record<Monitor["type"], { key: string; labelKey: string; placeholder?: string }[]>
 > = {
   cert: [
     { key: "warn_days", labelKey: "admin:monitors.type_fields.warn_days", placeholder: "30" },
@@ -93,12 +96,12 @@ export function AdminMonitors() {
       if (e.key === "Escape") close();
     }
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => { window.removeEventListener("keydown", onKey); };
   }, [panel.kind]);
 
   const monitors = list.data?.monitors ?? [];
 
-  const tabs: ReadonlyArray<TabItem<TabKey>> = [
+  const tabs: readonly TabItem<TabKey>[] = [
     { key: "active", label: t("admin:monitors.tabs.active"), icon: Activity, badge: monitors.length || undefined },
     { key: "create", label: t("admin:monitors.tabs.create"), icon: Plus },
     { key: "history", label: t("admin:monitors.tabs.history"), icon: Clock },
@@ -118,8 +121,8 @@ export function AdminMonitors() {
           <ActiveMonitorsTab
             monitors={monitors}
             isLoading={list.isLoading}
-            onOpenDetail={(m) => setPanel({ kind: "detail", monitor: m })}
-            onCreate={() => setTab("create")}
+            onOpenDetail={(m) => { setPanel({ kind: "detail", monitor: m }); }}
+            onCreate={() => { setTab("create"); }}
             onDelete={(m) => {
               if (confirm(t("admin:monitors.active.delete_confirm", { name: m.name })))
                 void api(`/v1/monitors/${m.id}`, { method: "DELETE" }).then(() =>
@@ -135,7 +138,7 @@ export function AdminMonitors() {
               void qc.invalidateQueries({ queryKey: ["monitors"] });
               setTab("active");
             }}
-            onCancel={() => setTab("active")}
+            onCancel={() => { setTab("active"); }}
           />
         )}
 
@@ -229,7 +232,7 @@ function ActiveMonitorsTab({
                   key={m.id}
                   role="button"
                   tabIndex={0}
-                  onClick={() => onOpenDetail(m)}
+                  onClick={() => { onOpenDetail(m); }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault();
@@ -254,12 +257,12 @@ function ActiveMonitorsTab({
                         don't double-fire the row's open-detail handler. */}
                     <div
                       className="inline-flex items-center gap-1"
-                      onClick={(e) => e.stopPropagation()}
+                      onClick={(e) => { e.stopPropagation(); }}
                     >
-                      <Button onClick={() => onOpenDetail(m)}>
+                      <Button onClick={() => { onOpenDetail(m); }}>
                         <PencilLine className="h-3.5 w-3.5" /> {t("common:actions.edit")}
                       </Button>
-                      <Button variant="danger" onClick={() => onDelete(m)}>
+                      <Button variant="danger" onClick={() => { onDelete(m); }}>
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </div>
@@ -541,7 +544,7 @@ function MonitorForm({
   const { t } = useT(["admin", "common"]);
   const tagsQuery = useQuery({
     queryKey: ["tags"],
-    queryFn: () => api<{ tags: Array<{ tag: string; count: number }> }>("/v1/tags"),
+    queryFn: () => api<{ tags: { tag: string; count: number }[] }>("/v1/tags"),
   });
   const groupsQuery = useQuery({
     queryKey: ["groups"],
@@ -595,7 +598,7 @@ function MonitorForm({
       });
     },
     onSuccess: onSaved,
-    onError: (err) => setError(err instanceof ApiError ? err.detail : t("admin:monitors.form.failed")),
+    onError: (err) => { setError(err instanceof ApiError ? err.detail : t("admin:monitors.form.failed")); },
   });
 
   function submit(e: FormEvent) {
@@ -627,12 +630,12 @@ function MonitorForm({
           </select>
         </Field>
         <Field label={t("admin:monitors.form.name")}>
-          <TextInput required value={name} onChange={(e) => setName(e.target.value)} />
+          <TextInput required value={name} onChange={(e) => { setName(e.target.value); }} />
         </Field>
       </div>
 
       <Field label={t("admin:monitors.form.target")} hint={t(TARGET_HINT_KEYS[type])}>
-        <TextInput required value={target} onChange={(e) => setTarget(e.target.value)} className="font-mono" />
+        <TextInput required value={target} onChange={(e) => { setTarget(e.target.value); }} className="font-mono" />
       </Field>
 
       {fields.length > 0 && (
@@ -642,7 +645,7 @@ function MonitorForm({
               <TextInput
                 placeholder={f.placeholder}
                 value={params[f.key] ?? ""}
-                onChange={(e) => setParams({ ...params, [f.key]: e.target.value })}
+                onChange={(e) => { setParams({ ...params, [f.key]: e.target.value }); }}
               />
             </Field>
           ))}
@@ -656,12 +659,12 @@ function MonitorForm({
             min={10}
             max={86400}
             value={intervalSec}
-            onChange={(e) => setIntervalSec(parseInt(e.target.value || "60", 10))}
+            onChange={(e) => { setIntervalSec(parseInt(e.target.value || "60", 10)); }}
           />
         </Field>
         <Field label={t("admin:monitors.form.enabled")}>
           <label className="mt-2 inline-flex items-center gap-2 text-sm text-fg-muted">
-            <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+            <input type="checkbox" checked={enabled} onChange={(e) => { setEnabled(e.target.checked); }} />
             {t("admin:monitors.form.on")}
           </label>
         </Field>
@@ -679,7 +682,7 @@ function MonitorForm({
       >
         <TextInput
           value={tagsRaw}
-          onChange={(e) => setTagsRaw(e.target.value)}
+          onChange={(e) => { setTagsRaw(e.target.value); }}
           placeholder={t("admin:monitors.form.tags_placeholder")}
           className="font-mono"
         />
@@ -691,7 +694,7 @@ function MonitorForm({
           size={Math.min(5, Math.max(2, groupsQuery.data?.groups.length ?? 2))}
           value={groupIDs}
           onChange={(e) =>
-            setGroupIDs(Array.from(e.target.selectedOptions).map((o) => o.value))
+            { setGroupIDs(Array.from(e.target.selectedOptions).map((o) => o.value)); }
           }
           className="w-full rounded-md border border-border bg-panel px-3 py-2 text-sm"
         >

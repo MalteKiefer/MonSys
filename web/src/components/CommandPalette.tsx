@@ -33,8 +33,9 @@ import {
   UserCog,
   Users,
 } from "lucide-react";
+import type {
+  KeyboardEvent as ReactKeyboardEvent} from "react";
 import {
-  KeyboardEvent as ReactKeyboardEvent,
   useEffect,
   useMemo,
   useRef,
@@ -46,7 +47,7 @@ import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useCommandPalette, type PaletteRecent } from "../lib/palette-store";
 import { useT } from "../i18n/useT";
-import {
+import type {
   Host,
   Monitor,
   NotificationRule,
@@ -59,7 +60,7 @@ import { hostDisplay } from "../lib/utils";
 
 type ItemKind = "page" | "host" | "monitor" | "rule";
 
-type PaletteItem = {
+interface PaletteItem {
   // Stable key combining kind + id so React's reconciler stays happy across
   // re-renders and so addRecent can dedupe consistently.
   id: string;
@@ -73,7 +74,7 @@ type PaletteItem = {
   icon: typeof Search;
   // Optional category override for grouping. Defaults to a per-kind label.
   group?: string;
-};
+}
 
 // Cap the result list at a sensible number so a 5,000-host fleet doesn't
 // blow up the modal. 30 is enough that scrolling is never required for a
@@ -104,13 +105,13 @@ const GROUP_LABEL: Record<ItemKind, string> = {
 // surface in the palette before its label is curated. Admin-only routes
 // are filtered out at render time when the user isn't an admin.
 
-type StaticPage = {
+interface StaticPage {
   to: string;
   label: string;
   secondary: string;
   icon: typeof Search;
   adminOnly?: boolean;
-};
+}
 
 const STATIC_PAGES: StaticPage[] = [
   { to: "/", label: "Overview", secondary: "/", icon: LayoutDashboard },
@@ -168,7 +169,7 @@ function useGlobalHotkey() {
       }
     }
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => { window.removeEventListener("keydown", onKey); };
   }, [toggle, open, setOpen]);
 }
 
@@ -210,7 +211,7 @@ function PaletteModal() {
   // keeps focus reliable across StrictMode double-invocation in dev.
   useEffect(() => {
     const id = requestAnimationFrame(() => inputRef.current?.focus());
-    return () => cancelAnimationFrame(id);
+    return () => { cancelAnimationFrame(id); };
   }, []);
 
   // ---- data sources -----------------------------------------------------
@@ -306,7 +307,7 @@ function PaletteModal() {
   // ---- filtering --------------------------------------------------------
 
   const trimmed = query.trim().toLowerCase();
-  type Section = { kind: ItemKind | "recent"; label: string; items: PaletteItem[] };
+  interface Section { kind: ItemKind | "recent"; label: string; items: PaletteItem[] }
 
   const sections = useMemo<Section[]>(() => {
     if (trimmed === "") {
@@ -447,7 +448,7 @@ function PaletteModal() {
             aria-autocomplete="list"
             placeholder={t("palette.placeholder")}
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => { setQuery(e.target.value); }}
             className="flex-1 bg-transparent text-sm text-fg placeholder:text-fg-subtle focus:outline-none"
           />
           <kbd className="hidden items-center rounded border border-border bg-panel-2 px-1.5 py-0.5 font-mono text-[10px] text-fg-subtle sm:inline-flex">
@@ -497,7 +498,7 @@ function PaletteModal() {
                             e.preventDefault();
                             activate(item);
                           }}
-                          onMouseEnter={() => setActiveIdx(idx)}
+                          onMouseEnter={() => { setActiveIdx(idx); }}
                           className={[
                             "flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors",
                             isActive

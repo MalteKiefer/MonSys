@@ -1,5 +1,5 @@
-import { LucideIcon } from "lucide-react";
-import { ReactNode } from "react";
+import type { LucideIcon } from "lucide-react";
+import type { ReactNode } from "react";
 
 // Centered "nothing here yet" block, reused across listing pages so the empty
 // experience feels consistent: muted icon, short title, optional hint, and an

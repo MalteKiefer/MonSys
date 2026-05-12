@@ -16,7 +16,7 @@ import {
 } from "../../components/ui";
 import { useT } from "../../i18n/useT";
 import { api } from "../../lib/api";
-import { HostDetail as HostDetailT, PendingUpdate } from "../../lib/types";
+import type { HostDetail as HostDetailT, PendingUpdate } from "../../lib/types";
 
 import { useHostDetail } from "./HostLayout";
 

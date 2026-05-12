@@ -18,7 +18,7 @@ import {
 import { useT } from "../../i18n/useT";
 import { api } from "../../lib/api";
 import { hostDisplay } from "../../lib/utils";
-import {
+import type {
   AlertHistoryEntry,
   Host,
   NotificationRule,
@@ -112,7 +112,7 @@ export function AlertsPage() {
             {(["1h", "24h", "7d", "30d"] as const).map((s) => (
               <button
                 key={s}
-                onClick={() => setSince(s)}
+                onClick={() => { setSince(s); }}
                 className={`rounded px-2.5 py-1 text-xs font-medium transition-colors duration-150 ${
                   since === s ? "bg-panel-2 text-fg shadow-panel" : "text-fg-subtle hover:text-fg"
                 }`}
@@ -127,7 +127,7 @@ export function AlertsPage() {
             <Field label={t("notifications:alerts.filter_label")} hint={t("notifications:alerts.filter_hint")}>
               <select
                 value={hostFilter}
-                onChange={(e) => setHostFilter(e.target.value)}
+                onChange={(e) => { setHostFilter(e.target.value); }}
                 className="w-full rounded-md border border-border bg-panel px-3 py-2 text-sm focus:border-accent focus:outline-none md:w-72"
               >
                 <option value="">{t("notifications:alerts.all_hosts")}</option>
@@ -170,7 +170,7 @@ export function AlertsPage() {
                     <tr key={a.id} className="hover:bg-panel-2">
                       <TD className="font-mono text-xs text-fg-muted">{relTime(a.at)}</TD>
                       <TD>
-                        <StatusPill status={severityStatus(a.severity as NotificationRule["severity"])}>
+                        <StatusPill status={severityStatus(a.severity)}>
                           {a.severity}
                         </StatusPill>
                       </TD>

@@ -7,7 +7,7 @@ import { useMemo, type ReactNode } from "react";
 
 import { TextInput } from "../../../components/ui";
 
-export type MultiSelectItem = { id: string; label: string; sub?: ReactNode };
+export interface MultiSelectItem { id: string; label: string; sub?: ReactNode }
 
 export function MultiSelectList({
   items,
@@ -37,7 +37,7 @@ export function MultiSelectList({
         <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-fg-subtle" />
         <TextInput
           value={search}
-          onChange={(e) => onSearch(e.target.value)}
+          onChange={(e) => { onSearch(e.target.value); }}
           placeholder={placeholder}
           className="pl-7"
         />
@@ -61,7 +61,7 @@ export function MultiSelectList({
                     <input
                       type="checkbox"
                       checked={checked}
-                      onChange={() => onToggle(it.id)}
+                      onChange={() => { onToggle(it.id); }}
                       className="mt-0.5 h-3.5 w-3.5 accent-accent"
                     />
                     <span className="min-w-0 flex-1">

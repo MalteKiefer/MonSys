@@ -1,6 +1,7 @@
-import { ReactNode } from "react";
+import type { ReactNode } from "react";
 
-import { Breadcrumb, BreadcrumbItem } from "./Breadcrumb";
+import type { BreadcrumbItem } from "./Breadcrumb";
+import { Breadcrumb } from "./Breadcrumb";
 
 // The visual top of every page: optional breadcrumb, then a row containing
 // the H1 (with optional subtitle) and right-aligned actions. Stickiness is

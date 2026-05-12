@@ -12,11 +12,11 @@ import { persist } from "zustand/middleware";
 
 export type Density = "compact" | "comfortable";
 
-type DensityState = {
+interface DensityState {
   density: Density;
   setDensity: (d: Density) => void;
   toggle: () => void;
-};
+}
 
 export const useDensityStore = create<DensityState>()(
   persist(

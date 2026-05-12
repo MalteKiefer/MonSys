@@ -4,8 +4,8 @@
 // All visuals are Tailwind + UI primitives. No new behaviour — these are
 // presentational pieces driven entirely by their props.
 
-import { ReactNode } from "react";
-import { LucideIcon } from "lucide-react";
+import type { ReactNode } from "react";
+import type { LucideIcon } from "lucide-react";
 
 // ---- Section ---------------------------------------------------------------
 
@@ -37,12 +37,12 @@ export function FormSection({
 
 // ---- Pill-group (radio) ----------------------------------------------------
 
-export type PillOption<T extends string> = {
+export interface PillOption<T extends string> {
   value: T;
   label: string;
   // Tailwind classes for the *active* state. Inactive uses neutral panel.
   activeClass: string;
-};
+}
 
 // Segmented pill picker used for severity. Behaves as a single-select radio
 // group; keeps `value` / `onChange` semantics identical to a native select.
@@ -67,7 +67,7 @@ export function PillGroup<T extends string>({
             type="button"
             role="radio"
             aria-checked={active}
-            onClick={() => onChange(opt.value)}
+            onClick={() => { onChange(opt.value); }}
             className={`rounded-md px-2.5 py-1 text-xs font-medium ring-1 ring-inset transition-colors duration-150 ${
               active
                 ? opt.activeClass
@@ -102,7 +102,7 @@ export function Toggle({
         type="button"
         role="switch"
         aria-checked={checked}
-        onClick={() => onChange(!checked)}
+        onClick={() => { onChange(!checked); }}
         className={`relative mt-0.5 h-4 w-7 shrink-0 rounded-full ring-1 ring-inset transition-colors duration-150 ${
           checked
             ? "bg-accent/30 ring-accent/50"
@@ -125,12 +125,12 @@ export function Toggle({
 
 // ---- Checkbox grid --------------------------------------------------------
 
-export type CheckCard = {
+export interface CheckCard {
   id: string;
   primary: ReactNode;
   secondary?: ReactNode;
   icon?: LucideIcon;
-};
+}
 
 // Grid of checkable rows. Used for picking channels, hosts, and groups.
 // Scrollable when the option list grows past `maxHeight`.
@@ -176,7 +176,7 @@ export function CheckboxGrid({
               <input
                 type="checkbox"
                 checked={checked}
-                onChange={() => onToggle(opt.id)}
+                onChange={() => { onToggle(opt.id); }}
                 className="mt-0.5 h-3.5 w-3.5 accent-accent"
               />
               {Icon && (
@@ -234,12 +234,12 @@ export function TagChip({
 
 // ---- Type-card grid (for ChannelForm) -------------------------------------
 
-export type TypeCardOption<T extends string> = {
+export interface TypeCardOption<T extends string> {
   value: T;
   label: string;
   description: string;
   icon: LucideIcon;
-};
+}
 
 export function TypeCardGrid<T extends string>({
   options,

@@ -1,9 +1,11 @@
 import { AlertTriangle, FileJson, FileSearch } from "lucide-react";
-import { ReactNode, useCallback, useMemo, useState } from "react";
+import type { ReactNode} from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { Page } from "../components/page";
-import { Tabs, TabItem } from "../components/ui";
+import type { TabItem } from "../components/ui";
+import { Tabs } from "../components/ui";
 import { useT } from "../i18n/useT";
 import { AdminAuditContent } from "./AdminAudit";
 import { AdminIngestsContent } from "./AdminIngests";
@@ -30,7 +32,7 @@ export function LogsPage() {
   const raw = search.get("tab");
   const tab: TabKey = isTabKey(raw) ? raw : "server";
 
-  const TABS: ReadonlyArray<TabItem<TabKey>> = [
+  const TABS: readonly TabItem<TabKey>[] = [
     { key: "server", label: t("admin:logsPage.tab_server"), icon: FileSearch },
     { key: "ingest", label: t("admin:logsPage.tab_ingest"), icon: FileJson },
     { key: "audit", label: t("admin:logsPage.tab_audit"), icon: AlertTriangle },
@@ -52,7 +54,7 @@ export function LogsPage() {
   // badge, toolbar) via this callback so the consolidated page header can
   // host it. Memoized so the inner effect dependency stays stable.
   const [meta, setMeta] = useState<ReactNode>(null);
-  const onMeta = useCallback((node: ReactNode) => setMeta(node), []);
+  const onMeta = useCallback((node: ReactNode) => { setMeta(node); }, []);
 
   const setTab = useCallback(
     (next: TabKey) => {

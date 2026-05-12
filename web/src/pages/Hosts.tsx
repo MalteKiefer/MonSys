@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Plus, Server } from "lucide-react";
-import { KeyboardEvent, useMemo, useState } from "react";
+import type { KeyboardEvent} from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { EnrollAgentModal } from "../components/EnrollAgentModal";
@@ -22,10 +23,10 @@ import {
 import { useT } from "../i18n/useT";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { Host } from "../lib/types";
+import type { Host } from "../lib/types";
 import { hostDisplay } from "../lib/utils";
 
-type HostsResponse = { hosts: Host[] };
+interface HostsResponse { hosts: Host[] }
 
 type StatusFilter = "all" | "online" | "stale" | "offline";
 
@@ -74,7 +75,7 @@ export function Hosts() {
       if (!aDef && !bDef) return 0;
       if (!aDef) return 1;
       if (!bDef) return -1;
-      return (bv as number) - (av as number);
+      return (bv) - (av);
     });
   }, [hosts, search, statusFilter, updatesSort]);
 
@@ -98,7 +99,7 @@ export function Hosts() {
   };
 
   const addAgentButton = isAdmin ? (
-    <Button variant="primary" onClick={() => setEnrollOpen(true)}>
+    <Button variant="primary" onClick={() => { setEnrollOpen(true); }}>
       <Plus className="h-3.5 w-3.5" /> {t("hosts:addAgent")}
     </Button>
   ) : null;
@@ -113,12 +114,12 @@ export function Hosts() {
 
   return (
     <Page title={t("hosts:title")} subtitle={subtitle} actions={addAgentButton}>
-      {enrollOpen && <EnrollAgentModal onClose={() => setEnrollOpen(false)} />}
+      {enrollOpen && <EnrollAgentModal onClose={() => { setEnrollOpen(false); }} />}
 
       {isLoading ? (
         <p className="text-sm text-fg-muted">{t("hosts:loading")}</p>
       ) : error ? (
-        <ErrorState message={(error as Error).message} onRetry={() => { void refetch(); }} />
+        <ErrorState message={(error).message} onRetry={() => { void refetch(); }} />
       ) : (
         <>
           {hosts.length > 0 && (
@@ -129,7 +130,7 @@ export function Hosts() {
                     type="search"
                     placeholder={t("hosts:filters.searchPlaceholder")}
                     value={search}
-                    onChange={(e) => setSearch(e.currentTarget.value)}
+                    onChange={(e) => { setSearch(e.currentTarget.value); }}
                     aria-label={t("hosts:filters.searchAria")}
                   />
                 </Field>
@@ -148,7 +149,7 @@ export function Hosts() {
                           key={key}
                           type="button"
                           aria-pressed={active}
-                          onClick={() => setStatusFilter(key)}
+                          onClick={() => { setStatusFilter(key); }}
                           className={`rounded px-2.5 py-1 text-xs font-medium transition-colors duration-150 ${
                             active ? "bg-panel-2 text-fg shadow-panel" : "text-fg-subtle hover:text-fg"
                           }`}
@@ -215,7 +216,7 @@ export function Hosts() {
                       aria-label={t("hosts:table.openHostAria", { host: hostDisplay(h) })}
                       className="cursor-pointer transition-colors duration-100 hover:bg-panel-2 focus:outline-none focus-visible:bg-panel-2 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/50"
                       onClick={() => { void navigate(`/hosts/${h.id}`); }}
-                      onKeyDown={(e) => onRowKeyDown(e, h.id)}
+                      onKeyDown={(e) => { onRowKeyDown(e, h.id); }}
                     >
                       <TD><StatusPill status={h.status} /></TD>
                       <TD>

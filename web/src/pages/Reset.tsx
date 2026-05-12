@@ -1,5 +1,6 @@
 import { KeyRound } from "lucide-react";
-import { FormEvent, useState } from "react";
+import type { FormEvent} from "react";
+import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { Button, ErrorBox, Field, Panel, SuccessBox, TextInput } from "../components/ui";
@@ -84,7 +85,7 @@ export function Reset() {
               type="password"
               required
               value={pw}
-              onChange={(e) => setPw(e.target.value)}
+              onChange={(e) => { setPw(e.target.value); }}
             />
           </Field>
           <Field label={t("reset.confirm")}>
@@ -92,7 +93,7 @@ export function Reset() {
               type="password"
               required
               value={pw2}
-              onChange={(e) => setPw2(e.target.value)}
+              onChange={(e) => { setPw2(e.target.value); }}
             />
           </Field>
           {error && <ErrorBox>{error}</ErrorBox>}

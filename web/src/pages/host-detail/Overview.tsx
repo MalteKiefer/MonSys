@@ -1,10 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Cpu, Tag, X } from "lucide-react";
-import { KeyboardEvent, useMemo, useState } from "react";
+import type { KeyboardEvent} from "react";
+import { useMemo, useState } from "react";
 
+import type {
+  ChartSeries} from "../../components/Chart";
 import {
   ChartLine,
-  ChartSeries,
   colorFor,
   formatBytes,
   formatPercent,
@@ -20,7 +22,7 @@ import {
 } from "../../components/ui";
 import { useT } from "../../i18n/useT";
 import { api } from "../../lib/api";
-import { SystemSample } from "../../lib/types";
+import type { SystemSample } from "../../lib/types";
 
 import { useHostDetail } from "./HostLayout";
 
@@ -146,7 +148,7 @@ function TagsEditor({ hostID, initial }: { hostID: string; initial: string[] }) 
       {tags.map((tag) => (
         <span key={tag} className="inline-flex items-center gap-0.5 rounded-md bg-panel-2 pl-1.5 pr-0.5 py-0.5 font-mono text-[10px] text-accent">
           #{tag}
-          <button onClick={() => commit(tags.filter((x) => x !== tag))} className="rounded p-0.5 text-fg-subtle hover:bg-fail/20 hover:text-fail" aria-label={t("hostDetail:overview.removeTagAria", { tag })}>
+          <button onClick={() => { commit(tags.filter((x) => x !== tag)); }} className="rounded p-0.5 text-fg-subtle hover:bg-fail/20 hover:text-fail" aria-label={t("hostDetail:overview.removeTagAria", { tag })}>
             <X className="h-3 w-3" />
           </button>
         </span>
@@ -159,13 +161,13 @@ function TagsEditor({ hostID, initial }: { hostID: string; initial: string[] }) 
             if (draft) add();
             setEditing(false);
           }}
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={(e) => { setDraft(e.target.value); }}
           onKeyDown={onKey}
           placeholder={t("hostDetail:overview.addTagPlaceholder")}
           className="w-24 rounded-md border border-border bg-panel px-1.5 py-0.5 font-mono text-[10px] focus:border-accent focus:outline-none"
         />
       ) : (
-        <button onClick={() => setEditing(true)} className="rounded-md border border-dashed border-border px-2 py-0.5 text-[10px] text-fg-subtle hover:text-fg hover:border-border-strong">
+        <button onClick={() => { setEditing(true); }} className="rounded-md border border-dashed border-border px-2 py-0.5 text-[10px] text-fg-subtle hover:text-fg hover:border-border-strong">
           {t("hostDetail:overview.addTag")}
         </button>
       )}

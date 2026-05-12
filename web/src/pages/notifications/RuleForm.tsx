@@ -25,7 +25,8 @@ import {
   Sliders,
   X,
 } from "lucide-react";
-import { FormEvent, useEffect, useState } from "react";
+import type { FormEvent} from "react";
+import { useEffect, useState } from "react";
 
 import {
   Button,
@@ -36,7 +37,7 @@ import {
 } from "../../components/ui";
 import { useT } from "../../i18n/useT";
 import { api, ApiError } from "../../lib/api";
-import {
+import type {
   Host,
   HostGroup,
   NotificationChannel,
@@ -88,7 +89,7 @@ export function RuleForm({
   };
   const tagsQuery = useQuery({
     queryKey: ["tags"],
-    queryFn: () => api<{ tags: Array<{ tag: string; count: number }> }>("/v1/tags"),
+    queryFn: () => api<{ tags: { tag: string; count: number }[] }>("/v1/tags"),
   });
   const groupsQuery = useQuery({
     queryKey: ["groups"],
@@ -263,7 +264,7 @@ export function RuleForm({
       onSaved();
     },
     onError: (err) =>
-      setError(err instanceof ApiError ? err.detail : (err as Error).message),
+      { setError(err instanceof ApiError ? err.detail : (err).message); },
   });
 
   function onSubmit(e: FormEvent) {
@@ -392,7 +393,7 @@ export function RuleForm({
             ) : (
               <Button
                 type="button"
-                onClick={() => goTo((draft.step - 1) as Step)}
+                onClick={() => { goTo((draft.step - 1) as Step); }}
               >
                 <ArrowLeft className="h-3.5 w-3.5" /> {t("notifications:rules.form.back")}
               </Button>
@@ -412,7 +413,7 @@ export function RuleForm({
                   (draft.step === 1 && !step1Valid) ||
                   (draft.step === 2 && !step2Valid)
                 }
-                onClick={() => goTo((draft.step + 1) as Step)}
+                onClick={() => { goTo((draft.step + 1) as Step); }}
               >
                 {t("notifications:rules.form.next", { step: stepLabels[(draft.step + 1) as Step] })}{" "}
                 <ArrowRight className="h-3.5 w-3.5" />

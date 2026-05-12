@@ -1,8 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Eye, Layers, PencilLine, Plus, Server, Settings, Trash2, Users } from "lucide-react";
-import { FormEvent, useMemo, useState } from "react";
+import type { FormEvent} from "react";
+import { useMemo, useState } from "react";
 
 import { Page } from "../components/page";
+import type {
+  TabItem} from "../components/ui";
 import {
   Button,
   Empty,
@@ -13,7 +16,6 @@ import {
   PanelHeader,
   Skeleton,
   StatusPill,
-  TabItem,
   Tabs,
   TBody,
   TD,
@@ -24,7 +26,7 @@ import {
 } from "../components/ui";
 import { useT } from "../i18n/useT";
 import { api, ApiError } from "../lib/api";
-import {
+import type {
   AgentConfig,
   AgentConfigEntry,
   AgentConfigInput,
@@ -81,7 +83,7 @@ export function AdminAgentConfig() {
   const groupCfgs = useMemo(() => configs.filter((c) => c.scope === "group"), [configs]);
   const hostCfgs = useMemo(() => configs.filter((c) => c.scope === "host"), [configs]);
 
-  const tabs: ReadonlyArray<TabItem<TabKey>> = [
+  const tabs: readonly TabItem<TabKey>[] = [
     { key: "global", label: t("admin:agentConfig.tabs.global"), icon: Settings, badge: globalCfg ? "1" : "0" },
     { key: "groups", label: t("admin:agentConfig.tabs.groups"), icon: Users, badge: String(groupCfgs.length) },
     { key: "hosts", label: t("admin:agentConfig.tabs.hosts"), icon: Server, badge: String(hostCfgs.length) },
@@ -128,7 +130,7 @@ export function AdminAgentConfig() {
           cfg={globalCfg}
           loading={list.isLoading}
           onEdit={() => globalCfg && setEditing(globalCfg)}
-          onCreate={() => setCreating("global")}
+          onCreate={() => { setCreating("global"); }}
           onDelete={() => {
             if (!globalCfg) return;
             if (confirm(t("admin:agentConfig.confirm.delete_global")))
@@ -144,8 +146,8 @@ export function AdminAgentConfig() {
           scope="group"
           rows={groupCfgs}
           loading={list.isLoading}
-          onNew={() => setCreating("group")}
-          onEdit={(c) => setEditing(c)}
+          onNew={() => { setCreating("group"); }}
+          onEdit={(c) => { setEditing(c); }}
           onDelete={(c) => {
             if (
               confirm(
@@ -166,8 +168,8 @@ export function AdminAgentConfig() {
           scope="host"
           rows={hostCfgs}
           loading={list.isLoading}
-          onNew={() => setCreating("host")}
-          onEdit={(c) => setEditing(c)}
+          onNew={() => { setCreating("host"); }}
+          onEdit={(c) => { setEditing(c); }}
           onDelete={(c) => {
             if (
               confirm(
@@ -194,7 +196,7 @@ export function AdminAgentConfig() {
               <div className="flex items-center gap-2">
                 <select
                   value={selectedHostID}
-                  onChange={(e) => setSelectedHostID(e.target.value)}
+                  onChange={(e) => { setSelectedHostID(e.target.value); }}
                   className="rounded-md border border-border bg-panel px-2 py-1 text-xs"
                 >
                   <option value="">{t("admin:agentConfig.preview.pick_host_placeholder")}</option>
@@ -224,7 +226,7 @@ export function AdminAgentConfig() {
             <PreviewPanel
               host={previewHost}
               allConfigs={configs}
-              onClose={() => setPreviewHost(null)}
+              onClose={() => { setPreviewHost(null); }}
             />
           )}
         </>
@@ -390,10 +392,10 @@ function ScopeTable({
                   </TD>
                   <TD className="text-right">
                     <div className="inline-flex items-center gap-1">
-                      <Button onClick={() => onEdit(c)}>
+                      <Button onClick={() => { onEdit(c); }}>
                         <PencilLine className="h-3.5 w-3.5" /> {t("common:actions.edit")}
                       </Button>
-                      <Button variant="danger" onClick={() => onDelete(c)}>
+                      <Button variant="danger" onClick={() => { onDelete(c); }}>
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </div>
@@ -634,7 +636,7 @@ function PreviewPanel({
         {preview.isLoading ? (
           <Skeleton className="h-48" />
         ) : preview.error ? (
-          <ErrorBox>{(preview.error as Error).message}</ErrorBox>
+          <ErrorBox>{(preview.error).message}</ErrorBox>
         ) : (
           <>
             <p className="mb-3 text-xs text-fg-subtle">
@@ -795,7 +797,7 @@ function ConfigForm({
       });
     },
     onSuccess: onSaved,
-    onError: (err) => setError(err instanceof ApiError ? err.detail : (err as Error).message),
+    onError: (err) => { setError(err instanceof ApiError ? err.detail : (err).message); },
   });
 
   function submit(e: FormEvent) {
@@ -838,7 +840,7 @@ function ConfigForm({
                 <select
                   required
                   value={targetID}
-                  onChange={(e) => setTargetID(e.target.value)}
+                  onChange={(e) => { setTargetID(e.target.value); }}
                   className="w-full rounded-md border border-border bg-panel px-3 py-2 text-sm"
                 >
                   <option value="">{t("admin:agentConfig.form.pick_target_placeholder", { scope })}</option>
@@ -855,7 +857,7 @@ function ConfigForm({
           </div>
 
           <Field label={t("admin:agentConfig.form.description")}>
-            <TextInput value={description} onChange={(e) => setDescription(e.target.value)} />
+            <TextInput value={description} onChange={(e) => { setDescription(e.target.value); }} />
           </Field>
 
           <fieldset className="rounded-md border border-border p-3">
@@ -867,13 +869,13 @@ function ConfigForm({
                 label={t("admin:agentConfig.form.interval_seconds")}
                 hint={t("admin:agentConfig.form.interval_hint")}
               >
-                <TextInput type="number" min={5} max={3600} value={intervalSec} onChange={(e) => setIntervalSec(e.target.value)} />
+                <TextInput type="number" min={5} max={3600} value={intervalSec} onChange={(e) => { setIntervalSec(e.target.value); }} />
               </Field>
               <Field
                 label={t("admin:agentConfig.form.spool_buffer")}
                 hint={t("admin:agentConfig.form.spool_buffer_hint")}
               >
-                <TextInput type="number" min={1} max={4096} value={bufferMB} onChange={(e) => setBufferMB(e.target.value)} />
+                <TextInput type="number" min={1} max={4096} value={bufferMB} onChange={(e) => { setBufferMB(e.target.value); }} />
               </Field>
             </div>
           </fieldset>
@@ -886,7 +888,7 @@ function ConfigForm({
               <Field label={t("admin:agentConfig.form.pkg_enabled")}>
                 <select
                   value={pkgEnabled}
-                  onChange={(e) => setPkgEnabled(e.target.value as "" | "yes" | "no")}
+                  onChange={(e) => { setPkgEnabled(e.target.value as "" | "yes" | "no"); }}
                   className="w-full rounded-md border border-border bg-panel px-3 py-2 text-sm"
                 >
                   <option value="">{t("admin:agentConfig.form.pkg_inherit")}</option>
@@ -898,13 +900,13 @@ function ConfigForm({
                 label={t("admin:agentConfig.form.pkg_update_interval")}
                 hint={t("admin:agentConfig.form.pkg_update_interval_hint")}
               >
-                <TextInput value={pkgUpdateInterval} onChange={(e) => setPkgUpdateInterval(e.target.value)} placeholder="30m" />
+                <TextInput value={pkgUpdateInterval} onChange={(e) => { setPkgUpdateInterval(e.target.value); }} placeholder="30m" />
               </Field>
               <Field
                 label={t("admin:agentConfig.form.pkg_full_snapshot")}
                 hint={t("admin:agentConfig.form.pkg_full_snapshot_hint")}
               >
-                <TextInput value={pkgFullSnapshot} onChange={(e) => setPkgFullSnapshot(e.target.value)} placeholder="24h" />
+                <TextInput value={pkgFullSnapshot} onChange={(e) => { setPkgFullSnapshot(e.target.value); }} placeholder="24h" />
               </Field>
             </div>
           </fieldset>
@@ -914,15 +916,15 @@ function ConfigForm({
               {t("admin:agentConfig.form.quiet_hours")}
             </legend>
             <label className="flex items-center gap-2 text-sm text-fg-muted">
-              <input type="checkbox" checked={qhEnabled} onChange={(e) => setQhEnabled(e.target.checked)} />
+              <input type="checkbox" checked={qhEnabled} onChange={(e) => { setQhEnabled(e.target.checked); }} />
               {t("admin:agentConfig.form.quiet_hours_pause")}
             </label>
             <div className="mt-3 grid grid-cols-2 gap-3">
               <Field label={t("admin:agentConfig.form.quiet_hours_start")}>
-                <TextInput value={qhStart} onChange={(e) => setQhStart(e.target.value)} placeholder="22:00" />
+                <TextInput value={qhStart} onChange={(e) => { setQhStart(e.target.value); }} placeholder="22:00" />
               </Field>
               <Field label={t("admin:agentConfig.form.quiet_hours_end")}>
-                <TextInput value={qhEnd} onChange={(e) => setQhEnd(e.target.value)} placeholder="06:00" />
+                <TextInput value={qhEnd} onChange={(e) => { setQhEnd(e.target.value); }} placeholder="06:00" />
               </Field>
             </div>
             <div className="mt-3 flex flex-wrap gap-1.5">
@@ -933,7 +935,7 @@ function ConfigForm({
                   <button
                     key={dayKey}
                     type="button"
-                    onClick={() => toggleDay(i)}
+                    onClick={() => { toggleDay(i); }}
                     className={`rounded-md px-2 py-1 text-xs font-mono transition-colors ${
                       active
                         ? "bg-accent/20 text-accent ring-1 ring-inset ring-accent/40"
@@ -949,7 +951,7 @@ function ConfigForm({
           </fieldset>
 
           <label className="flex items-center gap-2 text-sm text-fg-muted">
-            <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+            <input type="checkbox" checked={enabled} onChange={(e) => { setEnabled(e.target.checked); }} />
             {t("admin:agentConfig.form.row_enabled")}
           </label>
 

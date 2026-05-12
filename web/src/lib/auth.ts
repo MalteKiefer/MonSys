@@ -15,12 +15,12 @@ import type { CurrentUser } from "./types";
 // continue to work.
 export type { CurrentUser };
 
-type AuthState = {
+interface AuthState {
   token: string | null;
   user: CurrentUser | null;
   setSession: (token: string, user: CurrentUser) => void;
   clear: () => void;
-};
+}
 
 export const useAuth = create<AuthState>()(
   persist(

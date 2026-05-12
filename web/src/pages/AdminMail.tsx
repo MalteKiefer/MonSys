@@ -10,9 +10,12 @@ import {
   UserRound,
   Wifi,
 } from "lucide-react";
-import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
+import type { ChangeEvent, FormEvent} from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Page } from "../components/page";
+import type {
+  TabItem} from "../components/ui";
 import {
   Button,
   ErrorBox,
@@ -23,7 +26,6 @@ import {
   Skeleton,
   StatusPill,
   SuccessBox,
-  TabItem,
   Tabs,
   TextInput,
 } from "../components/ui";
@@ -37,12 +39,12 @@ type Msg = { kind: "ok" | "err"; text: string } | null;
 // Last observed outcome of either the "transport probe" (server tab) or the
 // dedicated send-test (test tab). Lifted into the parent so the status tab can
 // summarise it without re-issuing a network call.
-type TestOutcome = {
+interface TestOutcome {
   kind: "ok" | "err";
   text: string;
   at: string; // ISO timestamp
   source: "transport-probe" | "send-test";
-};
+}
 
 type EncryptionMode = "none" | "starttls" | "tls";
 
@@ -66,7 +68,7 @@ export function AdminMail() {
   const [tab, setTab] = useState<TabKey>("server");
   const [lastOutcome, setLastOutcome] = useState<TestOutcome | null>(null);
 
-  const tabs: ReadonlyArray<TabItem<TabKey>> = useMemo(
+  const tabs: readonly TabItem<TabKey>[] = useMemo(
     () => [
       { key: "server", label: t("admin:mail.tabs.server"), icon: Mail },
       { key: "test", label: t("admin:mail.tabs.test"), icon: Send },
@@ -92,7 +94,7 @@ export function AdminMail() {
         </div>
       ) : settings.error ? (
         <div id="panel-server" role="tabpanel" className="pt-4">
-          <ErrorBox>{(settings.error as Error).message}</ErrorBox>
+          <ErrorBox>{(settings.error).message}</ErrorBox>
         </div>
       ) : (
         <div className="pt-4">
@@ -111,7 +113,7 @@ export function AdminMail() {
 
           {tab === "test" && (
             <div id="panel-test" role="tabpanel" aria-labelledby="tab-test">
-              {settings.data && settings.data.host ? (
+              {settings.data?.host ? (
                 <TestCard defaultTo={myEmail} onOutcome={setLastOutcome} />
               ) : (
                 <Panel>
@@ -230,7 +232,7 @@ function SettingsWizard({
     mutationFn: () => {
       const body: SmtpSettingsInput = {
         host,
-        port: Number(port) || 587,
+        port: port || 587,
         username,
         password,
         clear_password: clearPassword,
@@ -252,10 +254,10 @@ function SettingsWizard({
       onSaved();
     },
     onError: (err) =>
-      setMsg({
+      { setMsg({
         kind: "err",
         text: err instanceof ApiError ? err.detail : t("admin:mail.wizard.saveFailed"),
-      }),
+      }); },
   });
 
   // Round-trip transport check using the existing test endpoint. Only enabled
@@ -363,7 +365,7 @@ function SettingsWizard({
                     type="text"
                     required
                     value={host}
-                    onChange={(e: ChangeEvent<HTMLInputElement>) => setHost(e.target.value)}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => { setHost(e.target.value); }}
                     placeholder="smtp.example.com"
                     autoFocus
                   />
@@ -375,7 +377,7 @@ function SettingsWizard({
                     min={1}
                     max={65535}
                     value={port}
-                    onChange={(e) => setPort(Number(e.target.value))}
+                    onChange={(e) => { setPort(Number(e.target.value)); }}
                   />
                 </Field>
               </div>
@@ -390,7 +392,7 @@ function SettingsWizard({
                     name="encryption"
                     value="starttls"
                     checked={encryption === "starttls"}
-                    onChange={() => setEncryption("starttls")}
+                    onChange={() => { setEncryption("starttls"); }}
                   />
                   {t("admin:mail.wizard.security.starttls")}
                 </label>
@@ -400,7 +402,7 @@ function SettingsWizard({
                     name="encryption"
                     value="tls"
                     checked={encryption === "tls"}
-                    onChange={() => setEncryption("tls")}
+                    onChange={() => { setEncryption("tls"); }}
                   />
                   {t("admin:mail.wizard.security.tls")}
                 </label>
@@ -410,7 +412,7 @@ function SettingsWizard({
                     name="encryption"
                     value="none"
                     checked={encryption === "none"}
-                    onChange={() => setEncryption("none")}
+                    onChange={() => { setEncryption("none"); }}
                   />
                   {t("admin:mail.wizard.security.none")}
                 </label>
@@ -421,7 +423,7 @@ function SettingsWizard({
                     type="checkbox"
                     checked={insecureSkipVerify}
                     disabled={encryption === "none"}
-                    onChange={(e) => setInsecureSkipVerify(e.target.checked)}
+                    onChange={(e) => { setInsecureSkipVerify(e.target.checked); }}
                   />
                   <span>
                     {t("admin:mail.wizard.security.skipVerify")}{" "}
@@ -474,7 +476,7 @@ function SettingsWizard({
                   <TextInput
                     type="text"
                     value={username}
-                    onChange={(e) => setUsername(e.target.value)}
+                    onChange={(e) => { setUsername(e.target.value); }}
                     autoFocus
                   />
                 </Field>
@@ -488,7 +490,7 @@ function SettingsWizard({
                   <TextInput
                     type="password"
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={(e) => { setPassword(e.target.value); }}
                     placeholder={initial.has_password ? "********" : ""}
                     disabled={clearPassword}
                     className="font-mono"
@@ -499,7 +501,7 @@ function SettingsWizard({
                     type="email"
                     required
                     value={fromAddress}
-                    onChange={(e) => setFromAddress(e.target.value)}
+                    onChange={(e) => { setFromAddress(e.target.value); }}
                     placeholder="alerts@example.com"
                   />
                 </Field>
@@ -658,7 +660,7 @@ function TestCard({
               type="email"
               required
               value={to}
-              onChange={(e) => setTo(e.target.value)}
+              onChange={(e) => { setTo(e.target.value); }}
             />
           </Field>
           {msg &&

@@ -198,7 +198,7 @@ export function LivePreview({
       <div>
         <button
           type="button"
-          onClick={() => setShowJson((v) => !v)}
+          onClick={() => { setShowJson((v) => !v); }}
           className="inline-flex items-center gap-1 text-[11px] font-medium text-fg-muted hover:text-fg"
         >
           {showJson ? (

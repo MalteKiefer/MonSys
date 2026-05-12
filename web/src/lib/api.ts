@@ -60,10 +60,10 @@ export async function api<T>(path: string, opts: Options = {}): Promise<T> {
   if (!resp.ok) {
     let detail = resp.statusText;
     try {
-      const body = await resp.json();
       // huma error shape: { title, status, detail, errors? }
-      if (body && typeof body.detail === "string") detail = body.detail;
-      else if (body && typeof body.title === "string") detail = body.title;
+      const body = (await resp.json()) as { title?: unknown; detail?: unknown };
+      if (typeof body.detail === "string") detail = body.detail;
+      else if (typeof body.title === "string") detail = body.title;
     } catch {
       /* fall through with statusText */
     }

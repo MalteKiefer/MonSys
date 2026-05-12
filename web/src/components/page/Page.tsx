@@ -1,6 +1,6 @@
-import { ReactNode } from "react";
+import type { ReactNode } from "react";
 
-import { BreadcrumbItem } from "./Breadcrumb";
+import type { BreadcrumbItem } from "./Breadcrumb";
 import { PageHeader } from "./PageHeader";
 
 // Unified page shell. Wraps every routed view in a consistent container so

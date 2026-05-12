@@ -6,7 +6,7 @@
 // wizard's vocabulary (Detect/Scope/Notify) and the Step-1 category picker
 // layout — neither belongs in the shared library.
 
-import { Activity } from "lucide-react";
+import type { Activity } from "lucide-react";
 import type { ReactNode } from "react";
 
 import type { Step } from "./draft";

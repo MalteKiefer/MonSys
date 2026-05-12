@@ -20,7 +20,7 @@ import {
 import { useT } from "../../i18n/useT";
 import { api, ApiError } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
-import { NotificationChannel } from "../../lib/types";
+import type { NotificationChannel } from "../../lib/types";
 
 import { ChannelForm } from "./ChannelForm";
 import { NotificationsTabs } from "./NotificationsTabs";
@@ -54,7 +54,7 @@ export function ChannelsPage() {
       {(creating || editing) && (
         <ChannelForm
           initial={editing}
-          isAdmin={!!isAdmin}
+          isAdmin={isAdmin}
           onCancel={() => {
             setEditing(null);
             setCreating(false);
@@ -70,7 +70,7 @@ export function ChannelsPage() {
       <Panel>
         <PanelHeader>
           <h3 className="text-sm font-semibold">{t("notifications:channels.panel_title")}</h3>
-          <Button variant="primary" onClick={() => setCreating(true)}>
+          <Button variant="primary" onClick={() => { setCreating(true); }}>
             <Plus className="h-3.5 w-3.5" /> {t("notifications:channels.new_channel")}
           </Button>
         </PanelHeader>
@@ -78,7 +78,7 @@ export function ChannelsPage() {
           {list.isLoading ? (
             <p className="px-5 py-4 text-sm text-fg-subtle">{t("common:actions.loading")}</p>
           ) : list.error ? (
-            <ErrorBox>{(list.error as Error).message}</ErrorBox>
+            <ErrorBox>{(list.error).message}</ErrorBox>
           ) : (list.data?.channels ?? []).length === 0 ? (
             <p className="px-5 py-8 text-center text-sm text-fg-subtle">{t("notifications:channels.empty")}</p>
           ) : (
@@ -99,9 +99,9 @@ export function ChannelsPage() {
                   <ChannelRow
                     key={c.id}
                     channel={c}
-                    isAdmin={!!isAdmin}
+                    isAdmin={isAdmin}
                     myID={myID}
-                    onEdit={() => setEditing(c)}
+                    onEdit={() => { setEditing(c); }}
                     onChange={() => { void qc.invalidateQueries({ queryKey: ["channels"] }); }}
                   />
                 ))}
@@ -152,7 +152,7 @@ function ChannelRow({
       if (data.ok) setTestMsg({ kind: "ok", text: t("notifications:channels.test_success") });
       else setTestMsg({ kind: "err", text: data.error ?? t("notifications:channels.test_failed") });
     },
-    onError: (err) => setTestMsg({ kind: "err", text: err instanceof ApiError ? err.detail : t("notifications:channels.test_generic_failed") }),
+    onError: (err) => { setTestMsg({ kind: "err", text: err instanceof ApiError ? err.detail : t("notifications:channels.test_generic_failed") }); },
   });
 
   const del = useMutation({
@@ -187,7 +187,7 @@ function ChannelRow({
         </TD>
         <TD className="text-right">
           <div className="inline-flex items-center gap-1">
-            <Button onClick={() => sendTest.mutate()} disabled={sendTest.isPending || !canEdit}>
+            <Button onClick={() => { sendTest.mutate(); }} disabled={sendTest.isPending || !canEdit}>
               <Send className="h-3.5 w-3.5" /> {t("notifications:channels.actions.test")}
             </Button>
             <Button onClick={onEdit} disabled={!canEdit}>

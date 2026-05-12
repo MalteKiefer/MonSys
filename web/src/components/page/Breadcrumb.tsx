@@ -4,10 +4,10 @@ import { Link } from "react-router-dom";
 
 // One crumb. The last crumb in a breadcrumb trail is rendered as plain text
 // (it represents the current page) — leave `to` undefined for that one.
-export type BreadcrumbItem = {
+export interface BreadcrumbItem {
   label: string;
   to?: string;
-};
+}
 
 // Chevron-separated trail rendered above a page heading. Stays small and
 // subtle (`text-xs text-fg-subtle`) so it doesn't compete with the H1 below.

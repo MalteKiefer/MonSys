@@ -18,11 +18,12 @@ import {
   QrCode,
   X,
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import type { FormEvent} from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { api, ApiError } from "../lib/api";
-import {
+import type {
   AgentEnrollment,
   AgentEnrollmentCreateResponse,
   AgentEnrollmentInput,
@@ -110,7 +111,7 @@ function FormView({
 }) {
   const tagsQuery = useQuery({
     queryKey: ["tags"],
-    queryFn: () => api<{ tags: Array<{ tag: string; count: number }> }>("/v1/tags"),
+    queryFn: () => api<{ tags: { tag: string; count: number }[] }>("/v1/tags"),
   });
   const groupsQuery = useQuery({
     queryKey: ["groups"],
@@ -146,7 +147,7 @@ function FormView({
       });
     },
     onSuccess: onCreated,
-    onError: (err) => setError(err instanceof ApiError ? err.detail : (err as Error).message),
+    onError: (err) => { setError(err instanceof ApiError ? err.detail : (err).message); },
   });
 
   function submit(e: FormEvent) {
@@ -166,7 +167,7 @@ function FormView({
         <Field label="Display label" hint="Optional. Shown in the host list before the first hostname is reported.">
           <TextInput
             value={label}
-            onChange={(e) => setLabel(e.target.value)}
+            onChange={(e) => { setLabel(e.target.value); }}
             placeholder="e.g. db-replica-3"
             maxLength={120}
           />
@@ -177,7 +178,7 @@ function FormView({
             min={5}
             max={1440}
             value={ttlMinutes}
-            onChange={(e) => setTTLMinutes(parseInt(e.target.value || "0", 10))}
+            onChange={(e) => { setTTLMinutes(parseInt(e.target.value || "0", 10)); }}
           />
         </Field>
       </div>
@@ -185,7 +186,7 @@ function FormView({
       <Field label="Description" hint={`Optional, max 200 chars. (${description.length}/200)`}>
         <TextInput
           value={description}
-          onChange={(e) => setDescription(e.target.value.slice(0, 200))}
+          onChange={(e) => { setDescription(e.target.value.slice(0, 200)); }}
           placeholder="Why this host is being added"
           maxLength={200}
         />
@@ -204,7 +205,7 @@ function FormView({
       >
         <TextInput
           value={tagsRaw}
-          onChange={(e) => setTagsRaw(e.target.value)}
+          onChange={(e) => { setTagsRaw(e.target.value); }}
           placeholder="prod, db"
           className="font-mono"
         />
@@ -216,7 +217,7 @@ function FormView({
           size={Math.min(5, Math.max(2, groupsQuery.data?.groups.length ?? 2))}
           value={groupIDs}
           onChange={(e) =>
-            setGroupIDs(Array.from(e.target.selectedOptions).map((o) => o.value))
+            { setGroupIDs(Array.from(e.target.selectedOptions).map((o) => o.value)); }
           }
           className="w-full rounded-md border border-border bg-panel px-3 py-2 text-sm focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
         >
@@ -286,7 +287,7 @@ function ResultView({
     try {
       await navigator.clipboard.writeText(text);
       setFlag(true);
-      setTimeout(() => setFlag(false), 1500);
+      setTimeout(() => { setFlag(false); }, 1500);
     } catch {
       /* clipboard may be unavailable on insecure origins; the user can select manually */
     }
@@ -299,8 +300,8 @@ function ResultView({
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     if (connected) return;
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
+    const t = setInterval(() => { setNow(Date.now()); }, 1000);
+    return () => { clearInterval(t); };
   }, [connected]);
 
   const expiresIn = useMemo(
@@ -360,7 +361,7 @@ function ResultView({
         <div className="flex flex-wrap items-center gap-4">
           <button
             type="button"
-            onClick={() => setShowScript((v) => !v)}
+            onClick={() => { setShowScript((v) => !v); }}
             aria-expanded={showScript}
             className="inline-flex items-center gap-1.5 text-xs text-fg-muted transition-colors hover:text-fg"
           >
@@ -374,7 +375,7 @@ function ResultView({
           </button>
           <button
             type="button"
-            onClick={() => setShowQR((v) => !v)}
+            onClick={() => { setShowQR((v) => !v); }}
             aria-expanded={showQR}
             className="inline-flex items-center gap-1.5 text-xs text-fg-muted transition-colors hover:text-fg"
           >
@@ -523,7 +524,7 @@ function InstallScriptViewer({
           <AlertCircle className="h-3.5 w-3.5" />
           Failed to load script
         </span>
-        <Button onClick={() => setAttempt((n) => n + 1)} aria-label="Retry fetching script">
+        <Button onClick={() => { setAttempt((n) => n + 1); }} aria-label="Retry fetching script">
           Retry
         </Button>
       </div>

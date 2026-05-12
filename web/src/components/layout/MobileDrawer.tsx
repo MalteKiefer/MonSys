@@ -39,7 +39,7 @@ export function MobileDrawer({ open, onClose }: { open: boolean; onClose: () => 
       }
     }
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => { window.removeEventListener("keydown", onKey); };
   }, [open, onClose]);
 
   // Focus the close button when the dialog opens — gives keyboard users a

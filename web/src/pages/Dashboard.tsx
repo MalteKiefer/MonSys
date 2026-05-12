@@ -12,7 +12,8 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { ChartLine, ChartSeries, colorFor } from "../components/Chart";
+import type { ChartSeries} from "../components/Chart";
+import { ChartLine, colorFor } from "../components/Chart";
 import { DistroIcon } from "../components/icons/DistroIcon";
 import { Page } from "../components/page";
 import {
@@ -32,10 +33,10 @@ import {
 } from "../components/ui";
 import { useT } from "../i18n/useT";
 import { api } from "../lib/api";
-import { AlertHistoryEntry, Host, SystemSample } from "../lib/types";
+import type { AlertHistoryEntry, Host, SystemSample } from "../lib/types";
 import { hostDisplay } from "../lib/utils";
 
-type SystemMetricsResp = { host_id: string; from: string; to: string; samples: SystemSample[] };
+interface SystemMetricsResp { host_id: string; from: string; to: string; samples: SystemSample[] }
 
 export function Dashboard() {
   const { t } = useT(["dashboard", "common"]);
@@ -256,7 +257,7 @@ export function Dashboard() {
             <div className="relative">
               <select
                 value={hostID}
-                onChange={(e) => setHostID(e.target.value)}
+                onChange={(e) => { setHostID(e.target.value); }}
                 className="appearance-none rounded-md border border-border bg-panel py-1 pl-2 pr-7 text-xs text-fg focus:border-accent focus:outline-none"
                 aria-label={t("dashboard:system.pickHost")}
               >

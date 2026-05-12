@@ -62,7 +62,7 @@ const AdminUsers = lazy(() =>
 import i18n from "./i18n";
 import { api } from "./lib/api";
 import { useAuth } from "./lib/auth";
-import { CurrentUser } from "./lib/types";
+import type { CurrentUser } from "./lib/types";
 
 export function App() {
   const token = useAuth((s) => s.token);
@@ -108,7 +108,7 @@ export function App() {
       void qc.refetchQueries({ type: "active" });
     }
     window.addEventListener("online", onOnline);
-    return () => window.removeEventListener("online", onOnline);
+    return () => { window.removeEventListener("online", onOnline); };
   }, [qc]);
 
   if (!token) {

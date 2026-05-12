@@ -1,9 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { KeyRound, Pencil, Smartphone, Trash2, Upload, User } from "lucide-react";
-import { ChangeEvent, FormEvent, ReactNode, useRef, useState } from "react";
+import type { ChangeEvent, FormEvent, ReactNode} from "react";
+import { useRef, useState } from "react";
 import { Trans } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
 
+import type {
+  TabItem} from "../components/ui";
 import {
   Avatar,
   Button,
@@ -14,21 +17,20 @@ import {
   PanelHeader,
   Skeleton,
   SuccessBox,
-  TabItem,
   Tabs,
   TextInput,
 } from "../components/ui";
 import { useT } from "../i18n/useT";
 import { api, ApiError } from "../lib/api";
 import { DensityProvider, useDensityStore, type Density } from "../lib/density-store";
-import { CurrentUser, ListPasskeysResponse, Passkey, TOTPSetup } from "../lib/types";
+import type { CurrentUser, ListPasskeysResponse, Passkey, TOTPSetup } from "../lib/types";
 import { registerPasskey, supported as webauthnSupported } from "../lib/webauthn";
 
 type Msg = { kind: "ok" | "err"; text: string } | null;
 
 type ProfileTab = "account" | "two_factor" | "passkeys";
 
-const TAB_KEYS: ReadonlyArray<ProfileTab> = ["account", "two_factor", "passkeys"];
+const TAB_KEYS: readonly ProfileTab[] = ["account", "two_factor", "passkeys"];
 
 function parseTab(raw: string | null): ProfileTab {
   return (TAB_KEYS as readonly string[]).includes(raw ?? "") ? (raw as ProfileTab) : "account";
@@ -59,10 +61,10 @@ export function Profile() {
         <Skeleton className="h-48" />
       </div>
     );
-  if (me.error) return <p className="p-6 text-sm text-fail">{(me.error as Error).message}</p>;
+  if (me.error) return <p className="p-6 text-sm text-fail">{(me.error).message}</p>;
   const user = me.data!;
 
-  const items: ReadonlyArray<TabItem<ProfileTab>> = [
+  const items: readonly TabItem<ProfileTab>[] = [
     { key: "account", label: t("profile:tabs.account"), icon: User },
     { key: "two_factor", label: t("profile:tabs.twoFactor"), icon: Smartphone },
     { key: "passkeys", label: t("profile:tabs.passkeys"), icon: KeyRound },
@@ -142,7 +144,7 @@ function DisplayCard() {
                 type="button"
                 role="radio"
                 aria-checked={active}
-                onClick={() => setDensity(opt.value)}
+                onClick={() => { setDensity(opt.value); }}
                 className={`min-h-9 rounded px-3 py-1.5 text-sm font-medium transition-colors duration-150 ${
                   active ? "bg-panel-2 text-fg shadow-panel" : "text-fg-muted hover:text-fg"
                 }`}
@@ -194,8 +196,8 @@ async function fileToCroppedWebp(
   try {
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {
       const el = new Image();
-      el.onload = () => resolve(el);
-      el.onerror = () => reject(new Error(messages.decodeFailed));
+      el.onload = () => { resolve(el); };
+      el.onerror = () => { reject(new Error(messages.decodeFailed)); };
       el.src = url;
     });
 
@@ -212,7 +214,10 @@ async function fileToCroppedWebp(
 
     const blob: Blob = await new Promise((resolve, reject) => {
       canvas.toBlob(
-        (b) => (b ? resolve(b) : reject(new Error(messages.encodingFailed))),
+        (b) => {
+          if (b) resolve(b);
+          else reject(new Error(messages.encodingFailed));
+        },
         "image/webp",
         0.9,
       );
@@ -243,7 +248,7 @@ function blobToBase64(
       const idx = result.indexOf(",");
       resolve(idx >= 0 ? result.slice(idx + 1) : result);
     };
-    fr.onerror = () => reject(fr.error ?? new Error(messages.generic));
+    fr.onerror = () => { reject(fr.error ?? new Error(messages.generic)); };
     fr.readAsDataURL(blob);
   });
 }
@@ -404,7 +409,7 @@ function ChangeEmailCard() {
             />
           </SuccessBox>
           <p className="text-xs text-fg-subtle">{t("profile:email.pending.hint")}</p>
-          <Button type="button" variant="ghost" onClick={() => setPendingEmail(null)}>
+          <Button type="button" variant="ghost" onClick={() => { setPendingEmail(null); }}>
             {t("profile:email.pending.sendAnother")}
           </Button>
         </div>
@@ -421,7 +426,7 @@ function ChangeEmailCard() {
             type="password"
             required
             value={pw}
-            onChange={(e: ChangeEvent<HTMLInputElement>) => setPw(e.target.value)}
+            onChange={(e: ChangeEvent<HTMLInputElement>) => { setPw(e.target.value); }}
           />
         </Field>
         <Field label={t("profile:email.newEmail")}>
@@ -429,7 +434,7 @@ function ChangeEmailCard() {
             type="email"
             required
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => { setEmail(e.target.value); }}
           />
         </Field>
         <FormFooter
@@ -476,10 +481,10 @@ function ChangePasswordCard() {
     <ProfilePanel title={t("profile:password.title")}>
       <form onSubmit={(e) => { void submit(e); }} className="space-y-3">
         <Field label={t("profile:password.currentPassword")}>
-          <TextInput type="password" required value={cur} onChange={(e) => setCur(e.target.value)} />
+          <TextInput type="password" required value={cur} onChange={(e) => { setCur(e.target.value); }} />
         </Field>
         <Field label={t("profile:password.newPassword")}>
-          <TextInput type="password" required value={next} onChange={(e) => setNext(e.target.value)} />
+          <TextInput type="password" required value={next} onChange={(e) => { setNext(e.target.value); }} />
         </Field>
         <FormFooter
           busy={busy}
@@ -569,7 +574,7 @@ function TwoFactorCard({ active, onSuccess }: { active: boolean; onSuccess: () =
         <form onSubmit={(e) => { void disable(e); }} className="space-y-3">
           <p className="text-sm text-fg-muted">{t("profile:twoFactor.activeText")}</p>
           <Field label={t("profile:twoFactor.passwordLabel")}>
-            <TextInput type="password" required value={pw} onChange={(e) => setPw(e.target.value)} />
+            <TextInput type="password" required value={pw} onChange={(e) => { setPw(e.target.value); }} />
           </Field>
           <FormFooter
             busy={busy}
@@ -626,7 +631,7 @@ function TwoFactorCard({ active, onSuccess }: { active: boolean; onSuccess: () =
                 type="text"
                 required
                 value={code}
-                onChange={(e) => setCode(e.target.value)}
+                onChange={(e) => { setCode(e.target.value); }}
                 className="font-mono tracking-widest"
               />
             </Field>
@@ -664,7 +669,7 @@ function PasskeysCard() {
       void qc.invalidateQueries({ queryKey: ["me"] });
     },
     onError: (err) => {
-      setMsg({ kind: "err", text: err instanceof ApiError ? err.detail : (err as Error).message });
+      setMsg({ kind: "err", text: err instanceof ApiError ? err.detail : (err).message });
     },
   });
 
@@ -679,7 +684,7 @@ function PasskeysCard() {
       void qc.invalidateQueries({ queryKey: ["passkeys"] });
     },
     onError: (err) => {
-      setMsg({ kind: "err", text: err instanceof ApiError ? err.detail : (err as Error).message });
+      setMsg({ kind: "err", text: err instanceof ApiError ? err.detail : (err).message });
     },
   });
 
@@ -692,7 +697,7 @@ function PasskeysCard() {
       void qc.invalidateQueries({ queryKey: ["me"] });
     },
     onError: (err) => {
-      setMsg({ kind: "err", text: err instanceof ApiError ? err.detail : (err as Error).message });
+      setMsg({ kind: "err", text: err instanceof ApiError ? err.detail : (err).message });
     },
   });
 
@@ -732,7 +737,7 @@ function PasskeysCard() {
                 type="text"
                 placeholder={t("profile:passkeys.namePlaceholder")}
                 value={name}
-                onChange={(e: ChangeEvent<HTMLInputElement>) => setName(e.target.value)}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => { setName(e.target.value); }}
                 disabled={addPasskey.isPending}
               />
             </Field>
@@ -750,7 +755,7 @@ function PasskeysCard() {
         {passkeys.isLoading ? (
           <Skeleton className="h-16" />
         ) : passkeys.error ? (
-          <ErrorBox>{(passkeys.error as Error).message}</ErrorBox>
+          <ErrorBox>{(passkeys.error).message}</ErrorBox>
         ) : list.length === 0 ? (
           <p className="text-sm text-fg-subtle">{t("profile:passkeys.empty")}</p>
         ) : (
@@ -759,8 +764,8 @@ function PasskeysCard() {
               <PasskeyRow
                 key={pk.id}
                 passkey={pk}
-                onRename={(newName) => renamePasskey.mutate({ id: pk.id, name: newName })}
-                onDelete={() => deletePasskey.mutate(pk.id)}
+                onRename={(newName) => { renamePasskey.mutate({ id: pk.id, name: newName }); }}
+                onDelete={() => { deletePasskey.mutate(pk.id); }}
                 renaming={renamePasskey.isPending}
                 deleting={deletePasskey.isPending}
               />
@@ -821,7 +826,7 @@ function PasskeyRow({
               type="text"
               autoFocus
               value={draft}
-              onChange={(e: ChangeEvent<HTMLInputElement>) => setDraft(e.target.value)}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => { setDraft(e.target.value); }}
               disabled={renaming}
               className="flex-1"
             />
@@ -858,7 +863,7 @@ function PasskeyRow({
             <Button
               type="button"
               variant="ghost"
-              onClick={() => setEditing(true)}
+              onClick={() => { setEditing(true); }}
               disabled={renaming || deleting}
               aria-label={t("profile:passkeys.renameAria")}
             >

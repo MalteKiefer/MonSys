@@ -81,10 +81,6 @@ export default tseslint.config(
       "react/react-in-jsx-scope": "off",
       "react/prop-types": "off",
       ...reactHooks.configs.recommended.rules,
-      "react-refresh/only-export-components": [
-        "warn",
-        { allowConstantExport: true },
-      ],
 
       // a11y (warn — not blocking yet)
       ...jsxA11y.configs.recommended.rules,
@@ -108,14 +104,30 @@ export default tseslint.config(
       // stylistic / opinion rules to "warn" so the build still passes; the
       // signal stays visible in `npm run lint` output but doesn't gate CI.
       // Revisit one-by-one as we fix the backlog.
-      "@typescript-eslint/no-confusing-void-expression": "warn",
+      //
+      // Rules turned off (after lint warning sweep):
+      //   - no-confusing-void-expression: we adopted a "void" discipline
+      //     intentionally for fire-and-forget promises; lint flags the pattern.
+      //   - restrict-template-expressions: codebase explicitly accepts
+      //     `${number}` / `${boolean}` in template literals (e.g. counts, IDs).
+      //   - prefer-nullish-coalescing: `||` is the right idiom for our string
+      //     fallbacks where "" and "0" should also fall through to defaults.
+      //   - no-unnecessary-condition: many defensive checks against
+      //     API-generated nullable fields that may evolve; the false-positive
+      //     rate is too high to be useful as a warning.
+      //   - react-refresh/only-export-components: dev-only HMR optimization;
+      //     we intentionally co-locate components and helpers (ui/index.tsx,
+      //     contexts that export hooks alongside providers).
+      "@typescript-eslint/no-confusing-void-expression": "off",
+      "@typescript-eslint/restrict-template-expressions": "off",
+      "@typescript-eslint/prefer-nullish-coalescing": "off",
+      "@typescript-eslint/no-unnecessary-condition": "off",
+      "react-refresh/only-export-components": "off",
+      // Remaining warn-level rules (real-bug-shaped, fix incrementally):
       "@typescript-eslint/consistent-type-definitions": "warn",
-      "@typescript-eslint/no-unnecessary-condition": "warn",
-      "@typescript-eslint/restrict-template-expressions": "warn",
       "@typescript-eslint/no-unnecessary-type-assertion": "warn",
       "@typescript-eslint/array-type": "warn",
       "@typescript-eslint/no-unsafe-member-access": "warn",
-      "@typescript-eslint/prefer-nullish-coalescing": "warn",
       "@typescript-eslint/no-deprecated": "warn",
       "@typescript-eslint/no-unsafe-assignment": "warn",
       "@typescript-eslint/no-non-null-assertion": "warn",

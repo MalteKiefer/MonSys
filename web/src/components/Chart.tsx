@@ -4,22 +4,23 @@
 // responsive sizing via ResizeObserver.
 
 import { useEffect, useRef } from "react";
-import uPlot, { Options } from "uplot";
+import type { Options } from "uplot";
+import uPlot from "uplot";
 
-export type ChartSeries = {
+export interface ChartSeries {
   label: string;
   // Stroke color. Tailwind tokens aren't available here, so we use raw hex
   // matching theme colors in tailwind.config.js.
   color: string;
   // Optional: filled area below the line, e.g. "rgba(16,185,129,0.10)".
   fill?: string;
-};
+}
 
-export type ChartData = {
+export interface ChartData {
   // First entry is unix-second timestamps; subsequent are y-values per series.
   // Length: 1 + series.length.
   matrix: number[][];
-};
+}
 
 export function ChartLine({
   data,

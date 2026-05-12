@@ -9,11 +9,11 @@ import { persist } from "zustand/middleware";
 // Storage key is `monsys.sidebar.collapsed` (a thin wrapper layout key —
 // distinct from `mon-auth` so a logout doesn't drop the chrome preference).
 
-type LayoutState = {
+interface LayoutState {
   sidebarCollapsed: boolean;
   setSidebarCollapsed: (collapsed: boolean) => void;
   toggleSidebar: () => void;
-};
+}
 
 export const useLayoutStore = create<LayoutState>()(
   persist(

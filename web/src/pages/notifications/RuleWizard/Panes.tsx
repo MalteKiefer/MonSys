@@ -72,13 +72,13 @@ export function SelectField<T extends string>({
   hint?: string;
   value: T;
   onChange: (v: T) => void;
-  options: Array<{ value: T; label: string }>;
+  options: { value: T; label: string }[];
 }) {
   return (
     <Field label={label} hint={hint}>
       <select
         value={value}
-        onChange={(e) => onChange(e.target.value as T)}
+        onChange={(e) => { onChange(e.target.value as T); }}
         className="w-full rounded-md border border-border bg-panel px-3 py-2 text-sm focus:border-accent focus:outline-none"
       >
         {options.map((o) => (
@@ -93,10 +93,10 @@ export function SelectField<T extends string>({
 
 // ---- Per-type panes -------------------------------------------------------
 
-type PaneProps = {
+interface PaneProps {
   params: Params;
   setParams: (next: Params) => void;
-};
+}
 
 function NoParamsPane() {
   const { t } = useT(["notifications", "common"]);
@@ -117,7 +117,7 @@ function CertExpiringPane({ params, setParams }: PaneProps) {
         hint={t("notifications:wizard.panes.cert.days_hint")}
         value={days === "" ? 30 : days}
         min={1}
-        onChange={(v) => setParams({ ...params, days_threshold: v === "" ? 30 : v })}
+        onChange={(v) => { setParams({ ...params, days_threshold: v === "" ? 30 : v }); }}
       />
     </div>
   );
@@ -134,14 +134,14 @@ function LoginFailedThresholdPane({ params, setParams }: PaneProps) {
         hint={t("notifications:wizard.panes.login_failed.window_hint")}
         value={win === "" ? 300 : win}
         min={1}
-        onChange={(v) => setParams({ ...params, window_sec: v === "" ? 300 : v })}
+        onChange={(v) => { setParams({ ...params, window_sec: v === "" ? 300 : v }); }}
       />
       <NumberField
         label={t("notifications:wizard.panes.login_failed.threshold_label")}
         hint={t("notifications:wizard.panes.login_failed.threshold_hint")}
         value={thr === "" ? 10 : thr}
         min={1}
-        onChange={(v) => setParams({ ...params, threshold: v === "" ? 10 : v })}
+        onChange={(v) => { setParams({ ...params, threshold: v === "" ? 10 : v }); }}
       />
     </div>
   );
@@ -157,7 +157,7 @@ function SecurityUpdatesPendingPane({ params, setParams }: PaneProps) {
         hint={t("notifications:wizard.panes.security_updates.threshold_hint")}
         value={thr === "" ? 1 : thr}
         min={1}
-        onChange={(v) => setParams({ ...params, threshold: v === "" ? 1 : v })}
+        onChange={(v) => { setParams({ ...params, threshold: v === "" ? 1 : v }); }}
       />
     </div>
   );
@@ -197,19 +197,19 @@ function MetricThresholdPane({ params, setParams }: PaneProps) {
           label={t("notifications:wizard.panes.metric.metric_label")}
           value={metric}
           onChange={(v) =>
-            setParams({
+            { setParams({
               ...params,
               metric: v,
               // Drop scope keys that don't apply to the new metric.
               scope: undefined,
-            })
+            }); }
           }
           options={METRIC_KINDS.map((m) => ({ value: m.value, label: m.label }))}
         />
         <SelectField
           label={t("notifications:wizard.panes.metric.comparator_label")}
           value={comparator}
-          onChange={(v) => setParams({ ...params, comparator: v })}
+          onChange={(v) => { setParams({ ...params, comparator: v }); }}
           options={[
             { value: ">", label: t("notifications:wizard.panes.metric.comparator_gt") },
             { value: ">=", label: t("notifications:wizard.panes.metric.comparator_ge") },
@@ -224,14 +224,14 @@ function MetricThresholdPane({ params, setParams }: PaneProps) {
           hint={t("notifications:wizard.panes.metric.value_hint")}
           value={value}
           step={0.01}
-          onChange={(v) => setParams({ ...params, value: v === "" ? 0 : v })}
+          onChange={(v) => { setParams({ ...params, value: v === "" ? 0 : v }); }}
         />
         <NumberField
           label={t("notifications:wizard.panes.metric.window_label")}
           hint={t("notifications:wizard.panes.metric.window_hint")}
           value={windowSec === "" ? 120 : windowSec}
           min={1}
-          onChange={(v) => setParams({ ...params, window_sec: v === "" ? 120 : v })}
+          onChange={(v) => { setParams({ ...params, window_sec: v === "" ? 120 : v }); }}
         />
         <NumberField
           label={t("notifications:wizard.panes.metric.for_label")}
@@ -239,15 +239,15 @@ function MetricThresholdPane({ params, setParams }: PaneProps) {
           value={forSec}
           min={1}
           placeholder={t("notifications:wizard.panes.metric.for_placeholder")}
-          onChange={(v) =>
-            v === ""
-              ? (() => {
-                  const { for_sec: _drop, ...rest } = params;
-                  void _drop;
-                  setParams(rest);
-                })()
-              : setParams({ ...params, for_sec: v })
-          }
+          onChange={(v) => {
+            if (v === "") {
+              const { for_sec: _drop, ...rest } = params;
+              void _drop;
+              setParams(rest);
+            } else {
+              setParams({ ...params, for_sec: v });
+            }
+          }}
         />
       </div>
       {scopeKeys.length > 0 && (
@@ -265,7 +265,7 @@ function MetricThresholdPane({ params, setParams }: PaneProps) {
                 <TextInput
                   value={asString(scope[key])}
                   placeholder={t("notifications:wizard.panes.metric.scope_filter_placeholder", { key })}
-                  onChange={(e) => patchScope(key, e.target.value)}
+                  onChange={(e) => { patchScope(key, e.target.value); }}
                 />
               </Field>
             ))}
@@ -313,7 +313,7 @@ function ImageUpdatePendingPane({ params, setParams }: PaneProps) {
         hint={t("notifications:wizard.panes.image_update.hours_hint")}
         value={hours === "" ? 24 : hours}
         min={0}
-        onChange={(v) => setParams({ ...params, min_age_hours: v === "" ? 24 : v })}
+        onChange={(v) => { setParams({ ...params, min_age_hours: v === "" ? 24 : v }); }}
       />
     </div>
   );
@@ -329,7 +329,7 @@ function PackageUpdateAvailablePane({ params, setParams }: PaneProps) {
         hint={t("notifications:wizard.panes.package_update.threshold_hint")}
         value={thr === "" ? 50 : thr}
         min={0}
-        onChange={(v) => setParams({ ...params, threshold: v === "" ? 50 : v })}
+        onChange={(v) => { setParams({ ...params, threshold: v === "" ? 50 : v }); }}
       />
     </div>
   );
@@ -345,7 +345,7 @@ function RepoMetadataStalePane({ params, setParams }: PaneProps) {
         hint={t("notifications:wizard.panes.repo_metadata.threshold_hint")}
         value={thr === "" ? 86400 : thr}
         min={0}
-        onChange={(v) => setParams({ ...params, threshold_sec: v === "" ? 86400 : v })}
+        onChange={(v) => { setParams({ ...params, threshold_sec: v === "" ? 86400 : v }); }}
       />
     </div>
   );
@@ -361,7 +361,7 @@ function LoginAnomalyPane({ params, setParams }: PaneProps) {
       <SelectField
         label={t("notifications:wizard.panes.login_anomaly.kind_label")}
         value={kind}
-        onChange={(v) => setParams({ ...params, kind: v })}
+        onChange={(v) => { setParams({ ...params, kind: v }); }}
         options={[
           { value: "new_source_ip", label: t("notifications:wizard.panes.login_anomaly.kind_new_source_ip") },
           { value: "root_success", label: t("notifications:wizard.panes.login_anomaly.kind_root_success") },
@@ -373,14 +373,14 @@ function LoginAnomalyPane({ params, setParams }: PaneProps) {
         hint={t("notifications:wizard.panes.login_anomaly.window_hint")}
         value={win === "" ? 86400 : win}
         min={1}
-        onChange={(v) => setParams({ ...params, window_sec: v === "" ? 86400 : v })}
+        onChange={(v) => { setParams({ ...params, window_sec: v === "" ? 86400 : v }); }}
       />
       <NumberField
         label={t("notifications:wizard.panes.login_anomaly.threshold_label")}
         hint={t("notifications:wizard.panes.login_anomaly.threshold_hint")}
         value={thr === "" ? 1 : thr}
         min={1}
-        onChange={(v) => setParams({ ...params, threshold: v === "" ? 1 : v })}
+        onChange={(v) => { setParams({ ...params, threshold: v === "" ? 1 : v }); }}
       />
     </div>
   );
@@ -394,7 +394,7 @@ function InventoryDriftPane({ params, setParams }: PaneProps) {
       <SelectField
         label={t("notifications:wizard.panes.inventory_drift.kind_label")}
         value={kind}
-        onChange={(v) => setParams({ ...params, kind: v })}
+        onChange={(v) => { setParams({ ...params, kind: v }); }}
         options={[
           { value: "new_user", label: t("notifications:wizard.panes.inventory_drift.kind_new_user") },
           { value: "new_sudoer", label: t("notifications:wizard.panes.inventory_drift.kind_new_sudoer") },
@@ -442,7 +442,7 @@ function FirewallStateChangePane({ params, setParams }: PaneProps) {
           hint={t("notifications:wizard.panes.firewall.drop_threshold_hint")}
           value={dropThr === "" ? 5 : dropThr}
           min={1}
-          onChange={(v) => setParams({ ...params, drop_threshold: v === "" ? 5 : v })}
+          onChange={(v) => { setParams({ ...params, drop_threshold: v === "" ? 5 : v }); }}
         />
       )}
     </div>
@@ -459,7 +459,7 @@ function CrowdSecDecisionThresholdPane({ params, setParams }: PaneProps) {
         hint={t("notifications:wizard.panes.crowdsec.threshold_hint")}
         value={thr === "" ? 100 : thr}
         min={1}
-        onChange={(v) => setParams({ ...params, threshold: v === "" ? 100 : v })}
+        onChange={(v) => { setParams({ ...params, threshold: v === "" ? 100 : v }); }}
       />
     </div>
   );
@@ -475,13 +475,13 @@ function NICLinkDownPane({ params, setParams }: PaneProps) {
     <div className="grid grid-cols-1 gap-3 rounded-md border border-border bg-panel-2/40 p-3 md:grid-cols-2">
       <Toggle
         checked={excludeLoopback}
-        onChange={(v) => setParams({ ...params, exclude_loopback: v })}
+        onChange={(v) => { setParams({ ...params, exclude_loopback: v }); }}
         label={t("notifications:wizard.panes.nic_link.exclude_loopback_label")}
         hint={t("notifications:wizard.panes.nic_link.exclude_loopback_hint")}
       />
       <Toggle
         checked={excludeVirtual}
-        onChange={(v) => setParams({ ...params, exclude_virtual: v })}
+        onChange={(v) => { setParams({ ...params, exclude_virtual: v }); }}
         label={t("notifications:wizard.panes.nic_link.exclude_virtual_label")}
         hint={t("notifications:wizard.panes.nic_link.exclude_virtual_hint")}
       />
@@ -497,7 +497,7 @@ function VMStateChangePane({ params, setParams }: PaneProps) {
       <SelectField
         label={t("notifications:wizard.panes.vm_state.subkind_label")}
         value={subkind}
-        onChange={(v) => setParams({ ...params, subkind: v })}
+        onChange={(v) => { setParams({ ...params, subkind: v }); }}
         options={[
           { value: "stopped", label: t("notifications:wizard.panes.vm_state.subkind_stopped") },
           { value: "autostart_violation", label: t("notifications:wizard.panes.vm_state.subkind_autostart_violation") },
@@ -533,7 +533,7 @@ function ContainerStateChangePane({ params, setParams }: PaneProps) {
               <button
                 key={s}
                 type="button"
-                onClick={() => toggleState(s)}
+                onClick={() => { toggleState(s); }}
                 className={`rounded-md px-2.5 py-1 text-xs font-medium ring-1 ring-inset transition-colors duration-150 ${
                   active
                     ? "bg-accent/15 text-accent ring-accent/40"
@@ -602,8 +602,8 @@ function AuditActionPane({ params, setParams }: PaneProps) {
         <TextInput
           value={actionsRaw}
           placeholder={t("notifications:wizard.panes.audit.actions_placeholder")}
-          onChange={(e) => setActionsRaw(e.target.value)}
-          onBlur={(e) => commitActions(e.target.value)}
+          onChange={(e) => { setActionsRaw(e.target.value); }}
+          onBlur={(e) => { commitActions(e.target.value); }}
           className="font-mono"
         />
         {actionsArr.length > 0 && (
@@ -676,14 +676,14 @@ function HostFlapPane({ params, setParams }: PaneProps) {
         hint={t("notifications:wizard.panes.host_flap.window_hint")}
         value={win === "" ? 1800 : win}
         min={60}
-        onChange={(v) => setParams({ ...params, window_sec: v === "" ? 1800 : v })}
+        onChange={(v) => { setParams({ ...params, window_sec: v === "" ? 1800 : v }); }}
       />
       <NumberField
         label={t("notifications:wizard.panes.host_flap.threshold_label")}
         hint={t("notifications:wizard.panes.host_flap.threshold_hint")}
         value={thr === "" ? 6 : thr}
         min={2}
-        onChange={(v) => setParams({ ...params, threshold: v === "" ? 6 : v })}
+        onChange={(v) => { setParams({ ...params, threshold: v === "" ? 6 : v }); }}
       />
     </div>
   );
@@ -800,7 +800,7 @@ export function ExpertJsonPane({
       <textarea
         rows={10}
         value={text}
-        onChange={(e) => handleChange(e.target.value)}
+        onChange={(e) => { handleChange(e.target.value); }}
         onBlur={handleBlur}
         spellCheck={false}
         className="w-full rounded-md border border-border bg-panel px-3 py-2 font-mono text-xs text-fg placeholder:text-fg-subtle focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"

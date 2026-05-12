@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Copy, FileJson, RefreshCcw } from "lucide-react";
-import { ReactNode, useEffect, useMemo, useState } from "react";
+import type { ReactNode} from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { Page } from "../components/page";
@@ -20,7 +21,7 @@ import {
 } from "../components/ui";
 import { useT } from "../i18n/useT";
 import { api } from "../lib/api";
-import { Host, IngestPayload, IngestSummary } from "../lib/types";
+import type { Host, IngestPayload, IngestSummary } from "../lib/types";
 import { hostDisplay } from "../lib/utils";
 
 // Translator key for `relTime()` — unused here directly but threaded into a
@@ -119,7 +120,7 @@ export function AdminIngestsContent({ onMeta }: { onMeta?: (node: ReactNode) => 
         </select>
       </div>,
     );
-    return () => onMeta(null);
+    return () => { onMeta(null); };
   }, [onMeta, rangeSec, hostID, hostList, t]);
 
   return (
@@ -153,14 +154,14 @@ export function AdminIngestsContent({ onMeta }: { onMeta?: (node: ReactNode) => 
                     return (
                       <tr
                         key={`${e.host_id}-${e.idx}-${e.time}`}
-                        onClick={() => setSelectedIdx(e.idx)}
+                        onClick={() => { setSelectedIdx(e.idx); }}
                         className={`cursor-pointer ${active ? "bg-panel-2" : "hover:bg-panel-2"}`}
                       >
                         <TD className="font-mono text-[11px] text-fg-muted">{relTime(e.time, t)}</TD>
                         <TD>
                           <Link
                             to={`/hosts/${e.host_id}`}
-                            onClick={(ev) => ev.stopPropagation()}
+                            onClick={(ev) => { ev.stopPropagation(); }}
                             className="text-accent hover:underline"
                           >
                             {e.hostname || e.host_id.substring(0, 8)}
@@ -196,7 +197,7 @@ export function AdminIngestsContent({ onMeta }: { onMeta?: (node: ReactNode) => 
             {detail.data && (
               <Button
                 onClick={() => {
-                  void navigator.clipboard.writeText(JSON.stringify(detail.data!.payload, null, 2));
+                  void navigator.clipboard.writeText(JSON.stringify(detail.data.payload, null, 2));
                 }}
               >
                 <Copy className="h-3.5 w-3.5" /> {t("admin:ingests.copy")}
@@ -213,7 +214,7 @@ export function AdminIngestsContent({ onMeta }: { onMeta?: (node: ReactNode) => 
                 <Skeleton className="h-64" />
               </div>
             ) : detail.error ? (
-              <p className="px-5 py-4 text-sm text-fail">{(detail.error as Error).message}</p>
+              <p className="px-5 py-4 text-sm text-fail">{(detail.error).message}</p>
             ) : (
               <div className="px-5 py-4 font-mono text-[11px] leading-relaxed text-fg">
                 <TreeNode value={detail.data?.payload} k="root" depth={0} initialOpen />
@@ -248,12 +249,12 @@ export function AdminIngests() {
 // and strings get a yellow chip so reviewers spot oversized chunks at a
 // glance. No external library — pure recursion.
 
-type TreeNodeProps = {
+interface TreeNodeProps {
   value: unknown;
   k: string | number;
   depth: number;
   initialOpen?: boolean;
-};
+}
 
 function TreeNode({ value, k, depth, initialOpen = false }: TreeNodeProps) {
   const { t } = useT(["admin", "common"]);
@@ -272,7 +273,7 @@ function TreeNode({ value, k, depth, initialOpen = false }: TreeNodeProps) {
         arr={value}
         depth={depth}
         open={open}
-        onToggle={() => setOpen((o) => !o)}
+        onToggle={() => { setOpen((o) => !o); }}
       />
     );
   }
@@ -286,7 +287,7 @@ function TreeNode({ value, k, depth, initialOpen = false }: TreeNodeProps) {
       <div>
         <button
           type="button"
-          onClick={() => setOpen((o) => !o)}
+          onClick={() => { setOpen((o) => !o); }}
           className="inline-flex items-center gap-1 rounded text-fg-muted hover:text-fg"
         >
           {open ? (
@@ -366,7 +367,7 @@ function ArrayNode({
             <div className="mt-0.5 flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setShown((s) => s + ARRAY_PAGE)}
+                onClick={() => { setShown((s) => s + ARRAY_PAGE); }}
                 className="rounded-md border border-border bg-panel px-2 py-0.5 text-[10px] text-fg-muted hover:bg-panel-2 hover:text-fg"
               >
                 {t("admin:ingests.tree_show_more", { count: Math.min(ARRAY_PAGE, remaining) })}
@@ -374,7 +375,7 @@ function ArrayNode({
               {remaining > ARRAY_PAGE && (
                 <button
                   type="button"
-                  onClick={() => setShown(arr.length)}
+                  onClick={() => { setShown(arr.length); }}
                   className="rounded-md border border-border bg-panel px-2 py-0.5 text-[10px] text-fg-muted hover:bg-panel-2 hover:text-fg"
                 >
                   {t("admin:ingests.tree_show_all", { count: remaining })}

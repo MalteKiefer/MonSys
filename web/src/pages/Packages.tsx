@@ -19,12 +19,12 @@ import {
 } from "../components/ui";
 import { useT } from "../i18n/useT";
 import { api } from "../lib/api";
-import { GlobalPackageRow, Host } from "../lib/types";
+import type { GlobalPackageRow, Host } from "../lib/types";
 import { hostDisplay } from "../lib/utils";
 
 // Manager option list. Internally the API uses dpkg/rpm/pacman/apk; the spec
 // asks for human-friendly labels (apt/dnf/pacman/apk) — we map between them.
-const MANAGER_KEYS: Array<{ value: string; labelKey: string }> = [
+const MANAGER_KEYS: { value: string; labelKey: string }[] = [
   { value: "", labelKey: "packages:managers.all" },
   { value: "dpkg", labelKey: "packages:managers.dpkg" },
   { value: "rpm", labelKey: "packages:managers.rpm" },
@@ -35,8 +35,8 @@ const MANAGER_KEYS: Array<{ value: string; labelKey: string }> = [
 const PAGE_SIZE = 200;
 const HOST_PREVIEW = 5;
 
-type Resp = { total: number; limit: number; offset: number; packages: GlobalPackageRow[] };
-type HostsResp = { hosts: Host[] };
+interface Resp { total: number; limit: number; offset: number; packages: GlobalPackageRow[] }
+interface HostsResp { hosts: Host[] }
 
 // `is_security` isn't on GlobalPackageRow. As a best-effort heuristic for the
 // security-only toggle, look for `*-security` source repos (Debian/Ubuntu's
@@ -62,8 +62,8 @@ export function Packages() {
 
   // Debounce the query so we don't hit the server on every keystroke.
   useEffect(() => {
-    const t = setTimeout(() => setDebounced(q.trim()), 250);
-    return () => clearTimeout(t);
+    const t = setTimeout(() => { setDebounced(q.trim()); }, 250);
+    return () => { clearTimeout(t); };
   }, [q]);
 
   // Reset pagination when filters change.
@@ -153,14 +153,14 @@ export function Packages() {
                 type="search"
                 placeholder={t("packages:filters.searchPlaceholder")}
                 value={q}
-                onChange={(e) => setQ(e.target.value)}
+                onChange={(e) => { setQ(e.target.value); }}
                 className="pl-8 font-mono"
                 autoFocus
               />
             </div>
             <select
               value={manager}
-              onChange={(e) => setManager(e.target.value)}
+              onChange={(e) => { setManager(e.target.value); }}
               className="rounded-md border border-border bg-panel px-3 py-2 text-sm text-fg focus:border-accent focus:outline-none"
               aria-label={t("packages:filters.managerAria")}
             >
@@ -172,7 +172,7 @@ export function Packages() {
             </select>
             <select
               value={hostID}
-              onChange={(e) => setHostID(e.target.value)}
+              onChange={(e) => { setHostID(e.target.value); }}
               className="max-w-[220px] truncate rounded-md border border-border bg-panel px-3 py-2 text-sm text-fg focus:border-accent focus:outline-none"
               aria-label={t("packages:filters.hostAria")}
             >
@@ -187,7 +187,7 @@ export function Packages() {
               <input
                 type="checkbox"
                 checked={securityOnly}
-                onChange={(e) => setSecurityOnly(e.target.checked)}
+                onChange={(e) => { setSecurityOnly(e.target.checked); }}
                 className="h-3.5 w-3.5 accent-accent"
               />
               <ShieldAlert className={`h-3.5 w-3.5 ${securityOnly ? "text-warn" : "text-fg-subtle"}`} />
@@ -214,7 +214,7 @@ export function Packages() {
                   <li key={g.hostID}>
                     <button
                       type="button"
-                      onClick={() => toggle(g.hostID)}
+                      onClick={() => { toggle(g.hostID); }}
                       aria-expanded={isOpen}
                       className="flex w-full items-center gap-2 px-5 py-2.5 text-left text-sm font-medium text-fg hover:bg-panel-2"
                     >
@@ -225,7 +225,7 @@ export function Packages() {
                       )}
                       <Link
                         to={`/hosts/${g.hostID}`}
-                        onClick={(e) => e.stopPropagation()}
+                        onClick={(e) => { e.stopPropagation(); }}
                         className="hover:text-accent hover:underline"
                       >
                         {display}
@@ -272,7 +272,7 @@ export function Packages() {
                     {!isOpen && remaining > 0 && (
                       <button
                         type="button"
-                        onClick={() => toggle(g.hostID)}
+                        onClick={() => { toggle(g.hostID); }}
                         className="block w-full px-5 py-2 text-left text-xs text-accent hover:bg-panel-2 hover:underline"
                       >
                         {t("packages:group.viewAll", { count: g.rows.length })}
@@ -292,14 +292,14 @@ export function Packages() {
             <div className="flex items-center gap-2">
               <button
                 disabled={offset === 0}
-                onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+                onClick={() => { setOffset(Math.max(0, offset - PAGE_SIZE)); }}
                 className="rounded-md border border-border px-2 py-1 hover:bg-panel-2 disabled:opacity-40"
               >
                 {t("packages:pagination.prev")}
               </button>
               <button
                 disabled={offset + PAGE_SIZE >= total}
-                onClick={() => setOffset(offset + PAGE_SIZE)}
+                onClick={() => { setOffset(offset + PAGE_SIZE); }}
                 className="rounded-md border border-border px-2 py-1 hover:bg-panel-2 disabled:opacity-40"
               >
                 {t("packages:pagination.next")}

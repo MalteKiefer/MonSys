@@ -30,9 +30,9 @@ function useTabletForceCollapse(): boolean {
   });
   useEffect(() => {
     const mql = window.matchMedia("(min-width: 768px) and (max-width: 1023.98px)");
-    const handle = (e: MediaQueryListEvent) => setForced(e.matches);
+    const handle = (e: MediaQueryListEvent) => { setForced(e.matches); };
     mql.addEventListener("change", handle);
-    return () => mql.removeEventListener("change", handle);
+    return () => { mql.removeEventListener("change", handle); };
   }, []);
   return forced;
 }
@@ -64,7 +64,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <ConnectionBanner />
-      <TopBar onOpenMobile={() => setDrawerOpen(true)} />
+      <TopBar onOpenMobile={() => { setDrawerOpen(true); }} />
       <div className="flex min-h-0 flex-1">
         <Sidebar forceCollapsed={tabletCollapsed} />
         <main className="min-w-0 flex-1 overflow-auto">
@@ -73,7 +73,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </Suspense>
         </main>
       </div>
-      <MobileDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+      <MobileDrawer open={drawerOpen} onClose={() => { setDrawerOpen(false); }} />
     </div>
   );
 }

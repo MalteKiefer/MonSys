@@ -43,7 +43,7 @@ export function StepNotify({
         <TextInput
           required
           value={draft.name}
-          onChange={(e) => patch({ name: e.target.value })}
+          onChange={(e) => { patch({ name: e.target.value }); }}
           placeholder={t("notifications:wizard.notify.name_placeholder")}
         />
       </Field>
@@ -56,11 +56,11 @@ export function StepNotify({
           items={channelOptions}
           selected={draft.channelIds}
           onToggle={(id) =>
-            patch({
+            { patch({
               channelIds: draft.channelIds.includes(id)
                 ? draft.channelIds.filter((c) => c !== id)
                 : [...draft.channelIds, id],
-            })
+            }); }
           }
           empty={t("notifications:wizard.notify.channels_empty")}
           search={chSearch}
@@ -84,7 +84,7 @@ export function StepNotify({
                     type="button"
                     aria-label={t("notifications:wizard.notify.remove_channel_aria", { name: c.name })}
                     onClick={() =>
-                      patch({ channelIds: draft.channelIds.filter((x) => x !== id) })
+                      { patch({ channelIds: draft.channelIds.filter((x) => x !== id) }); }
                     }
                     className="rounded p-0.5 text-fg-subtle hover:bg-fail/20 hover:text-fail"
                   >
@@ -100,7 +100,7 @@ export function StepNotify({
       <Field label={t("notifications:wizard.notify.severity_label")}>
         <PillGroup
           value={draft.severity}
-          onChange={(v) => patch({ severity: v })}
+          onChange={(v) => { patch({ severity: v }); }}
           label={t("notifications:wizard.notify.severity_label")}
           options={[
             { value: "info", label: t("notifications:wizard.notify.severity_info"), activeClass: "bg-ok/15 text-ok ring-ok/30" },
@@ -126,7 +126,7 @@ export function StepNotify({
               type="number"
               min={0}
               value={draft.throttleSec}
-              onChange={(e) => patch({ throttleSec: parseInt(e.target.value || "0", 10) })}
+              onChange={(e) => { patch({ throttleSec: parseInt(e.target.value || "0", 10) }); }}
             />
             <span className="text-xs text-fg-subtle">{t("notifications:wizard.notify.throttle_unit")}</span>
           </div>
@@ -147,7 +147,7 @@ export function StepNotify({
               min={0}
               max={86400}
               value={draft.repeatIntervalSec}
-              onChange={(e) => patch({ repeatIntervalSec: parseInt(e.target.value || "0", 10) })}
+              onChange={(e) => { patch({ repeatIntervalSec: parseInt(e.target.value || "0", 10) }); }}
             />
             <span className="text-xs text-fg-subtle">{t("notifications:wizard.notify.repeat_unit")}</span>
           </div>
@@ -157,13 +157,13 @@ export function StepNotify({
       <div className="grid grid-cols-1 gap-3 rounded-md border border-border bg-panel-2/40 p-3 md:grid-cols-2">
         <Toggle
           checked={draft.notifyOnResolve}
-          onChange={(v) => patch({ notifyOnResolve: v })}
+          onChange={(v) => { patch({ notifyOnResolve: v }); }}
           label={t("notifications:wizard.notify.notify_on_resolve_label")}
           hint={t("notifications:wizard.notify.notify_on_resolve_hint")}
         />
         <Toggle
           checked={draft.enabled}
-          onChange={(v) => patch({ enabled: v })}
+          onChange={(v) => { patch({ enabled: v }); }}
           label={t("notifications:wizard.notify.enabled_label")}
           hint={t("notifications:wizard.notify.enabled_hint")}
         />

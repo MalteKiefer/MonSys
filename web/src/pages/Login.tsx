@@ -1,12 +1,13 @@
 import { Activity, Fingerprint, KeyRound } from "lucide-react";
-import { FormEvent, useEffect, useRef, useState } from "react";
+import type { FormEvent} from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { Button, ErrorBox, Field, Panel, TextInput } from "../components/ui";
 import { useT } from "../i18n/useT";
 import { api, ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { LoginResponse } from "../lib/types";
+import type { LoginResponse } from "../lib/types";
 import {
   conditionalAutofill,
   loginWithPasskey,
@@ -42,7 +43,7 @@ export function Login() {
       setSession(resp.token, resp.user);
       void navigate("/", { replace: true });
     })();
-    return () => ctrl.abort();
+    return () => { ctrl.abort(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -113,10 +114,10 @@ export function Login() {
           {stage.kind === "password" ? (
             <form onSubmit={(e) => { void handlePassword(e); }} className="space-y-4">
               <Field label={t("login.email")}>
-                <TextInput type="email" autoComplete="username webauthn" required value={email} onChange={(e) => setEmail(e.target.value)} />
+                <TextInput type="email" autoComplete="username webauthn" required value={email} onChange={(e) => { setEmail(e.target.value); }} />
               </Field>
               <Field label={t("login.password")}>
-                <TextInput type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+                <TextInput type="password" autoComplete="current-password" required value={password} onChange={(e) => { setPassword(e.target.value); }} />
               </Field>
               {error && <ErrorBox>{error}</ErrorBox>}
               <Button type="submit" variant="primary" disabled={submitting} className="w-full">
@@ -174,7 +175,7 @@ export function Login() {
                   autoComplete="one-time-code"
                   required
                   value={code}
-                  onChange={(e) => setCode(e.target.value)}
+                  onChange={(e) => { setCode(e.target.value); }}
                   className="font-mono tracking-widest"
                 />
               </Field>

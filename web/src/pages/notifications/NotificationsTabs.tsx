@@ -16,13 +16,13 @@ export function NotificationsTabs() {
   const user = useAuth((s) => s.user);
   const isAdmin = user?.role === "admin";
 
-  const items: Array<{
+  const items: {
     to: string;
     label: string;
     icon: typeof Bell;
     end?: boolean;
     visible: boolean;
-  }> = [
+  }[] = [
     { to: "/notifications", label: t("notifications:tabs.rules"), icon: AlertTriangle, end: true, visible: isAdmin },
     { to: "/notifications/channels", label: t("notifications:tabs.channels"), icon: Bell, visible: true },
     { to: "/notifications/alerts", label: t("notifications:tabs.alerts"), icon: History, visible: true },

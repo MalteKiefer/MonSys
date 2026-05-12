@@ -13,7 +13,7 @@ import {
   Table,
 } from "../../components/ui";
 import { useT } from "../../i18n/useT";
-import {
+import type {
   CrowdsecDecision,
   Fail2banJailInfo,
   FirewallStatus,

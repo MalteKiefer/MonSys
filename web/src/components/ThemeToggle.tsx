@@ -1,7 +1,8 @@
 import { Moon, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { applyTheme, persistTheme, resolveInitialTheme, Theme } from "../lib/theme";
+import type { Theme } from "../lib/theme";
+import { applyTheme, persistTheme, resolveInitialTheme } from "../lib/theme";
 import { useT } from "../i18n/useT";
 
 // Small icon button that flips the app palette between dark and light.

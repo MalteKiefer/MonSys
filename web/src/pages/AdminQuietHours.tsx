@@ -1,8 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Activity, Clock, Moon, PlayCircle } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import type { FormEvent} from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Page } from "../components/page";
+import type {
+  TabItem} from "../components/ui";
 import {
   Button,
   ErrorBox,
@@ -13,7 +16,6 @@ import {
   Skeleton,
   StatusPill,
   SuccessBox,
-  TabItem,
   Tabs,
   TextInput,
 } from "../components/ui";
@@ -81,7 +83,7 @@ export function AdminQuietHours() {
       {settings.isLoading ? (
         <Skeleton className="h-64" />
       ) : settings.error ? (
-        <ErrorBox>{(settings.error as Error).message}</ErrorBox>
+        <ErrorBox>{(settings.error).message}</ErrorBox>
       ) : (
         <SettingsForm
           initial={settings.data!}
@@ -103,7 +105,7 @@ function SettingsForm({
   const TZ_OPTIONS = useTzOptions();
   const DAYS = useDays();
 
-  const tabItems: ReadonlyArray<TabItem<TabKey>> = useMemo(
+  const tabItems: readonly TabItem<TabKey>[] = useMemo(
     () => [
       { key: "schedule", label: t("admin:quietHours.tabs.schedule"), icon: Clock },
       { key: "timeline", label: t("admin:quietHours.tabs.timeline"), icon: Activity },
@@ -146,10 +148,10 @@ function SettingsForm({
       onSaved();
     },
     onError: (err) =>
-      setMsg({
+      { setMsg({
         kind: "err",
         text: err instanceof ApiError ? err.detail : t("admin:quietHours.window.saveFailed"),
-      }),
+      }); },
   });
 
   function submit(e: FormEvent) {
@@ -200,7 +202,7 @@ function SettingsForm({
                   <input
                     type="checkbox"
                     checked={enabled}
-                    onChange={(e) => setEnabled(e.target.checked)}
+                    onChange={(e) => { setEnabled(e.target.checked); }}
                   />
                   <span>
                     {t("admin:quietHours.window.enable")}
@@ -216,7 +218,7 @@ function SettingsForm({
                       type="time"
                       required
                       value={start}
-                      onChange={(e) => setStart(e.target.value)}
+                      onChange={(e) => { setStart(e.target.value); }}
                       disabled={!enabled}
                     />
                   </Field>
@@ -225,7 +227,7 @@ function SettingsForm({
                       type="time"
                       required
                       value={end}
-                      onChange={(e) => setEnd(e.target.value)}
+                      onChange={(e) => { setEnd(e.target.value); }}
                       disabled={!enabled}
                     />
                   </Field>
@@ -235,7 +237,7 @@ function SettingsForm({
                   >
                     <select
                       value={tz}
-                      onChange={(e) => setTz(e.target.value)}
+                      onChange={(e) => { setTz(e.target.value); }}
                       disabled={!enabled}
                       className="w-full rounded-md border border-border bg-panel px-3 py-2 text-sm text-fg focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30 disabled:opacity-50"
                     >
@@ -259,7 +261,7 @@ function SettingsForm({
                         <input
                           type="checkbox"
                           checked={days.includes(d.value)}
-                          onChange={() => toggleDay(d.value)}
+                          onChange={() => { toggleDay(d.value); }}
                           disabled={!enabled}
                         />
                         <span>{d.short}</span>
@@ -271,8 +273,8 @@ function SettingsForm({
                   </p>
                 </fieldset>
 
-                {msg && msg.kind === "ok" && <SuccessBox>{msg.text}</SuccessBox>}
-                {msg && msg.kind === "err" && <ErrorBox>{msg.text}</ErrorBox>}
+                {msg?.kind === "ok" && <SuccessBox>{msg.text}</SuccessBox>}
+                {msg?.kind === "err" && <ErrorBox>{msg.text}</ErrorBox>}
 
                 <div className="flex items-center gap-3">
                   <Button type="submit" variant="primary" disabled={save.isPending}>
@@ -443,8 +445,8 @@ function TimelinePanel({
   // without a per-second redraw.
   const [tick, setTick] = useState(0);
   useEffect(() => {
-    const id = setInterval(() => setTick((n) => n + 1), 60_000);
-    return () => clearInterval(id);
+    const id = setInterval(() => { setTick((n) => n + 1); }, 60_000);
+    return () => { clearInterval(id); };
   }, []);
   const liveNow = useMemo(() => new Date(), [tick]);
   const live = nowInZone(tz, liveNow);
@@ -577,7 +579,7 @@ function TimelinePanel({
         <div className="flex flex-wrap items-center gap-3 border-t border-border pt-3">
           <Button
             type="button"
-            onClick={() => setPreviewAt(new Date())}
+            onClick={() => { setPreviewAt(new Date()); }}
             disabled={!enabled}
             title={
               !enabled

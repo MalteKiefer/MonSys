@@ -22,7 +22,7 @@ import {
 } from "../../components/ui";
 import { useT } from "../../i18n/useT";
 import { api } from "../../lib/api";
-import {
+import type {
   NotificationChannel,
   NotificationRule,
   NotificationRuleInput,
@@ -45,7 +45,7 @@ function severityStatus(s: NotificationRule["severity"]): "ok" | "warn" | "fail"
 
 // A logical group of rule rows. Standalone rules (no group_id) become a
 // single-row group keyed by their id so the rendering loop is uniform.
-type RuleGroup = {
+interface RuleGroup {
   // Stable identifier — group_id when shared, otherwise the rule id.
   key: string;
   // True only when the rows actually share a backend group_id.
@@ -53,7 +53,7 @@ type RuleGroup = {
   // The displayed name (suffix stripped on group rows).
   name: string;
   rows: NotificationRule[];
-};
+}
 
 function groupRules(rules: NotificationRule[]): RuleGroup[] {
   const byGroup = new Map<string, NotificationRule[]>();
@@ -182,7 +182,7 @@ export function RulesPage() {
           <Button
             variant="primary"
             disabled={allChannels.length === 0}
-            onClick={() => setCreating(true)}
+            onClick={() => { setCreating(true); }}
           >
             <Plus className="h-3.5 w-3.5" /> {t("notifications:rules.new_rule")}
           </Button>
@@ -203,9 +203,9 @@ export function RulesPage() {
                   key={g.key}
                   group={g}
                   channels={allChannels}
-                  onEdit={() => setEditing(g.rows[0])}
+                  onEdit={() => { setEditing(g.rows[0]); }}
                   onToggle={(enabled) =>
-                    toggleGroup.mutate({ rows: g.rows, enabled })
+                    { toggleGroup.mutate({ rows: g.rows, enabled }); }
                   }
                   onDelete={() => {
                     const label =
@@ -323,7 +323,7 @@ function GroupCard({
           <Button onClick={onEdit}>
             <PencilLine className="h-3.5 w-3.5" /> {t("notifications:rules.card.edit")}
           </Button>
-          <Button onClick={() => onToggle(!allEnabled)}>
+          <Button onClick={() => { onToggle(!allEnabled); }}>
             {allEnabled ? (
               <>
                 <PowerOff className="h-3.5 w-3.5" /> {t("notifications:rules.card.disable")}

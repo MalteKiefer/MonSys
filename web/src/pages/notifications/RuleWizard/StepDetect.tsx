@@ -173,7 +173,7 @@ export function StepDetect({
                     <div className="flex shrink-0 items-center gap-1">
                       <button
                         type="button"
-                        onClick={() => openEditor(idx)}
+                        onClick={() => { openEditor(idx); }}
                         aria-label={t("notifications:wizard.detect.edit_condition_aria", { index: idx + 1 })}
                         disabled={isEditing && !editingThis}
                         className="rounded-md p-1 text-fg-subtle hover:bg-panel-2 hover:text-fg disabled:opacity-40"
@@ -182,7 +182,7 @@ export function StepDetect({
                       </button>
                       <button
                         type="button"
-                        onClick={() => removeAt(idx)}
+                        onClick={() => { removeAt(idx); }}
                         aria-label={t("notifications:wizard.detect.remove_condition_aria", { index: idx + 1 })}
                         disabled={isEditing && !editingThis}
                         className="rounded-md p-1 text-fg-subtle hover:bg-fail/15 hover:text-fail disabled:opacity-40"
@@ -211,7 +211,7 @@ export function StepDetect({
       {isEditing && (
         <ConditionEditor
           buffer={draft.buffer}
-          setBuffer={(b) => patch({ buffer: b })}
+          setBuffer={(b) => { patch({ buffer: b }); }}
           isNew={editing === "new"}
           canCancel={draft.conditions.length > 0 || editing !== "new"}
           onSave={saveEditor}
@@ -272,7 +272,7 @@ function ConditionEditor({
           type="button"
           role="switch"
           aria-checked={buffer.expertMode}
-          onClick={() => setBuffer({ ...buffer, expertMode: !buffer.expertMode })}
+          onClick={() => { setBuffer({ ...buffer, expertMode: !buffer.expertMode }); }}
           className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium ring-1 ring-inset transition-colors duration-150 ${
             buffer.expertMode
               ? "bg-accent/15 text-accent ring-accent/40"
@@ -318,7 +318,7 @@ function ConditionEditor({
           </div>
           <ExpertJsonPane
             params={buffer.conditionParams}
-            setParams={(p) => setBuffer({ ...buffer, conditionParams: p })}
+            setParams={(p) => { setBuffer({ ...buffer, conditionParams: p }); }}
           />
         </div>
       ) : (
@@ -423,7 +423,7 @@ function ConditionEditor({
               <ConditionParamsPane
                 conditionType={buffer.conditionType}
                 params={buffer.conditionParams}
-                setParams={(p) => setBuffer({ ...buffer, conditionParams: p })}
+                setParams={(p) => { setBuffer({ ...buffer, conditionParams: p }); }}
               />
             </section>
           )}

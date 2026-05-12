@@ -1,6 +1,7 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Pause, Play, Search } from "lucide-react";
-import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode} from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { Page } from "../components/page";
@@ -21,7 +22,7 @@ import {
 } from "../components/ui";
 import { useT } from "../i18n/useT";
 import { api } from "../lib/api";
-import { Host, ServerLogEntry } from "../lib/types";
+import type { Host, ServerLogEntry } from "../lib/types";
 import { hostDisplay } from "../lib/utils";
 
 const PAGE_SIZE = 100;
@@ -35,7 +36,7 @@ const LEVELS = ["", "debug", "info", "warn", "error"] as const;
 // dominant verbs from the codebase rather than guessing — clicking the
 // star chip means "all ops", which is a quick way to clear the op
 // selection.
-const LEVEL_CHIPS: ReadonlyArray<{ key: ServerLogEntry["level"]; label: string }> = [
+const LEVEL_CHIPS: readonly { key: ServerLogEntry["level"]; label: string }[] = [
   { key: "INFO", label: "INFO" },
   { key: "WARN", label: "WARN" },
   { key: "ERROR", label: "ERROR" },
@@ -44,13 +45,13 @@ const LEVEL_CHIPS: ReadonlyArray<{ key: ServerLogEntry["level"]; label: string }
 const OP_CHIPS = ["auth", "register", "ingest", "rule", "channel", "agent", "*"] as const;
 type OpChip = (typeof OP_CHIPS)[number];
 
-type Resp = {
+interface Resp {
   total: number;
   limit: number;
   offset: number;
   entries: ServerLogEntry[];
   seq: number;
-};
+}
 
 // AdminLogsContent renders the toolbar + table body without the outer
 // `<Page>` wrapper. The consolidated /admin/logs view mounts it inside a
@@ -71,10 +72,10 @@ export function AdminLogsContent({ onMeta }: { onMeta?: (node: ReactNode) => voi
   const [chipOps, setChipOps] = useState<Set<OpChip>>(new Set());
 
   useEffect(() => {
-    const t = setTimeout(() => setDebounced(q.trim()), 250);
-    return () => clearTimeout(t);
+    const t = setTimeout(() => { setDebounced(q.trim()); }, 250);
+    return () => { clearTimeout(t); };
   }, [q]);
-  useEffect(() => setOffset(0), [debounced, level, hostID]);
+  useEffect(() => { setOffset(0); }, [debounced, level, hostID]);
 
   const hosts = useQuery({
     queryKey: ["hosts-for-filter"],
@@ -115,7 +116,7 @@ export function AdminLogsContent({ onMeta }: { onMeta?: (node: ReactNode) => voi
     return rawEntries.filter((e) => {
       if (wantLevels.size > 0 && !wantLevels.has(e.level)) return false;
       if (wantOps.size > 0 && !wildcard) {
-        const op = typeof e.attrs?.op === "string" ? (e.attrs.op as string) : "";
+        const op = typeof e.attrs?.op === "string" ? (e.attrs.op) : "";
         // Match by prefix so e.g. "auth" picks up "auth.login", "auth.logout".
         let hit = false;
         for (const want of wantOps) {
@@ -172,7 +173,7 @@ export function AdminLogsContent({ onMeta }: { onMeta?: (node: ReactNode) => voi
         {t("admin:logs.meta", { total, seq })}
       </span>,
     );
-    return () => onMeta(null);
+    return () => { onMeta(null); };
   }, [onMeta, total, seq, t]);
 
   return (
@@ -186,14 +187,14 @@ export function AdminLogsContent({ onMeta }: { onMeta?: (node: ReactNode) => voi
                 type="search"
                 placeholder={t("admin:logs.search_placeholder")}
                 value={q}
-                onChange={(e) => setQ(e.target.value)}
+                onChange={(e) => { setQ(e.target.value); }}
                 className="pl-8 font-mono"
                 autoFocus
               />
             </div>
             <select
               value={level}
-              onChange={(e) => setLevel(e.target.value as (typeof LEVELS)[number])}
+              onChange={(e) => { setLevel(e.target.value as (typeof LEVELS)[number]); }}
               className="rounded-md border border-border bg-panel px-3 py-2 text-sm focus:border-accent focus:outline-none"
             >
               {LEVELS.map((l) => (
@@ -202,7 +203,7 @@ export function AdminLogsContent({ onMeta }: { onMeta?: (node: ReactNode) => voi
             </select>
             <select
               value={hostID}
-              onChange={(e) => setHostID(e.target.value)}
+              onChange={(e) => { setHostID(e.target.value); }}
               className="max-w-[220px] truncate rounded-md border border-border bg-panel px-3 py-2 text-sm focus:border-accent focus:outline-none"
             >
               <option value="">{t("admin:logs.all_hosts")}</option>
@@ -215,7 +216,7 @@ export function AdminLogsContent({ onMeta }: { onMeta?: (node: ReactNode) => voi
             <Button
               variant={liveTail ? "primary" : "secondary"}
               size="sm"
-              onClick={() => setLiveTail((v) => !v)}
+              onClick={() => { setLiveTail((v) => !v); }}
               aria-pressed={liveTail}
               title={liveTail ? t("admin:logs.pause_tail_title") : t("admin:logs.start_tail_title")}
             >
@@ -240,7 +241,7 @@ export function AdminLogsContent({ onMeta }: { onMeta?: (node: ReactNode) => voi
             <Chip
               key={c.key}
               active={chipLevels.has(c.key)}
-              onClick={() => toggleChipLevel(c.key)}
+              onClick={() => { toggleChipLevel(c.key); }}
             >
               {c.label}
             </Chip>
@@ -250,7 +251,7 @@ export function AdminLogsContent({ onMeta }: { onMeta?: (node: ReactNode) => voi
             {t("admin:logs.chip_op")}
           </span>
           {OP_CHIPS.map((op) => (
-            <Chip key={op} active={chipOps.has(op)} onClick={() => toggleChipOp(op)}>
+            <Chip key={op} active={chipOps.has(op)} onClick={() => { toggleChipOp(op); }}>
               {op}
             </Chip>
           ))}
@@ -320,14 +321,14 @@ export function AdminLogsContent({ onMeta }: { onMeta?: (node: ReactNode) => voi
             <div className="flex items-center gap-2">
               <button
                 disabled={offset === 0}
-                onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+                onClick={() => { setOffset(Math.max(0, offset - PAGE_SIZE)); }}
                 className="rounded-md border border-border px-2 py-1 hover:bg-panel-2 disabled:opacity-40"
               >
                 {t("admin:logs.prev")}
               </button>
               <button
                 disabled={offset + PAGE_SIZE >= total}
-                onClick={() => setOffset(offset + PAGE_SIZE)}
+                onClick={() => { setOffset(offset + PAGE_SIZE); }}
                 className="rounded-md border border-border px-2 py-1 hover:bg-panel-2 disabled:opacity-40"
               >
                 {t("admin:logs.next")}

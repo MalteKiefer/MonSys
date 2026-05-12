@@ -2,9 +2,10 @@ import { useQuery } from "@tanstack/react-query";
 import { Activity, Cpu, MemoryStick } from "lucide-react";
 import { useMemo, useState } from "react";
 
+import type {
+  ChartSeries} from "../../components/Chart";
 import {
   ChartLine,
-  ChartSeries,
   colorFor,
   formatBytes,
   formatPercent,
@@ -19,7 +20,7 @@ import {
 } from "../../components/ui";
 import { useT } from "../../i18n/useT";
 import { api } from "../../lib/api";
-import { SystemSample } from "../../lib/types";
+import type { SystemSample } from "../../lib/types";
 
 import { useHostDetail } from "./HostLayout";
 

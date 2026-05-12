@@ -34,7 +34,7 @@ import { persist, createJSONStorage } from "zustand/middleware";
 // selected last. We do not persist transient metadata (e.g. last-known
 // status) — the palette re-resolves the live label from its sources on next
 // open. Only the bare minimum required to render and re-navigate is kept.
-export type PaletteRecent = {
+export interface PaletteRecent {
   // Stable identifier within `kind` — for "page" this is the route path, for
   // "host"/"monitor"/"rule" this is the entity ID. Combined with `kind` it
   // uniquely keys a row.
@@ -42,11 +42,11 @@ export type PaletteRecent = {
   kind: "page" | "host" | "monitor" | "rule";
   label: string;
   to: string;
-};
+}
 
 const RECENT_LIMIT = 5;
 
-type PaletteState = {
+interface PaletteState {
   // ---- transient (not persisted) -----------------------------------------
   open: boolean;
   setOpen: (open: boolean) => void;
@@ -55,7 +55,7 @@ type PaletteState = {
   recent: PaletteRecent[];
   addRecent: (entry: PaletteRecent) => void;
   clearRecent: () => void;
-};
+}
 
 export const useCommandPalette = create<PaletteState>()(
   persist(

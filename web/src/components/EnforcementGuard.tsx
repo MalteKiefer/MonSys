@@ -1,4 +1,4 @@
-import { ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 
 import { useAuth } from "../lib/auth";
@@ -29,7 +29,7 @@ export function EnforcementGuard({ children }: { children: ReactNode }) {
 
   return (
     <>
-      {mustEnroll && inGrace && <GraceBanner graceUntil={graceUntil!} />}
+      {mustEnroll && inGrace && <GraceBanner graceUntil={graceUntil} />}
       {mustEnroll && !inGrace && location.pathname.startsWith("/profile") && (
         <EnrollNowBanner />
       )}

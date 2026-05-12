@@ -11,14 +11,17 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import type { FormEvent} from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { Page } from "../components/page";
+import type {
+  DropdownItem,
+  TabItem} from "../components/ui";
 import {
   Button,
   DropdownMenu,
-  DropdownItem,
   Empty,
   ErrorBox,
   Field,
@@ -29,7 +32,6 @@ import {
   StatusPill,
   SuccessBox,
   Table,
-  TabItem,
   Tabs,
   TBody,
   TD,
@@ -40,9 +42,9 @@ import {
 import { useT } from "../i18n/useT";
 import { api, ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { AdminCreateUserResponse, AdminUser } from "../lib/types";
+import type { AdminCreateUserResponse, AdminUser } from "../lib/types";
 
-type ListResponse = { users: AdminUser[] };
+interface ListResponse { users: AdminUser[] }
 
 type RoleFilter = "all" | "admin" | "user";
 type StatusFilter = "all" | "active" | "disabled";
@@ -61,7 +63,7 @@ function isTabKey(v: string | null): v is TabKey {
 // No global toast primitive exists in the design system yet, so this page
 // renders an inline auto-dismissing banner pinned to the top of the panel
 // content. The banner reuses Success/ErrorBox styling for visual parity.
-type Toast = { kind: "ok" | "err"; text: string };
+interface Toast { kind: "ok" | "err"; text: string }
 
 function ToastBanner({
   toast,
@@ -73,7 +75,7 @@ function ToastBanner({
   useEffect(() => {
     if (!toast) return;
     const t = window.setTimeout(onClose, 3500);
-    return () => window.clearTimeout(t);
+    return () => { window.clearTimeout(t); };
   }, [toast, onClose]);
   if (!toast) return null;
   return (
@@ -106,7 +108,7 @@ export function AdminUsers() {
   );
   const [toast, setToast] = useState<Toast | null>(null);
 
-  const TABS: ReadonlyArray<TabItem<TabKey>> = [
+  const TABS: readonly TabItem<TabKey>[] = [
     { key: "list", label: t("users.tabs.list"), icon: Users },
     { key: "invites", label: t("users.tabs.invites"), icon: Send },
   ];
@@ -136,7 +138,7 @@ export function AdminUsers() {
           aria-labelledby="tab-list"
           className="space-y-6"
         >
-          <ToastBanner toast={toast} onClose={() => setToast(null)} />
+          <ToastBanner toast={toast} onClose={() => { setToast(null); }} />
 
           <CreateUserCard onCreated={invalidate} />
 
@@ -148,7 +150,7 @@ export function AdminUsers() {
               {list.isLoading ? (
                 <Skeleton className="h-48" />
               ) : list.error ? (
-                <ErrorBox>{(list.error as Error).message}</ErrorBox>
+                <ErrorBox>{(list.error).message}</ErrorBox>
               ) : (
                 <UserTable
                   users={list.data?.users ?? []}
@@ -251,14 +253,14 @@ function CreateUserCard({ onCreated }: { onCreated: () => void }) {
               type="email"
               required
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => { setEmail(e.target.value); }}
             />
           </Field>
           <div className="grid gap-3 md:grid-cols-2">
             <Field label={t("users.create.role_label")}>
               <select
                 value={role}
-                onChange={(e) => setRole(e.target.value as "admin" | "user")}
+                onChange={(e) => { setRole(e.target.value as "admin" | "user"); }}
                 className="w-full rounded-md border border-border bg-panel px-3 py-2 text-sm text-fg transition-colors duration-150 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
               >
                 <option value="user">{t("users.create.role_user")}</option>
@@ -269,7 +271,7 @@ function CreateUserCard({ onCreated }: { onCreated: () => void }) {
               <TextInput
                 type="text"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => { setPassword(e.target.value); }}
               />
             </Field>
           </div>
@@ -277,7 +279,7 @@ function CreateUserCard({ onCreated }: { onCreated: () => void }) {
             <input
               type="checkbox"
               checked={sendInvite}
-              onChange={(e) => setSendInvite(e.target.checked)}
+              onChange={(e) => { setSendInvite(e.target.checked); }}
             />
             {t("users.create.send_invite_label")}
           </label>
@@ -432,13 +434,13 @@ function UserTable({
             type="search"
             placeholder={t("users.list.search_placeholder")}
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => { setSearch(e.target.value); }}
             className="pl-8"
           />
         </div>
         <select
           value={roleFilter}
-          onChange={(e) => setRoleFilter(e.target.value as RoleFilter)}
+          onChange={(e) => { setRoleFilter(e.target.value as RoleFilter); }}
           className="rounded-md border border-border bg-panel px-3 py-2 text-sm focus:border-accent focus:outline-none"
           aria-label={t("users.list.role_filter_aria")}
         >
@@ -448,7 +450,7 @@ function UserTable({
         </select>
         <select
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+          onChange={(e) => { setStatusFilter(e.target.value as StatusFilter); }}
           className="rounded-md border border-border bg-panel px-3 py-2 text-sm focus:border-accent focus:outline-none"
           aria-label={t("users.list.status_filter_aria")}
         >
@@ -481,7 +483,7 @@ function UserTable({
             <Button
               size="sm"
               variant="ghost"
-              onClick={() => setSelected(new Set())}
+              onClick={() => { setSelected(new Set()); }}
               disabled={bulkBusy}
             >
               {t("users.list.clear")}
@@ -531,7 +533,7 @@ function UserTable({
                 onChange={onChange}
                 onToast={onToast}
                 checked={selected.has(u.id)}
-                onCheck={() => toggleOne(u.id)}
+                onCheck={() => { toggleOne(u.id); }}
               />
             ))
           )}
@@ -631,7 +633,7 @@ function UserRow({
   // Native confirm() is good enough for these destructive actions — they're
   // admin-only and infrequent. A custom modal could come later if needed.
 
-  const onResetPassword = () => reset.mutate();
+  const onResetPassword = () => { reset.mutate(); };
 
   const onReset2FA = () => {
     if (!window.confirm(t("users.confirm.reset_2fa"))) {
@@ -799,7 +801,7 @@ function UserRow({
             <ResetURLDialog
               email={user.email}
               url={resetFallbackURL}
-              onClose={() => setResetFallbackURL(null)}
+              onClose={() => { setResetFallbackURL(null); }}
             />
           </td>
         </tr>
@@ -830,7 +832,7 @@ function ResetURLDialog({
     try {
       await navigator.clipboard.writeText(fullURL);
       setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
+      window.setTimeout(() => { setCopied(false); }, 1500);
     } catch {
       // Clipboard API can fail under HTTP/non-secure contexts — fall back
       // to a manual selection prompt so the admin can still grab the URL.

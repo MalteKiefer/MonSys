@@ -13,7 +13,7 @@ import {
   Table,
 } from "../../components/ui";
 import { useT } from "../../i18n/useT";
-import { ObservedUser } from "../../lib/types";
+import type { ObservedUser } from "../../lib/types";
 
 import { useHostDetail } from "./HostLayout";
 

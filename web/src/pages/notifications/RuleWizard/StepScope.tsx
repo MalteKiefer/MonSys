@@ -22,7 +22,7 @@ export function StepScope({
 }: {
   draft: RuleDraft;
   patch: (p: Partial<RuleDraft>) => void;
-  tags: Array<{ tag: string; count: number }>;
+  tags: { tag: string; count: number }[];
   hosts: Host[];
   groups: HostGroup[];
 }) {
@@ -63,7 +63,7 @@ export function StepScope({
     [groups, t],
   );
 
-  const choices: Array<{ value: RuleDraft["targetMode"]; label: string; hint: string }> = [
+  const choices: { value: RuleDraft["targetMode"]; label: string; hint: string }[] = [
     { value: "all", label: t("notifications:wizard.scope.choices.all_label"), hint: t("notifications:wizard.scope.choices.all_hint") },
     { value: "tags", label: t("notifications:wizard.scope.choices.tags_label"), hint: t("notifications:wizard.scope.choices.tags_hint") },
     { value: "groups", label: t("notifications:wizard.scope.choices.groups_label"), hint: t("notifications:wizard.scope.choices.groups_hint") },
@@ -123,11 +123,11 @@ export function StepScope({
             items={tagOptions}
             selected={draft.targetTags}
             onToggle={(id) =>
-              patch({
+              { patch({
                 targetTags: draft.targetTags.includes(id)
                   ? draft.targetTags.filter((tg) => tg !== id)
                   : [...draft.targetTags, id],
-              })
+              }); }
             }
             empty={tagOptions.length === 0
               ? t("notifications:wizard.scope.tags_empty_none")
@@ -143,7 +143,7 @@ export function StepScope({
                   key={tg}
                   text={tg}
                   onRemove={() =>
-                    patch({ targetTags: draft.targetTags.filter((x) => x !== tg) })
+                    { patch({ targetTags: draft.targetTags.filter((x) => x !== tg) }); }
                   }
                 />
               ))}
@@ -161,11 +161,11 @@ export function StepScope({
             items={groupOptions}
             selected={draft.targetGroupIds}
             onToggle={(id) =>
-              patch({
+              { patch({
                 targetGroupIds: draft.targetGroupIds.includes(id)
                   ? draft.targetGroupIds.filter((g) => g !== id)
                   : [...draft.targetGroupIds, id],
-              })
+              }); }
             }
             empty={groupOptions.length === 0
               ? t("notifications:wizard.scope.groups_empty_none")
@@ -186,11 +186,11 @@ export function StepScope({
             items={hostOptions}
             selected={draft.targetHostIds}
             onToggle={(id) =>
-              patch({
+              { patch({
                 targetHostIds: draft.targetHostIds.includes(id)
                   ? draft.targetHostIds.filter((h) => h !== id)
                   : [...draft.targetHostIds, id],
-              })
+              }); }
             }
             empty={hostOptions.length === 0
               ? t("notifications:wizard.scope.hosts_empty_none")

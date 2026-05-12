@@ -1,9 +1,9 @@
 // Mirrors of apitypes the UI consumes. Hand-typed for now; future iteration
 // could code-gen from /docs/openapi.yaml so they stay in sync automatically.
 
-export type HostGroupRef = { id: string; name: string };
+export interface HostGroupRef { id: string; name: string }
 
-export type Host = {
+export interface Host {
   id: string;
   hostname: string;
   distro: string;
@@ -22,18 +22,18 @@ export type Host = {
   services?: string[];
   pending_updates?: number;
   security_updates?: number;
-};
+}
 
-export type HostGroup = {
+export interface HostGroup {
   id: string;
   name: string;
   description?: string;
   created_at: string;
   created_by?: string;
   member_ids: string[];
-};
+}
 
-export type CurrentUser = {
+export interface CurrentUser {
   id: string;
   email: string;
   role: string;
@@ -50,10 +50,10 @@ export type CurrentUser = {
   // detection). The TopBar language switcher writes this through
   // POST /v1/auth/me/language so the choice survives across devices.
   language?: string;
-};
+}
 
 // Passkey (WebAuthn credential) summary returned by /v1/auth/passkeys.
-export type Passkey = {
+export interface Passkey {
   id: string;
   name: string;
   aaguid?: string;
@@ -62,61 +62,61 @@ export type Passkey = {
   backup_state: boolean;
   created_at: string;
   last_used_at?: string | null;
-};
+}
 
-export type ListPasskeysResponse = { passkeys: Passkey[] };
+export interface ListPasskeysResponse { passkeys: Passkey[] }
 
 // Admin-managed security policy. force_mode controls whether 2FA / passkeys
 // are required server-wide; grace_days is how long new users have to enroll
 // before their account is gated. max_session_hours and idle_timeout_minutes
 // bound the lifetime of issued tokens.
 export type ForceMode = "off" | "2fa_any" | "passkey_required";
-export type SecurityPolicy = {
+export interface SecurityPolicy {
   force_mode: ForceMode;
   grace_days: number;
   max_session_hours: number;
   idle_timeout_minutes: number;
-};
+}
 
-export type RevokeAllSessionsResponse = { revoked: number };
+export interface RevokeAllSessionsResponse { revoked: number }
 
 // WebAuthn begin-step responses. `options` is the raw PublicKeyCredential*
 // dict the browser feeds to navigator.credentials.create/get — keep it typed
 // as `unknown` here; the webauthn.ts helper does the heavy lifting.
-export type WebAuthnRegisterBeginResponse = {
+export interface WebAuthnRegisterBeginResponse {
   challenge_token: string;
   options: unknown;
-};
-export type WebAuthnLoginBeginResponse = {
+}
+export interface WebAuthnLoginBeginResponse {
   challenge_token: string;
   options: unknown;
-};
+}
 
 // Server-wide auth/notification readiness flags surfaced to any logged-in
 // user (mirrors apitypes.AuthConfig). Used by non-admins to gate UI hints
 // without exposing admin-only settings.
-export type AuthConfig = {
+export interface AuthConfig {
   sso_enabled: boolean;
   smtp_configured: boolean;
-};
+}
 
-export type LoginResponse = {
+export interface LoginResponse {
   needs_totp: boolean;
   needs_passkey?: boolean;
   challenge_token?: string;
   token?: string;
   expires_at: string;
   user: CurrentUser;
-};
+}
 
-export type TOTPSetup = {
+export interface TOTPSetup {
   secret_b32: string;
   otpauth_url: string;
   qr_png_base64: string;
   backup_codes: string[];
-};
+}
 
-export type AdminUser = {
+export interface AdminUser {
   id: string;
   email: string;
   role: "admin" | "user";
@@ -124,26 +124,26 @@ export type AdminUser = {
   disabled_at?: string | null;
   totp_active: boolean;
   last_login_at?: string | null;
-};
+}
 
-export type PasswordPolicy = {
+export interface PasswordPolicy {
   min_length: number;
   require_upper: boolean;
   require_lower: boolean;
   require_digit: boolean;
   require_symbol: boolean;
   max_age_days: number;
-};
+}
 
-export type AdminCreateUserResponse = {
+export interface AdminCreateUserResponse {
   user: AdminUser;
   reset_url?: string;
   invite_sent: boolean;
-};
+}
 
 // Host detail bundles
 
-export type DiskRow = {
+export interface DiskRow {
   id: string;
   device: string;
   mountpoint: string;
@@ -154,9 +154,9 @@ export type DiskRow = {
   latest_time?: string;
   used_bytes: number;
   free_bytes: number;
-};
+}
 
-export type NicRow = {
+export interface NicRow {
   id: string;
   name: string;
   mac: string;
@@ -168,9 +168,9 @@ export type NicRow = {
   latest_time?: string;
   rx_bytes: number;
   tx_bytes: number;
-};
+}
 
-export type WorkloadRow = {
+export interface WorkloadRow {
   id: string;
   kind: string;
   external_id: string;
@@ -191,9 +191,9 @@ export type WorkloadRow = {
   latest_digest?: string;
   update_available?: boolean;
   update_checked_at?: string;
-};
+}
 
-export type VMRow = {
+export interface VMRow {
   kind: string;
   external_id: string;
   name: string;
@@ -202,9 +202,9 @@ export type VMRow = {
   mem_bytes: number;
   autostart: boolean;
   last_seen_at: string;
-};
+}
 
-export type ObservedUser = {
+export interface ObservedUser {
   username: string;
   uid: number;
   gid: number;
@@ -214,24 +214,24 @@ export type ObservedUser = {
   is_system: boolean;
   last_login_at?: string | null;
   last_seen_at: string;
-};
+}
 
-export type PackageSummary = {
+export interface PackageSummary {
   time: string;
   installed_count: number;
   updates_count: number;
   security_updates: number;
   metadata_age_seconds: number;
-};
+}
 
-export type RepoMetaState = {
+export interface RepoMetaState {
   manager: string;
   metadata_mtime: string;
   metadata_age_seconds: number;
   refreshed_externally: boolean;
-};
+}
 
-export type HostDetail = {
+export interface HostDetail {
   host: Host;
   disks: DiskRow[];
   nics: NicRow[];
@@ -240,9 +240,9 @@ export type HostDetail = {
   users: ObservedUser[];
   packages_summary?: PackageSummary;
   repo_states: RepoMetaState[];
-};
+}
 
-export type FirewallStatus = {
+export interface FirewallStatus {
   engine: string;
   active: boolean;
   default_input?: string;
@@ -250,18 +250,18 @@ export type FirewallStatus = {
   default_forward?: string;
   rule_count: number;
   snapshot_excerpt?: string;
-};
+}
 
-export type Fail2banJailInfo = {
+export interface Fail2banJailInfo {
   jail: string;
   currently_failed: number;
   total_failed: number;
   currently_banned: number;
   total_banned: number;
   banned_ips?: string[];
-};
+}
 
-export type CrowdsecDecision = {
+export interface CrowdsecDecision {
   decision_id: string;
   origin?: string;
   scope?: string;
@@ -269,25 +269,25 @@ export type CrowdsecDecision = {
   type?: string;
   reason?: string;
   until?: string;
-};
+}
 
-export type HostSecurity = {
+export interface HostSecurity {
   host_id: string;
   firewalls: FirewallStatus[];
   fail2ban: Fail2banJailInfo[] | null;
   crowdsec: CrowdsecDecision[] | null;
-};
+}
 
-export type LoginEvent = {
+export interface LoginEvent {
   time: string;
   username?: string;
   source_ip?: string;
   method: string;
   success: boolean;
   detail?: string;
-};
+}
 
-export type SystemSample = {
+export interface SystemSample {
   time: string;
   cpu_usage_pct: number;
   cpu_per_core?: number[];
@@ -298,13 +298,13 @@ export type SystemSample = {
   ram_avail_bytes: number;
   swap_used_bytes: number;
   uptime_sec: number;
-};
+}
 
 // Notifications
 
 export type ChannelType = "email" | "slack" | "mattermost" | "discord" | "ntfy";
 
-export type NotificationChannel = {
+export interface NotificationChannel {
   id: string;
   type: ChannelType;
   name: string;
@@ -316,17 +316,17 @@ export type NotificationChannel = {
   owner_user_id?: string;
   last_used_at?: string | null;
   last_error?: string;
-};
+}
 
-export type NotificationChannelInput = {
+export interface NotificationChannelInput {
   type: ChannelType;
   name: string;
   enabled: boolean;
   config?: Record<string, unknown>;
   recipient_email?: string;
-};
+}
 
-export type SmtpSettings = {
+export interface SmtpSettings {
   host: string;
   port: number;
   username: string;
@@ -337,9 +337,9 @@ export type SmtpSettings = {
   insecure_skip_verify: boolean;
   updated_at: string;
   updated_by: string;
-};
+}
 
-export type NotificationSettings = {
+export interface NotificationSettings {
   quiet_enabled: boolean;
   quiet_start: string;
   quiet_end: string;
@@ -347,17 +347,17 @@ export type NotificationSettings = {
   quiet_tz: string;
   updated_at: string;
   updated_by: string;
-};
+}
 
-export type NotificationSettingsInput = {
+export interface NotificationSettingsInput {
   quiet_enabled: boolean;
   quiet_start: string;
   quiet_end: string;
   quiet_days: number[];
   quiet_tz: string;
-};
+}
 
-export type SmtpSettingsInput = {
+export interface SmtpSettingsInput {
   host: string;
   port: number;
   username?: string;
@@ -367,7 +367,7 @@ export type SmtpSettingsInput = {
   starttls: boolean;
   tls: boolean;
   insecure_skip_verify: boolean;
-};
+}
 
 export type NotificationConditionType =
   | "host_offline"
@@ -394,7 +394,7 @@ export type NotificationConditionType =
   | "host_flap"
   | "unexpected_reboot";
 
-export type NotificationRule = {
+export interface NotificationRule {
   id: string;
   name: string;
   enabled: boolean;
@@ -414,9 +414,9 @@ export type NotificationRule = {
   group_id?: string | null;
   created_at: string;
   created_by?: string;
-};
+}
 
-export type NotificationRuleInput = {
+export interface NotificationRuleInput {
   name: string;
   enabled: boolean;
   condition_type: NotificationRule["condition_type"];
@@ -429,21 +429,21 @@ export type NotificationRuleInput = {
   target_host_ids?: string[];
   target_tags?: string[];
   target_group_ids?: string[];
-};
+}
 
 // One leg of a multi-condition group. The shared (name/scope/channels/…)
 // fields live on NotificationRuleGroupInput; only condition_type and
 // condition_params differ per leg.
-export type NotificationRuleCondition = {
+export interface NotificationRuleCondition {
   condition_type: NotificationConditionType;
   condition_params?: Record<string, unknown>;
-};
+}
 
 // Body shape for POST /v1/notifications/rules/batch. Mirrors the Go
 // NotificationRuleGroupInput. The backend expands `conditions` into N rule
 // rows that all share the same group_id and (when len > 1) get a per-row
 // " — <condition_type>" suffix appended to `name`.
-export type NotificationRuleGroupInput = {
+export interface NotificationRuleGroupInput {
   name: string;
   enabled: boolean;
   severity: NotificationRule["severity"];
@@ -458,14 +458,14 @@ export type NotificationRuleGroupInput = {
   // When set, server atomically deletes these rule ids before inserting the
   // new batch, all in one tx. Used by the wizard for edit / single→multi.
   replace_existing_ids?: string[];
-};
+}
 
-export type NotificationRuleGroupResponse = {
+export interface NotificationRuleGroupResponse {
   group_id: string;
   rules: NotificationRule[];
-};
+}
 
-export type AlertHistoryEntry = {
+export interface AlertHistoryEntry {
   id: number;
   at: string;
   rule_id?: string;
@@ -476,11 +476,11 @@ export type AlertHistoryEntry = {
   dedup_key: string;
   delivered_to: string[];
   delivery_errors: Record<string, unknown>;
-};
+}
 
 // Monitors
 
-export type Monitor = {
+export interface Monitor {
   id: string;
   type: "cert" | "postgres" | "mysql" | "mongodb" | "http" | "tcp";
   name: string;
@@ -496,9 +496,9 @@ export type Monitor = {
   last_status?: "ok" | "warn" | "fail" | "unknown";
   last_latency_ms?: number;
   last_detail?: string;
-};
+}
 
-export type MonitorInput = {
+export interface MonitorInput {
   type: Monitor["type"];
   name: string;
   target: string;
@@ -507,16 +507,16 @@ export type MonitorInput = {
   enabled: boolean;
   target_tags?: string[];
   target_group_ids?: string[];
-};
+}
 
-export type MonitorResult = {
+export interface MonitorResult {
   time: string;
   status: "ok" | "warn" | "fail" | "unknown";
   latency_ms: number;
   detail?: string;
-};
+}
 
-export type DiskSample = {
+export interface DiskSample {
   time: string;
   device: string;
   mountpoint: string;
@@ -529,9 +529,9 @@ export type DiskSample = {
   read_ops: number;
   write_ops: number;
   io_time_ms: number;
-};
+}
 
-export type NetSample = {
+export interface NetSample {
   time: string;
   nic_name: string;
   rx_bytes: number;
@@ -542,9 +542,9 @@ export type NetSample = {
   tx_errs: number;
   rx_drops: number;
   tx_drops: number;
-};
+}
 
-export type GlobalPackageRow = {
+export interface GlobalPackageRow {
   host_id: string;
   hostname: string;
   manager: string;
@@ -553,58 +553,58 @@ export type GlobalPackageRow = {
   arch?: string;
   source_repo?: string;
   installed_at?: string;
-};
+}
 
-export type IngestSummary = {
+export interface IngestSummary {
   idx: number;
   time: string;
   host_id: string;
   hostname?: string;
   size_bytes: number;
-};
+}
 
-export type IngestPayload = {
+export interface IngestPayload {
   time: string;
   host_id: string;
   hostname?: string;
   size_bytes: number;
   truncated: boolean;
   payload: unknown;
-};
+}
 
 // Agent configuration
 
-export type AgentPackagesConfig = {
+export interface AgentPackagesConfig {
   enabled?: boolean;
   update_check_interval?: string;
   full_snapshot_max_interval?: string;
-};
+}
 
-export type AgentQuietHours = {
+export interface AgentQuietHours {
   enabled: boolean;
   start: string;
   end: string;
   days?: number[];
-};
+}
 
-export type AgentSchedule = {
+export interface AgentSchedule {
   name: string;
   start: string;
   end: string;
   days?: number[];
   interval_seconds: number;
-};
+}
 
-export type AgentConfig = {
+export interface AgentConfig {
   interval_seconds?: number;
   buffer_max_mb?: number;
   packages?: AgentPackagesConfig;
   quiet_hours?: AgentQuietHours;
   schedules?: AgentSchedule[];
   labels?: Record<string, string>;
-};
+}
 
-export type AgentConfigEntry = {
+export interface AgentConfigEntry {
   id: string;
   scope: "global" | "group" | "host";
   target_id?: string;
@@ -615,30 +615,30 @@ export type AgentConfigEntry = {
   created_at: string;
   updated_at: string;
   updated_by?: string;
-};
+}
 
-export type AgentConfigInput = {
+export interface AgentConfigInput {
   scope: "global" | "group" | "host";
   target_id?: string;
   config: AgentConfig;
   description?: string;
   enabled: boolean;
-};
+}
 
-export type AgentConfigResolved = {
+export interface AgentConfigResolved {
   config: AgentConfig;
   source_scopes: string[];
   fetched_at: string;
-};
+}
 
-export type ServerLogEntry = {
+export interface ServerLogEntry {
   time: string;
   level: "DEBUG" | "INFO" | "WARN" | "ERROR";
   msg: string;
   attrs?: Record<string, unknown>;
-};
+}
 
-export type PendingUpdate = {
+export interface PendingUpdate {
   manager: string;
   name: string;
   arch?: string;
@@ -646,23 +646,23 @@ export type PendingUpdate = {
   available_version: string;
   source_repo?: string;
   is_security: boolean;
-};
+}
 
-export type AuditEntry = {
+export interface AuditEntry {
   id: number;
   actor: string;
   action: string;
   target: string;
   detail: string;
   at: string;
-};
+}
 
 // Agent self-enrollment. An admin issues a short-lived enrollment token bound
 // to optional defaults (label/tags/groups), and a fresh agent installs itself
 // via `curl /v1/agents/install.sh?t=<token> | sh`. The token is single-use and
 // the server records which host claimed it (`used_*`).
 
-export type AgentEnrollment = {
+export interface AgentEnrollment {
   id: string;
   label?: string;
   description?: string;
@@ -674,19 +674,19 @@ export type AgentEnrollment = {
   used_at?: string;
   used_by_host_id?: string;
   used_by_hostname?: string;
-};
+}
 
-export type AgentEnrollmentInput = {
+export interface AgentEnrollmentInput {
   label?: string;
   description?: string;
   tags?: string[];
   group_ids?: string[];
   ttl_minutes?: number;
-};
+}
 
-export type AgentEnrollmentCreateResponse = {
+export interface AgentEnrollmentCreateResponse {
   enrollment: AgentEnrollment;
   token: string;
   install_command: string;
   install_url: string;
-};
+}
