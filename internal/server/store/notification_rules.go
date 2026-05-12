@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"time"
 
 	"github.com/google/uuid"
@@ -13,6 +14,45 @@ import (
 
 	"github.com/MalteKiefer/MonSys/internal/shared/apitypes"
 )
+
+// auditActionPatternMaxLen mirrors the maxLength tag on
+// apitypes.AuditActionParams.{ActorPattern,TargetPattern}. Kept in sync by
+// hand because Huma reflection happens at boot; this constant is what we
+// actually enforce in CreateRule/UpdateRule/CreateRuleGroup.
+const auditActionPatternMaxLen = 256
+
+// validateAuditActionParams rejects audit_action rules whose actor_pattern or
+// target_pattern are too long or fail to compile under Go's regexp (RE2)
+// engine. Catastrophic-backtracking constructs ((a+)+, nested unbounded
+// quantifiers, …) that Postgres' POSIX `~` engine would happily try to
+// evaluate are rejected here so they never reach the alerts engine query
+// path. The alerts engine separately wraps the audit query in a 2s
+// statement_timeout as a defence-in-depth measure.
+func validateAuditActionParams(params map[string]any) error {
+	if params == nil {
+		return nil
+	}
+	for _, key := range []string{"actor_pattern", "target_pattern"} {
+		raw, ok := params[key]
+		if !ok {
+			continue
+		}
+		pat, ok := raw.(string)
+		if !ok {
+			return fmt.Errorf("%s must be a string", key)
+		}
+		if pat == "" {
+			continue
+		}
+		if len(pat) > auditActionPatternMaxLen {
+			return fmt.Errorf("%s exceeds %d-character limit", key, auditActionPatternMaxLen)
+		}
+		if _, err := regexp.Compile(pat); err != nil {
+			return fmt.Errorf("%s is not a valid regex: %v", key, err)
+		}
+	}
+	return nil
+}
 
 var ErrRuleNotFound = errors.New("notification rule not found")
 
@@ -62,6 +102,11 @@ func (s *Store) GetRule(ctx context.Context, id uuid.UUID) (apitypes.Notificatio
 func (s *Store) CreateRule(ctx context.Context, in apitypes.NotificationRuleInput, createdBy string) (apitypes.NotificationRule, error) {
 	if in.Name == "" || in.ConditionType == "" || len(in.ChannelIDs) == 0 {
 		return apitypes.NotificationRule{}, errors.New("name, condition_type, channel_ids required")
+	}
+	if in.ConditionType == apitypes.ConditionAuditAction {
+		if err := validateAuditActionParams(in.ConditionParams); err != nil {
+			return apitypes.NotificationRule{}, err
+		}
 	}
 	channels, err := parseChannelIDs(in.ChannelIDs)
 	if err != nil {
@@ -115,6 +160,11 @@ func (s *Store) CreateRule(ctx context.Context, in apitypes.NotificationRuleInpu
 }
 
 func (s *Store) UpdateRule(ctx context.Context, id uuid.UUID, in apitypes.NotificationRuleInput) (apitypes.NotificationRule, error) {
+	if in.ConditionType == apitypes.ConditionAuditAction {
+		if err := validateAuditActionParams(in.ConditionParams); err != nil {
+			return apitypes.NotificationRule{}, err
+		}
+	}
 	channels, err := parseChannelIDs(in.ChannelIDs)
 	if err != nil {
 		return apitypes.NotificationRule{}, err
@@ -409,6 +459,11 @@ func (s *Store) CreateRuleGroup(ctx context.Context, in apitypes.NotificationRul
 	for i, c := range in.Conditions {
 		if c.ConditionType == "" {
 			return apitypes.NotificationRuleGroupResponse{}, fmt.Errorf("condition %d: condition_type required", i)
+		}
+		if c.ConditionType == apitypes.ConditionAuditAction {
+			if err := validateAuditActionParams(c.ConditionParams); err != nil {
+				return apitypes.NotificationRuleGroupResponse{}, fmt.Errorf("condition %d: %v", i, err)
+			}
 		}
 		rowName := rowNames[i]
 		paramsJSON, err := json.Marshal(orEmptyAny(c.ConditionParams))

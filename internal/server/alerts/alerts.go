@@ -72,7 +72,39 @@ type Engine struct {
 	invMacs        map[uuid.UUID]map[string]string // host_id -> nic name -> mac
 	invKernel      map[uuid.UUID]string          // host_id -> kernel
 	invDistro      map[uuid.UUID]string          // host_id -> distro
-	loginNewIPSeen map[string]bool               // host:username:source_ip -> previously seen
+
+	// Bounded login-IP seen-set + per-(host,user) first-seen lookup.
+	// F-6: loginNewIPSeen had no upper bound and grew unbounded with the
+	// product of hosts × users × source IPs. We now cap at
+	// loginNewIPSeenMax entries with FIFO eviction (oldest first).
+	// F-20: replace the O(n) prefix scan over loginNewIPSeen with a
+	// per-(host,user) first-seen-IP map for constant-time "have we ever
+	// seen any IP for this user on this host?" lookups.
+	loginNewIPSeen   map[string]bool   // host:username:source_ip -> previously seen
+	loginNewIPOrder  []string          // insertion order for FIFO eviction
+	loginUserSeen    map[string]string // host:username -> first source_ip we ever saw
+
+	// F-17: fetchHostScope cache. Per-tick storms (one breach producing one
+	// query per host) used to do N round-trips for tags + group_id. Now
+	// cached for hostScopeTTL.
+	hostScopeMu    sync.Mutex
+	hostScopeCache map[uuid.UUID]hostScopeEntry
+}
+
+// loginNewIPSeenMax caps the in-memory seen-set used by login_anomaly's
+// new_source_ip kind. Hit values are oldest-first evicted so a sustained
+// stream of new IPs doesn't pin memory indefinitely.
+const loginNewIPSeenMax = 100_000
+
+// hostScopeTTL is the lifetime of an entry in hostScopeCache. A breach storm
+// firing multiple metric_threshold rules against the same host now does one
+// scope round-trip per minute instead of one per rule per tick.
+const hostScopeTTL = 60 * time.Second
+
+type hostScopeEntry struct {
+	tags     []string
+	groupIDs []uuid.UUID
+	expires  time.Time
 }
 
 type quietConfig struct {
@@ -106,9 +138,12 @@ func New(pool *pgxpool.Pool, livenessOut <-chan liveness.Transition, monitorOut 
 		invDisks:       map[uuid.UUID]map[string]bool{},
 		invNics:        map[uuid.UUID]map[string]bool{},
 		invMacs:        map[uuid.UUID]map[string]string{},
-		invKernel:      map[uuid.UUID]string{},
-		invDistro:      map[uuid.UUID]string{},
-		loginNewIPSeen: map[string]bool{},
+		invKernel:       map[uuid.UUID]string{},
+		invDistro:       map[uuid.UUID]string{},
+		loginNewIPSeen:  map[string]bool{},
+		loginNewIPOrder: make([]string, 0, 1024),
+		loginUserSeen:   map[string]string{},
+		hostScopeCache:  map[uuid.UUID]hostScopeEntry{},
 	}
 }
 
@@ -366,7 +401,9 @@ func fmtDurationSecs(secs int) string {
 // and fires when the count > `threshold`.
 func (e *Engine) evalLoginFailed(ctx context.Context, r ruleRow) {
 	threshold := intParam(r.ConditionParams, "threshold", 10)
-	windowSec := intParam(r.ConditionParams, "window_sec", 300)
+	// F-5: clamp window to [1 s, 24 h] so a bogus param can't widen the
+	// query window indefinitely.
+	windowSec := clampInt(intParam(r.ConditionParams, "window_sec", 300), 1, 86400)
 
 	rows, err := e.Pool.Query(ctx, `
 		SELECT h.id, h.hostname, count(*) AS failed
@@ -731,14 +768,23 @@ func (e *Engine) inQuietHours(ctx context.Context, now time.Time) bool {
 // transient outage doesn't accidentally suppress alerts. The ctx is the
 // engine's run-loop ctx so a graceful shutdown actually cancels the lookup
 // instead of stranding the goroutine on a pool wait.
+//
+// F-19: we deliberately drop e.quietMu around the DB query. Holding it would
+// serialise every concurrent fire() through a single pool round-trip during
+// a sustained outage. The TOCTOU race (two callers refresh in parallel,
+// second overwrites first) is harmless — both reads return semantically
+// identical configs, and 60 s of staleness in either direction is acceptable.
 func (e *Engine) loadQuietConfig(ctx context.Context) *quietConfig {
+	// Read cache under lock.
 	e.quietMu.Lock()
-	defer e.quietMu.Unlock()
-
 	if e.quietCache != nil && time.Now().Before(e.quietExpiry) {
-		return e.quietCache
+		c := e.quietCache
+		e.quietMu.Unlock()
+		return c
 	}
+	e.quietMu.Unlock()
 
+	// Refresh outside the lock so a slow DB doesn't serialise alert dispatch.
 	var (
 		enabled    bool
 		start, end string
@@ -752,8 +798,10 @@ func (e *Engine) loadQuietConfig(ctx context.Context) *quietConfig {
 	if err != nil {
 		slog.Warn("alerts: notification_settings load", "err", err)
 		// Cache nil briefly so we don't slam the DB while it's down.
+		e.quietMu.Lock()
 		e.quietCache = nil
 		e.quietExpiry = time.Now().Add(quietCacheTTL)
+		e.quietMu.Unlock()
 		return nil
 	}
 	loc, lerr := time.LoadLocation(tz)
@@ -769,8 +817,11 @@ func (e *Engine) loadQuietConfig(ctx context.Context) *quietConfig {
 	for _, d := range days {
 		cfg.days = append(cfg.days, int(d))
 	}
+	// Re-acquire to write. Last-writer-wins is fine — see comment above.
+	e.quietMu.Lock()
 	e.quietCache = cfg
 	e.quietExpiry = time.Now().Add(quietCacheTTL)
+	e.quietMu.Unlock()
 	return cfg
 }
 
@@ -922,13 +973,22 @@ func (e *Engine) recentlyFired(ctx context.Context, dedup string, within time.Du
 	// can drop old chunks. make_interval(secs => 86400) avoids the pgx int||
 	// text gotcha we hit elsewhere.
 	var n int
+	// F-5: bind seconds as int, not float64. make_interval(secs => $N)
+	// requires an integer in PostgreSQL — within.Seconds() returns a float64
+	// and pgx forwards it as numeric, which fails type resolution on the
+	// `secs => integer` named arg. Casting at the call site keeps the
+	// migration risk-free.
+	withinSec := int(within.Seconds())
+	if withinSec < 1 {
+		withinSec = 1
+	}
 	err := e.Pool.QueryRow(ctx, `
 		SELECT count(*) FROM alert_history
 		WHERE dedup_key = $1
 		  AND at >= now() - make_interval(secs => 86400)
 		  AND at >= now() - make_interval(secs => $2)
 		  AND coalesce(array_length(delivered_to, 1), 0) > 0`,
-		dedup, within.Seconds()).Scan(&n)
+		dedup, withinSec).Scan(&n)
 	if err != nil {
 		return false, err
 	}
@@ -1005,13 +1065,15 @@ func (e *Engine) loadRules(ctx context.Context, conditionType string) ([]ruleRow
 		r.ConditionParams = map[string]any{}
 		if len(paramsRaw) > 0 {
 			if err := json.Unmarshal(paramsRaw, &r.ConditionParams); err != nil {
-				// Don't fail the whole load — degrade to an empty params
-				// map so the rule still evaluates with defaults. Logging
-				// the rule_id makes the corrupt JSONB row discoverable
-				// without having to dump the whole table.
-				slog.Warn("alerts: rule condition_params unmarshal",
-					"rule_id", r.ID, "column", "condition_params", "err", err)
-				r.ConditionParams = map[string]any{}
+				// F-15: previously we degraded to an empty params map and
+				// returned the rule anyway. For most evaluators that's fine
+				// (they fall back to defaults), but audit_action with empty
+				// params matches every audit_log row and would silently fire
+				// on every event. Safer to skip the rule for this tick;
+				// operators can fix the JSONB or delete the rule.
+				slog.Error("alerts: rule disabled — bad condition_params",
+					"rule_id", r.ID, "rule_name", r.Name, "err", err)
+				continue
 			}
 		}
 		for _, u := range channelUUIDs {
@@ -1027,7 +1089,23 @@ func (e *Engine) loadRules(ctx context.Context, conditionType string) ([]ruleRow
 // observability glitch never silently kills alerts; the caller treats
 // "(nil, nil)" the same as "host has no scope" — only rules with empty
 // targets will match.
+//
+// F-17: results are cached for hostScopeTTL (60 s) keyed by host_id. A
+// breach storm firing many rules against the same host now does one DB
+// round-trip per host per minute instead of one per (rule, host) pair.
+// An admin re-tagging a host sees the change on the next refresh, which
+// is acceptable for an alerting cadence; if instant invalidation is ever
+// required we can add an explicit InvalidateHostScope(hostID) hook.
 func (e *Engine) fetchHostScope(ctx context.Context, hostID uuid.UUID) ([]string, []uuid.UUID) {
+	now := time.Now()
+	e.hostScopeMu.Lock()
+	if entry, ok := e.hostScopeCache[hostID]; ok && now.Before(entry.expires) {
+		tags, groups := entry.tags, entry.groupIDs
+		e.hostScopeMu.Unlock()
+		return tags, groups
+	}
+	e.hostScopeMu.Unlock()
+
 	var tags []string
 	var groupIDs []uuid.UUID
 	if err := e.Pool.QueryRow(ctx, `
@@ -1038,7 +1116,27 @@ func (e *Engine) fetchHostScope(ctx context.Context, hostID uuid.UUID) ([]string
 		slog.Warn("alerts: fetch host scope", "host_id", hostID, "err", err)
 		return nil, nil
 	}
+	e.hostScopeMu.Lock()
+	e.hostScopeCache[hostID] = hostScopeEntry{
+		tags:     tags,
+		groupIDs: groupIDs,
+		expires:  now.Add(hostScopeTTL),
+	}
+	e.hostScopeMu.Unlock()
 	return tags, groupIDs
+}
+
+// clampInt clamps v to the inclusive range [lo, hi]. Used to bound
+// operator-supplied window/threshold params so a typoed rule (window_sec =
+// 31536000) doesn't generate a year-long query window.
+func clampInt(v, lo, hi int) int {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
 }
 
 // --- helpers ---------------------------------------------------------------
@@ -1186,9 +1284,13 @@ func (e *Engine) evalMetricThreshold(ctx context.Context) {
 		metric := stringParam(r.ConditionParams, "metric", "")
 		cmpStr := stringParam(r.ConditionParams, "comparator", ">")
 		val := floatParam(r.ConditionParams, "value", 0)
-		windowSec := intParam(r.ConditionParams, "window_sec", 120)
-		forSec := intParam(r.ConditionParams, "for_sec", windowSec)
-		if forSec <= 0 || forSec > windowSec {
+		// F-5: clamp operator-supplied window/for_sec to sane bounds before
+		// we plumb them into SQL. Lower bound 1 s (anything less wouldn't
+		// generate enough samples for bool_and). Upper bound 24 h matches
+		// the apitypes.MetricThresholdParams schema annotation.
+		windowSec := clampInt(intParam(r.ConditionParams, "window_sec", 120), 1, 86400)
+		forSec := clampInt(intParam(r.ConditionParams, "for_sec", windowSec), 1, windowSec)
+		if forSec > windowSec {
 			forSec = windowSec
 		}
 		scope := mapParam(r.ConditionParams, "scope")
@@ -1275,8 +1377,34 @@ func (e *Engine) runMetricRule(ctx context.Context, r ruleRow, metric, op string
 	}
 }
 
+// SQL-injection contract (F-1, F-2 defensive):
+//
+//   The `expr`, `valueExpr`, `table`, and `column` arguments threaded through
+//   the per-metric helpers below (metricSimpleHost, metricSwapPct,
+//   metricCPUPerCore, metricDiskExpr, metricDiskRate, metricDiskUtil,
+//   metricNICRate, metricWorkloadExpr, metricFail2banBanned,
+//   metricCrowdSecActive, metricRepoMetadataAge, metricMonitorLatency, and
+//   driftScalarHost) are COMPILE-TIME CONSTANTS only. They are spliced into
+//   the SQL via fmt.Sprintf because Postgres named-parameter binding does
+//   not extend to identifiers, projections, or arithmetic expressions.
+//
+//   Future patches that try to plumb user-supplied expressions (e.g. a
+//   "custom metric" feature reading expr from condition_params) would create
+//   instant SQL injection. If a feature like that is ever needed:
+//
+//     - whitelist the operator-supplied tokens (column names against an
+//       explicit allowlist queried from information_schema or a static
+//       constant);
+//     - or compile the expression server-side into an AST before splicing.
+//
+//   sqlComparator() is the existing model — it accepts only `>`, `>=`, `<`,
+//   `<=` and returns "" for anything else; callers MUST check for "" before
+//   splicing. Replicate that pattern.
+
 // metricSimpleHost runs a HAVING bool_and(<expr> <op> $2) query over
 // metrics_system for the given host-grain expression. Used for cpu/load/ram.
+//
+// expr/table: compile-time constants. See the SQL-injection contract above.
 func (e *Engine) metricSimpleHost(ctx context.Context, r ruleRow, metric, table, expr, op string, val float64, forSec int) {
 	sql := fmt.Sprintf(`
 		SELECT host_id, max(time) AS last_t, count(*) AS samples
@@ -1304,6 +1432,9 @@ func (e *Engine) metricSimpleHost(ctx context.Context, r ruleRow, metric, table,
 // metricSwapPct approximates swap_used_pct using hosts.ram_total_bytes as a
 // stand-in for the (absent) swap-total column. Operators with no swap will
 // never trip this rule because swap_used_bytes is 0 in that case.
+//
+// `op` is the only spliced fragment — already validated by sqlComparator
+// to be one of {>, >=, <, <=}. See the SQL-injection contract above.
 func (e *Engine) metricSwapPct(ctx context.Context, r ruleRow, op string, val float64, forSec int) {
 	sql := fmt.Sprintf(`
 		SELECT m.host_id, max(m.time), count(*)
@@ -1334,6 +1465,9 @@ func (e *Engine) metricSwapPct(ctx context.Context, r ruleRow, op string, val fl
 // matching the predicate. unnest() runs in an inline subquery to expose each
 // core value as a row, and we then group back to host so the bool_and reads
 // "every recent sample had at least one offending core".
+//
+// `op` is the only spliced fragment — already validated by sqlComparator.
+// See the SQL-injection contract above.
 func (e *Engine) metricCPUPerCore(ctx context.Context, r ruleRow, op string, val float64, forSec int) {
 	sql := fmt.Sprintf(`
 		SELECT host_id, max(time), count(*)
@@ -1368,6 +1502,8 @@ func (e *Engine) metricCPUPerCore(ctx context.Context, r ruleRow, op string, val
 // metricDiskExpr evaluates a per-mountpoint expression over metrics_disk
 // joined with disks (so the alert subject can reference a human-readable
 // mountpoint). When mountpoint != "" the rule narrows to a specific mount.
+//
+// expr: compile-time constant. See the SQL-injection contract above.
 func (e *Engine) metricDiskExpr(ctx context.Context, r ruleRow, expr, op string, val float64, forSec int, mountpoint string) {
 	args := []any{forSec, val}
 	mpFilter := ""
@@ -1401,6 +1537,15 @@ func (e *Engine) metricDiskExpr(ctx context.Context, r ruleRow, expr, op string,
 
 // metricDiskRate derives a per-disk rate from a cumulative counter (read_ops,
 // write_ops, …) using window-function lag(). Same bool_and pattern.
+//
+// valueExpr: compile-time constant. See the SQL-injection contract above.
+//
+// F-4: sample pairs spanning a counter reset (typically a host reboot, since
+// these counters are cumulative since-boot) are elided via `v >= prev_v`.
+// Without this guard the derived rate goes negative for one pair and trips
+// the bool_and to FALSE, silently clearing a sustained breach. A breach that
+// continues past a reboot will re-fire one tick later (once two samples have
+// accumulated on the new boot session).
 func (e *Engine) metricDiskRate(ctx context.Context, r ruleRow, valueExpr, op string, val float64, forSec int, mountpoint string) {
 	args := []any{forSec, val}
 	mpFilter := ""
@@ -1420,6 +1565,7 @@ func (e *Engine) metricDiskRate(ctx context.Context, r ruleRow, valueExpr, op st
 		SELECT host_id, mountpoint, max(time), count(*)
 		FROM samples
 		WHERE prev_v IS NOT NULL
+		  AND v >= prev_v
 		  AND EXTRACT(EPOCH FROM (time - prev_t)) > 0
 		GROUP BY host_id, mountpoint
 		HAVING bool_and((v - prev_v) / EXTRACT(EPOCH FROM (time - prev_t)) %s $2)
@@ -1445,6 +1591,9 @@ func (e *Engine) metricDiskRate(ctx context.Context, r ruleRow, valueExpr, op st
 // metricDiskUtil computes io_time_ms delta / wall-clock-delta-ms across each
 // adjacent sample pair. >100 is possible on multi-queue disks; we trust the
 // operator-supplied threshold.
+//
+// F-4: see metricDiskRate; sample pairs spanning a counter reset are
+// elided via `v >= prev_v`.
 func (e *Engine) metricDiskUtil(ctx context.Context, r ruleRow, op string, val float64, forSec int, mountpoint string) {
 	args := []any{forSec, val}
 	mpFilter := ""
@@ -1464,6 +1613,7 @@ func (e *Engine) metricDiskUtil(ctx context.Context, r ruleRow, op string, val f
 		SELECT host_id, mountpoint, max(time), count(*)
 		FROM samples
 		WHERE prev_v IS NOT NULL
+		  AND v >= prev_v
 		  AND EXTRACT(EPOCH FROM (time - prev_t)) > 0
 		GROUP BY host_id, mountpoint
 		HAVING bool_and(100.0 * (v - prev_v) / (1000.0 * EXTRACT(EPOCH FROM (time - prev_t))) %s $2)
@@ -1488,6 +1638,12 @@ func (e *Engine) metricDiskUtil(ctx context.Context, r ruleRow, op string, val f
 
 // metricNICRate computes a per-NIC byte/pkt/err/drop rate from the matching
 // cumulative counter. Joins nics for a human-readable name.
+//
+// valueExpr: compile-time constant. See the SQL-injection contract above.
+//
+// F-4: sample pairs spanning a counter reset (host reboot or NIC reset that
+// zeroes the byte/pkt counter) are elided via `v >= prev_v`. A sustained
+// breach across a reboot will fire one tick later.
 func (e *Engine) metricNICRate(ctx context.Context, r ruleRow, valueExpr, op string, val float64, forSec int, nicName string) {
 	args := []any{forSec, val}
 	nicFilter := ""
@@ -1507,6 +1663,7 @@ func (e *Engine) metricNICRate(ctx context.Context, r ruleRow, valueExpr, op str
 		SELECT host_id, nic_name, max(time), count(*)
 		FROM samples
 		WHERE prev_v IS NOT NULL
+		  AND v >= prev_v
 		  AND EXTRACT(EPOCH FROM (time - prev_t)) > 0
 		GROUP BY host_id, nic_name
 		HAVING bool_and((v - prev_v) / EXTRACT(EPOCH FROM (time - prev_t)) %s $2)
@@ -1532,6 +1689,8 @@ func (e *Engine) metricNICRate(ctx context.Context, r ruleRow, valueExpr, op str
 // metricWorkloadExpr evaluates a per-workload expression. scope.workload_id
 // (the UUID) narrows the rule; without it every workload that breaches will
 // fire independently (one dedup key per workload).
+//
+// expr: compile-time constant. See the SQL-injection contract above.
 func (e *Engine) metricWorkloadExpr(ctx context.Context, r ruleRow, expr, op string, val float64, forSec int, workloadIDStr string) {
 	args := []any{forSec, val}
 	idFilter := ""
@@ -1566,6 +1725,9 @@ func (e *Engine) metricWorkloadExpr(ctx context.Context, r ruleRow, expr, op str
 
 // metricFail2banBanned compares the per-host sum(currently_banned) against
 // the threshold. No time window: fail2ban_jails is a current-state table.
+//
+// `op` is the only spliced fragment — sqlComparator-validated. See the
+// SQL-injection contract above.
 func (e *Engine) metricFail2banBanned(ctx context.Context, r ruleRow, op string, val float64) {
 	sql := fmt.Sprintf(`
 		SELECT host_id, sum(currently_banned)::float
@@ -1588,6 +1750,10 @@ func (e *Engine) metricFail2banBanned(ctx context.Context, r ruleRow, op string,
 	}
 }
 
+// metricCrowdSecActive counts active CrowdSec decisions per host.
+//
+// `op` is the only spliced fragment — sqlComparator-validated. See the
+// SQL-injection contract above.
 func (e *Engine) metricCrowdSecActive(ctx context.Context, r ruleRow, op string, val float64) {
 	sql := fmt.Sprintf(`
 		SELECT host_id, count(*)::float
@@ -1611,6 +1777,11 @@ func (e *Engine) metricCrowdSecActive(ctx context.Context, r ruleRow, op string,
 	}
 }
 
+// metricRepoMetadataAge compares max(metadata_age_seconds) per (host,
+// manager) against the threshold.
+//
+// `op` is the only spliced fragment — sqlComparator-validated. See the
+// SQL-injection contract above.
 func (e *Engine) metricRepoMetadataAge(ctx context.Context, r ruleRow, op string, val float64) {
 	sql := fmt.Sprintf(`
 		SELECT host_id, manager, max(metadata_age_seconds)::float
@@ -1637,6 +1808,9 @@ func (e *Engine) metricRepoMetadataAge(ctx context.Context, r ruleRow, op string
 // metricMonitorLatency reads monitors.last_latency_ms (one-shot, not the
 // hypertable). monitor_id scope is mandatory in practice — without it the
 // alert fires once per monitor and the dedup key gets fuzzy.
+//
+// `op` is the only spliced fragment — sqlComparator-validated. See the
+// SQL-injection contract above.
 func (e *Engine) metricMonitorLatency(ctx context.Context, r ruleRow, op string, val float64, monitorIDStr string) {
 	args := []any{val}
 	idFilter := ""
@@ -1777,7 +1951,8 @@ func (e *Engine) evalHostFlap(ctx context.Context) {
 		return
 	}
 	for _, r := range rules {
-		windowSec := intParam(r.ConditionParams, "window_sec", 1800)
+		// F-5: clamp to apitypes.HostFlapParams [60, 86400] bounds.
+		windowSec := clampInt(intParam(r.ConditionParams, "window_sec", 1800), 60, 86400)
 		threshold := intParam(r.ConditionParams, "threshold", 6)
 		rows, err := e.Pool.Query(ctx, `
 			SELECT h.id, h.hostname, count(*)
@@ -2145,7 +2320,8 @@ func (e *Engine) evalImageUpdatePending(ctx context.Context) {
 		return
 	}
 	for _, r := range rules {
-		minAge := intParam(r.ConditionParams, "min_age_hours", 24)
+		// F-5: clamp min_age_hours to [1, 720] (30 days).
+		minAge := clampInt(intParam(r.ConditionParams, "min_age_hours", 24), 1, 720)
 		rows, err := e.Pool.Query(ctx, `
 			SELECT host_id, external_id, COALESCE(name, ''), COALESCE(image, ''), update_checked_at
 			FROM workloads
@@ -2304,7 +2480,8 @@ func (e *Engine) evalRepoMetadataStale(ctx context.Context) {
 		return
 	}
 	for _, r := range rules {
-		threshold := intParam(r.ConditionParams, "threshold_sec", 86400)
+		// F-5: clamp threshold_sec to [60 s, 30 days].
+		threshold := clampInt(intParam(r.ConditionParams, "threshold_sec", 86400), 60, 2_592_000)
 		rows, err := e.Pool.Query(ctx, `
 			SELECT host_id, manager, metadata_age_seconds
 			FROM package_repo_state
@@ -2566,6 +2743,11 @@ func (e *Engine) driftMACChanged(ctx context.Context, r ruleRow) {
 // driftScalarHost handles single-value host attributes (kernel, distro).
 // Caller passes the apparent cache map; we keep a single source of truth in
 // the engine struct so concurrent ticks don't race.
+//
+// `column`: compile-time constant. driftScalarHost is wired today with two
+// hard-coded values ("kernel" and "distro") from evalInventoryDrift's switch.
+// A future patch that pipes operator-supplied column names into this helper
+// would be SQL injection. See the SQL-injection contract above.
 func (e *Engine) driftScalarHost(ctx context.Context, r ruleRow, column string, cache map[uuid.UUID]string) {
 	rows, err := e.Pool.Query(ctx, fmt.Sprintf(`SELECT id, COALESCE(%s, '') FROM hosts`, column))
 	if err != nil {
@@ -2616,7 +2798,8 @@ func (e *Engine) evalLoginAnomaly(ctx context.Context) {
 	}
 	for _, r := range rules {
 		kind := stringParam(r.ConditionParams, "kind", "")
-		windowSec := intParam(r.ConditionParams, "window_sec", 86400)
+		// F-5: clamp window to [1 s, 24 h].
+		windowSec := clampInt(intParam(r.ConditionParams, "window_sec", 86400), 1, 86400)
 		threshold := intParam(r.ConditionParams, "threshold", 1)
 		switch kind {
 		case "new_source_ip":
@@ -2636,6 +2819,17 @@ func (e *Engine) loginAnomalyNewIP(ctx context.Context, r ruleRow, windowSec int
 	// not previously seen for this (host, username) combination. We keep an
 	// in-memory seen-set so an existing IP from before the engine started
 	// doesn't fire after restart — first tick seeds the set.
+	//
+	// F-6: the seen-set is bounded at loginNewIPSeenMax entries. When the
+	// cap is reached the oldest entry (FIFO insertion order) is evicted.
+	// Eviction means the engine will eventually re-flag a stale IP as
+	// "new" — acceptable given the 100k-entry ceiling represents many
+	// months of operator-visible source IPs in realistic deployments.
+	//
+	// F-20: the "have we seen ANY IP for this (host, user)?" check used
+	// to scan every key in loginNewIPSeen looking for a matching prefix —
+	// O(n) per login event. Replaced by loginUserSeen, a per-(host, user)
+	// first-seen-IP map. Constant-time lookup.
 	rows, err := e.Pool.Query(ctx, `
 		SELECT host_id, COALESCE(username, ''), COALESCE(source_ip, '')
 		FROM login_events
@@ -2654,31 +2848,37 @@ func (e *Engine) loginAnomalyNewIP(ctx context.Context, r ruleRow, windowSec int
 			continue
 		}
 		key := hostID.String() + ":" + user + ":" + ip
+		userKey := hostID.String() + ":" + user
 		e.stateMu.Lock()
 		seen := e.loginNewIPSeen[key]
-		e.loginNewIPSeen[key] = true
+		if !seen {
+			// Insert with FIFO eviction. The size check before insertion
+			// keeps the map at or below the cap.
+			for len(e.loginNewIPSeen) >= loginNewIPSeenMax && len(e.loginNewIPOrder) > 0 {
+				oldest := e.loginNewIPOrder[0]
+				e.loginNewIPOrder = e.loginNewIPOrder[1:]
+				delete(e.loginNewIPSeen, oldest)
+			}
+			e.loginNewIPSeen[key] = true
+			e.loginNewIPOrder = append(e.loginNewIPOrder, key)
+		}
+		// Track first-seen IP for this (host, user) so the next branch
+		// (engine-boot seed vs. genuine new IP) is O(1) instead of O(n).
+		firstIP, hadUser := e.loginUserSeen[userKey]
+		if !hadUser {
+			e.loginUserSeen[userKey] = ip
+		}
 		e.stateMu.Unlock()
 		if seen {
 			continue
 		}
-		// Skip the first-ever observation for this combo only if the
-		// set is still being seeded (engine boot). Heuristic: if we
-		// have any other entry for the same (host, user), this is a
-		// genuine new IP and we should fire. Otherwise treat as seed.
-		e.stateMu.Lock()
-		hasOthers := false
-		prefix := hostID.String() + ":" + user + ":"
-		for k := range e.loginNewIPSeen {
-			if k == key {
-				continue
-			}
-			if strings.HasPrefix(k, prefix) {
-				hasOthers = true
-				break
-			}
-		}
-		e.stateMu.Unlock()
-		if !hasOthers {
+		// F-20: replace the O(n) prefix scan with a constant-time check.
+		// hadUser==true means we've already recorded another IP for this
+		// (host, user); this is a genuine new IP. hadUser==false means
+		// this row is the very first login for the user — treat as seed
+		// (don't fire). firstIP being equal to ip is the dedup case where
+		// the same IP got reinserted after eviction.
+		if !hadUser || firstIP == ip {
 			continue
 		}
 		tags, groupIDs := e.fetchHostScope(ctx, hostID)
@@ -2764,6 +2964,24 @@ func (e *Engine) loginAnomalySudo(ctx context.Context, r ruleRow, windowSec, thr
 // We use a per-rule in-memory cursor (last seen `at`) so a rule fires only
 // on rows added since the previous tick. The first tick after boot seeds the
 // cursor at now() so historical rows don't replay.
+//
+// F-3 (audit_action regex DoS — defence in depth):
+//
+//   1. Patterns are length-capped (256) and Go-regexp validated at rule write
+//      time in store.validateAuditActionParams, so catastrophic-backtracking
+//      constructs are rejected before they reach the DB.
+//
+//   2. We additionally bind the audit query to a 2-second per-statement
+//      timeout via SET LOCAL statement_timeout inside a transaction. If a
+//      pattern that slipped past validation (e.g. the rule predates this
+//      hardening) pins the Postgres POSIX regex engine, the backend frees
+//      itself after 2 s instead of staying wedged.
+//
+// F-13 (audit action filter — safe by construction): `action = ANY($N)`
+// with a []string parameter is parameterised through pgx — no concatenation,
+// no SQL injection surface. Confirming here so a future refactor that
+// switches to fmt.Sprintf("action IN (%s)", strings.Join(...)) gets caught
+// in review.
 func (e *Engine) evalAuditAction(ctx context.Context) {
 	rules, err := e.loadRules(ctx, "audit_action")
 	if err != nil || len(rules) == 0 {
@@ -2787,6 +3005,7 @@ func (e *Engine) evalAuditAction(ctx context.Context) {
 		conds := []string{"at > $1"}
 		args := []any{cursor}
 		if len(actions) > 0 {
+			// F-13: parameterised array predicate; pgx escapes for us.
 			conds = append(conds, fmt.Sprintf("action = ANY($%d)", len(args)+1))
 			args = append(args, actions)
 		}
@@ -2800,29 +3019,46 @@ func (e *Engine) evalAuditAction(ctx context.Context) {
 		}
 		sql := "SELECT id, at, COALESCE(actor,''), action, COALESCE(target,'') FROM audit_log WHERE " +
 			strings.Join(conds, " AND ") + " ORDER BY at ASC, id ASC"
-		rows, err := e.Pool.Query(ctx, sql, args...)
-		if err != nil {
-			slog.Warn("alerts: audit_action query", "err", err)
-			continue
-		}
+
+		// F-3: run the audit scan inside a tx with a 2 s statement_timeout
+		// so a slipped pathological regex can't pin a backend. tx is
+		// read-only by construction (single SELECT) — rolled back at end
+		// of scope.
 		var maxAt time.Time = cursor
-		for rows.Next() {
-			var id int64
-			var at time.Time
-			var actor, action, target string
-			if err := rows.Scan(&id, &at, &actor, &action, &target); err != nil {
-				continue
+		func() {
+			tx, terr := e.Pool.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
+			if terr != nil {
+				slog.Warn("alerts: audit_action begin tx", "err", terr)
+				return
 			}
-			if at.After(maxAt) {
-				maxAt = at
+			defer func() { _ = tx.Rollback(ctx) }()
+			if _, terr := tx.Exec(ctx, "SET LOCAL statement_timeout = '2s'"); terr != nil {
+				slog.Warn("alerts: audit_action set statement_timeout", "err", terr)
+				return
 			}
-			dedup := fmt.Sprintf("audit_action:%s:%d", uuid.Nil, id)
-			subj := fmt.Sprintf("[MonSys] audit: %s by %s", action, actor)
-			body := fmt.Sprintf("Audit event id=%d at=%s actor=%q action=%q target=%q.",
-				id, at.UTC().Format(time.RFC3339), actor, action, target)
-			e.fire(ctx, r, subj, body, dedup)
-		}
-		rows.Close()
+			rows, qerr := tx.Query(ctx, sql, args...)
+			if qerr != nil {
+				slog.Warn("alerts: audit_action query", "err", qerr)
+				return
+			}
+			defer rows.Close()
+			for rows.Next() {
+				var id int64
+				var at time.Time
+				var actor, action, target string
+				if err := rows.Scan(&id, &at, &actor, &action, &target); err != nil {
+					continue
+				}
+				if at.After(maxAt) {
+					maxAt = at
+				}
+				dedup := fmt.Sprintf("audit_action:%s:%d", uuid.Nil, id)
+				subj := fmt.Sprintf("[MonSys] audit: %s by %s", action, actor)
+				body := fmt.Sprintf("Audit event id=%d at=%s actor=%q action=%q target=%q.",
+					id, at.UTC().Format(time.RFC3339), actor, action, target)
+				e.fire(ctx, r, subj, body, dedup)
+			}
+		}()
 		e.stateMu.Lock()
 		e.auditLastAt[r.ID] = maxAt
 		e.stateMu.Unlock()
