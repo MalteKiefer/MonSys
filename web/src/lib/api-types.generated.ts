@@ -2387,7 +2387,7 @@ export interface components {
                 [key: string]: unknown;
             };
             /** @enum {string} */
-            condition_type: "host_offline" | "monitor_failed" | "cert_expiring" | "login_failed_threshold" | "security_updates_pending";
+            condition_type: "host_offline" | "monitor_failed" | "cert_expiring" | "login_failed_threshold" | "security_updates_pending" | "metric_threshold" | "agent_outdated" | "image_update_pending" | "package_update_available" | "pending_reboot" | "repo_metadata_stale" | "login_anomaly" | "inventory_drift" | "firewall_state_change" | "fail2ban_jail_disappeared" | "crowdsec_decision_threshold" | "nic_link_down" | "nic_bond_degraded" | "vm_state_change" | "container_state_change" | "audit_action" | "host_flap" | "unexpected_reboot";
             /** Format: date-time */
             readonly created_at: string;
             readonly created_by?: string;
@@ -2428,7 +2428,7 @@ export interface components {
                 [key: string]: unknown;
             };
             /** @enum {string} */
-            condition_type: "host_offline" | "monitor_failed" | "cert_expiring" | "login_failed_threshold" | "security_updates_pending";
+            condition_type: "host_offline" | "monitor_failed" | "cert_expiring" | "login_failed_threshold" | "security_updates_pending" | "metric_threshold" | "agent_outdated" | "image_update_pending" | "package_update_available" | "pending_reboot" | "repo_metadata_stale" | "login_anomaly" | "inventory_drift" | "firewall_state_change" | "fail2ban_jail_disappeared" | "crowdsec_decision_threshold" | "nic_link_down" | "nic_bond_degraded" | "vm_state_change" | "container_state_change" | "audit_action" | "host_flap" | "unexpected_reboot";
             enabled: boolean;
             name: string;
             notify_on_resolve: boolean;

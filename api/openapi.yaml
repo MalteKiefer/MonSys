@@ -2724,6 +2724,24 @@ components:
             - cert_expiring
             - login_failed_threshold
             - security_updates_pending
+            - metric_threshold
+            - agent_outdated
+            - image_update_pending
+            - package_update_available
+            - pending_reboot
+            - repo_metadata_stale
+            - login_anomaly
+            - inventory_drift
+            - firewall_state_change
+            - fail2ban_jail_disappeared
+            - crowdsec_decision_threshold
+            - nic_link_down
+            - nic_bond_degraded
+            - vm_state_change
+            - container_state_change
+            - audit_action
+            - host_flap
+            - unexpected_reboot
           type: string
         created_at:
           format: date-time
@@ -2825,6 +2843,24 @@ components:
             - cert_expiring
             - login_failed_threshold
             - security_updates_pending
+            - metric_threshold
+            - agent_outdated
+            - image_update_pending
+            - package_update_available
+            - pending_reboot
+            - repo_metadata_stale
+            - login_anomaly
+            - inventory_drift
+            - firewall_state_change
+            - fail2ban_jail_disappeared
+            - crowdsec_decision_threshold
+            - nic_link_down
+            - nic_bond_degraded
+            - vm_state_change
+            - container_state_change
+            - audit_action
+            - host_flap
+            - unexpected_reboot
           type: string
         enabled:
           type: boolean
