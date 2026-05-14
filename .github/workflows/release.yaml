@@ -349,7 +349,7 @@ jobs:
 
       - name: release (tag)
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@7b4da11513bf3f43f9999e90eabced41ab8bb048 # v2.2.2
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v2.2.2
         with:
           files: |
             artifacts/mon-agent-linux-amd64
