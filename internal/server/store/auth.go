@@ -267,6 +267,93 @@ func (s *Store) RegisterAgent(ctx context.Context, token string, req apitypes.Ag
 	return resp, nil
 }
 
+// RevokeHost marks a host (and its agent key) as revoked. The host row stays
+// in place so historical metrics/audit trails remain joinable; subsequent
+// ingest and config-fetch calls from the agent will fail with ErrAgentKeyInvalid
+// because AuthenticateAgent filters on h.revoked_at IS NULL.
+func (s *Store) RevokeHost(ctx context.Context, hostID uuid.UUID) error {
+	tx, err := s.Pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	tag, err := tx.Exec(ctx,
+		`UPDATE hosts SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL`,
+		hostID)
+	if err != nil {
+		return fmt.Errorf("host revoke: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		// Either the host doesn't exist or it's already revoked. Check
+		// existence so callers can return 404 instead of silently
+		// pretending success.
+		var ok bool
+		if err := tx.QueryRow(ctx,
+			`SELECT EXISTS (SELECT 1 FROM hosts WHERE id = $1)`, hostID).Scan(&ok); err != nil {
+			return err
+		}
+		if !ok {
+			return ErrHostNotFound
+		}
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE agent_keys SET revoked_at = now() WHERE host_id = $1 AND revoked_at IS NULL`,
+		hostID); err != nil {
+		return fmt.Errorf("agent_key revoke: %w", err)
+	}
+	return tx.Commit(ctx)
+}
+
+// metricsHypertables are the time-series tables whose host_id is a plain
+// column (no FK to hosts because TimescaleDB hypertables can't carry FK
+// constraints prior to its FK-on-hypertables support landing here). They
+// must be cleaned explicitly when a host is deleted; the inventory tables
+// (disks, nics, workloads, packages, host_status, host_status_history,
+// agent_keys, host_security_*, host_tags, host_group_members …) all carry
+// ON DELETE CASCADE and are wiped automatically by the hosts row removal.
+var metricsHypertables = []string{
+	"metrics_system",
+	"metrics_disk",
+	"metrics_net",
+	"metrics_workload",
+	"metrics_packages_summary",
+}
+
+// DeleteHost removes a host row entirely. The hosts row delete fan-outs
+// through FK CASCADE for every joined inventory/auth table, but Timescale
+// hypertables (metrics_*) hold orphaned host_id rows we must purge by hand
+// inside the same transaction so a deleted host can never linger as a
+// silently-still-queryable time-series. Returns ErrHostNotFound if no row
+// matched.
+func (s *Store) DeleteHost(ctx context.Context, hostID uuid.UUID) error {
+	tx, err := s.Pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	for _, table := range metricsHypertables {
+		// Table names are an in-package allowlist (not user input) so this
+		// fmt.Sprintf is safe from injection. We can't bind table names as
+		// parameters in lib/pq, hence the format.
+		if _, err := tx.Exec(ctx,
+			fmt.Sprintf("DELETE FROM %s WHERE host_id = $1", table), //nolint:gosec // table name from in-package allowlist
+			hostID); err != nil {
+			return fmt.Errorf("delete %s rows: %w", table, err)
+		}
+	}
+
+	tag, err := tx.Exec(ctx, `DELETE FROM hosts WHERE id = $1`, hostID)
+	if err != nil {
+		return fmt.Errorf("host delete: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrHostNotFound
+	}
+	return tx.Commit(ctx)
+}
+
 // AuthenticateAgent looks up an agent_key by hash and returns the owning host id.
 // It also bumps last_seen_at on the hosts row.
 func (s *Store) AuthenticateAgent(ctx context.Context, agentKey string) (hostID uuid.UUID, err error) {

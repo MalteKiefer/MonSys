@@ -1,9 +1,11 @@
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   ExternalLink,
   MoreVertical,
   Radio,
   Tag,
+  Trash2,
   Unplug,
   Users as UsersIcon,
 } from "lucide-react";
@@ -15,6 +17,8 @@ import { DistroIcon } from "../../components/icons/DistroIcon";
 import { ServiceBadges } from "../../components/icons/ServiceIcon";
 import { Panel, StatusPill } from "../../components/ui";
 import { useT } from "../../i18n/useT";
+import { ApiError, api } from "../../lib/api";
+import { useAuth } from "../../lib/auth";
 import { hostDisplay } from "../../lib/utils";
 import type { HostDetail as HostDetailT } from "../../lib/types";
 
@@ -57,7 +61,7 @@ export function HostHeader({ detail }: { detail: HostDetailT }) {
               {h.status_since && <p>{t("hostDetail:header.since")} <span className="text-fg-muted">{relativeTime(h.status_since, t)}</span></p>}
               <p className="mt-1 font-mono text-[10px] text-fg-subtle">{h.id}</p>
             </div>
-            <ActionMenu hostId={h.id} />
+            <ActionMenu hostId={h.id} hostLabel={hostDisplay(h)} />
           </div>
         </div>
       </div>
@@ -67,10 +71,12 @@ export function HostHeader({ detail }: { detail: HostDetailT }) {
 
 // ---- Action menu --------------------------------------------------------
 
-function ActionMenu({ hostId }: { hostId: string }) {
+function ActionMenu({ hostId, hostLabel }: { hostId: string; hostLabel: string }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const isAdmin = useAuth((s) => s.user?.role === "admin");
   const { t } = useT(["hostDetail", "common"]);
 
   // Close on outside click. Mirrors the AdminMenu pattern in App.tsx so the
@@ -95,6 +101,54 @@ function ActionMenu({ hostId }: { hostId: string }) {
   }, [open]);
 
   function close() { setOpen(false); }
+
+  // Native confirm() matches the AdminUsers destructive-action pattern;
+  // these are admin-only and infrequent so a custom modal isn't worth the
+  // extra surface yet.
+  const reportError = (err: unknown) => {
+    const text = err instanceof ApiError ? err.detail : (err as Error).message;
+    window.alert(text);
+  };
+
+  const invalidateHostQueries = () => {
+    void queryClient.invalidateQueries({ queryKey: ["hosts"] });
+    void queryClient.invalidateQueries({ queryKey: ["host", hostId] });
+  };
+
+  const deactivate = useMutation({
+    mutationFn: () => api<unknown>(`/v1/hosts/${hostId}/deactivate`, { method: "POST" }),
+    onSuccess: () => {
+      invalidateHostQueries();
+      close();
+    },
+    onError: reportError,
+  });
+
+  const del = useMutation({
+    mutationFn: () => api<unknown>(`/v1/hosts/${hostId}`, { method: "DELETE" }),
+    onSuccess: () => {
+      invalidateHostQueries();
+      close();
+      // Host no longer exists — bounce back to the inventory list before
+      // child queries try to refetch and 404.
+      void navigate("/hosts");
+    },
+    onError: reportError,
+  });
+
+  const onDeactivate = () => {
+    if (!window.confirm(t("hostDetail:header.confirmDeactivate", { host: hostLabel }))) {
+      return;
+    }
+    deactivate.mutate();
+  };
+
+  const onDelete = () => {
+    if (!window.confirm(t("hostDetail:header.confirmDelete", { host: hostLabel }))) {
+      return;
+    }
+    del.mutate();
+  };
 
   return (
     <div className="relative" ref={ref}>
@@ -135,16 +189,24 @@ function ActionMenu({ hostId }: { hostId: string }) {
             onClick={() => { void navigate(`/monitors?host_id=${hostId}`); close(); }}
             trailing={<ExternalLink className="h-3 w-3 text-fg-subtle" />}
           />
-          <div className="my-1 h-px bg-border" />
-          <MenuItem
-            icon={Unplug}
-            label={t("hostDetail:header.revokeAgent")}
-            // Disabled until the API endpoint lands. Keeping the menu slot
-            // visible so future wiring is a one-line change instead of a
-            // chrome shuffle.
-            disabled
-            title={t("hostDetail:header.notImplemented")}
-          />
+          {isAdmin && (
+            <>
+              <div className="my-1 h-px bg-border" />
+              <MenuItem
+                icon={Unplug}
+                label={t("hostDetail:header.deactivate")}
+                onClick={onDeactivate}
+                disabled={deactivate.isPending || del.isPending}
+              />
+              <MenuItem
+                icon={Trash2}
+                label={t("hostDetail:header.delete")}
+                onClick={onDelete}
+                disabled={deactivate.isPending || del.isPending}
+                danger
+              />
+            </>
+          )}
         </div>
       )}
     </div>
@@ -158,6 +220,7 @@ function MenuItem({
   trailing,
   disabled,
   title,
+  danger,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
@@ -165,7 +228,13 @@ function MenuItem({
   trailing?: React.ReactNode;
   disabled?: boolean;
   title?: string;
+  danger?: boolean;
 }) {
+  const baseClass = disabled
+    ? "cursor-not-allowed text-fg-subtle"
+    : danger
+      ? "text-fail hover:bg-fail/10 hover:text-fail"
+      : "text-fg-muted hover:bg-panel-2 hover:text-fg";
   return (
     <button
       type="button"
@@ -173,12 +242,7 @@ function MenuItem({
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
       title={title}
-      className={[
-        "flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors",
-        disabled
-          ? "cursor-not-allowed text-fg-subtle"
-          : "text-fg-muted hover:bg-panel-2 hover:text-fg",
-      ].join(" ")}
+      className={["flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors", baseClass].join(" ")}
     >
       <Icon className="h-3.5 w-3.5" />
       <span className="flex-1">{label}</span>

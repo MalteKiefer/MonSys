@@ -5300,6 +5300,64 @@ paths:
       summary: Register a new agent
       tags:
         - agents
+  /v1/agents/self:
+    delete:
+      operationId: agent-self-delete
+      parameters:
+        - description: Bearer <agent_key>
+          in: header
+          name: Authorization
+          required: true
+          schema:
+            description: Bearer <agent_key>
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - agentKey: []
+      summary: Agent deletes its own host (cascades to inventory + metrics; irreversible)
+      tags:
+        - agents
+  /v1/agents/self/deactivate:
+    post:
+      operationId: agent-self-deactivate
+      parameters:
+        - description: Bearer <agent_key>
+          in: header
+          name: Authorization
+          required: true
+          schema:
+            description: Bearer <agent_key>
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - agentKey: []
+      summary: Agent revokes its own key (host row + history retained)
+      tags:
+        - agents
   /v1/auth/2fa/challenge:
     post:
       operationId: auth-2fa-challenge
@@ -6004,6 +6062,32 @@ paths:
       tags:
         - hosts
   /v1/hosts/{id}:
+    delete:
+      operationId: host-delete
+      parameters:
+        - description: host UUID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: host UUID
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Delete a host (cascades to inventory + metrics; irreversible)
+      tags:
+        - hosts
     get:
       operationId: host-detail
       parameters:
@@ -6028,6 +6112,33 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Single host with current inventory bundles
+      tags:
+        - hosts
+  /v1/hosts/{id}/deactivate:
+    post:
+      operationId: host-deactivate
+      parameters:
+        - description: host UUID
+          in: path
+          name: id
+          required: true
+          schema:
+            description: host UUID
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Revoke a host's agent key (host row + history retained)
       tags:
         - hosts
   /v1/hosts/{id}/logins:

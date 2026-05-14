@@ -309,6 +309,44 @@ func (c *Client) Ingest(ctx context.Context, agentKey string, payload []byte) er
 	return nil
 }
 
+// Deactivate calls POST /v1/agents/self/deactivate so the running agent
+// revokes its own key. The POST is *not* retried — the agent CLI runs this
+// once on shutdown and the operator can re-invoke on failure.
+func (c *Client) Deactivate(ctx context.Context, agentKey string) error {
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/v1/agents/self/deactivate", http.NoBody)
+	if err != nil {
+		return fmt.Errorf("transport: build deactivate request: %w", err)
+	}
+	setStandardHeaders(httpReq, agentKey)
+	httpResp, err := c.HTTP.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("transport: deactivate: %w", err)
+	}
+	defer httpResp.Body.Close()
+	if httpResp.StatusCode/100 != 2 {
+		raw, _ := io.ReadAll(io.LimitReader(httpResp.Body, errorBodyReadCap))
+		return fmt.Errorf("transport: deactivate: %d %s", httpResp.StatusCode, string(raw))
+	}
+	_, _ = io.Copy(io.Discard, httpResp.Body)
+	return nil
+}
+
+// Delete calls DELETE /v1/agents/self so the agent removes its own host
+// record. DELETE is idempotent so the shared retry path is used.
+func (c *Client) Delete(ctx context.Context, agentKey string) error {
+	httpResp, err := c.doIdempotent(ctx, http.MethodDelete, c.BaseURL+"/v1/agents/self", nil, agentKey, "")
+	if err != nil {
+		return fmt.Errorf("transport: delete: %w", err)
+	}
+	defer httpResp.Body.Close()
+	if httpResp.StatusCode/100 != 2 {
+		raw, _ := io.ReadAll(io.LimitReader(httpResp.Body, errorBodyReadCap))
+		return fmt.Errorf("transport: delete: %d %s", httpResp.StatusCode, string(raw))
+	}
+	_, _ = io.Copy(io.Discard, httpResp.Body)
+	return nil
+}
+
 // doIdempotent issues an HTTP request that is safe to retry per RFC 9110
 // §9.2.2 (GET, HEAD, PUT, DELETE). It retries on transport errors and on
 // 429/5xx responses with exponential backoff, honouring a clamped

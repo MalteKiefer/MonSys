@@ -573,6 +573,26 @@ func (s *Server) registerAgentLifecycleRoutes() {
 		Summary:     "Agent fetches its resolved config (auth: Bearer agent_key)",
 		Tags:        []string{"agents"},
 	}, s.handleAgentConfigFetch)
+
+	// Agent self-service lifecycle: the mon-agent CLI uses these to revoke
+	// or delete its own host record without going through the web admin
+	// surface. Auth is the agent_key, same as ingest.
+	huma.Register(s.API, huma.Operation{
+		OperationID: "agent-self-deactivate",
+		Method:      http.MethodPost,
+		Path:        "/v1/agents/self/deactivate",
+		Summary:     "Agent revokes its own key (host row + history retained)",
+		Tags:        []string{"agents"},
+		Security:    secIngest,
+	}, s.handleAgentSelfDeactivate)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "agent-self-delete",
+		Method:      http.MethodDelete,
+		Path:        "/v1/agents/self",
+		Summary:     "Agent deletes its own host (cascades to inventory + metrics; irreversible)",
+		Tags:        []string{"agents"},
+		Security:    secIngest,
+	}, s.handleAgentSelfDelete)
 }
 
 // registerPublicRoutes wires routes that must be reachable with no auth at all
@@ -668,6 +688,25 @@ func (s *Server) registerHostRoutes(protected huma.Middlewares) {
 		Tags:        []string{"hosts"},
 		Middlewares: protected,
 	}, s.handleSetHostTags)
+
+	// Host lifecycle mutations are admin-only: they evict an agent and (for
+	// delete) drop every joined inventory/metric row via FK CASCADE.
+	huma.Register(s.API, huma.Operation{
+		OperationID: "host-deactivate",
+		Method:      http.MethodPost,
+		Path:        "/v1/hosts/{id}/deactivate",
+		Summary:     "Revoke a host's agent key (host row + history retained)",
+		Tags:        []string{"hosts"},
+		Middlewares: huma.Middlewares{s.requireUser, s.requireAdmin},
+	}, s.handleDeactivateHost)
+	huma.Register(s.API, huma.Operation{
+		OperationID: "host-delete",
+		Method:      http.MethodDelete,
+		Path:        "/v1/hosts/{id}",
+		Summary:     "Delete a host (cascades to inventory + metrics; irreversible)",
+		Tags:        []string{"hosts"},
+		Middlewares: huma.Middlewares{s.requireUser, s.requireAdmin},
+	}, s.handleDeleteHost)
 
 	huma.Register(s.API, huma.Operation{
 		OperationID: "list-tags",
@@ -1517,6 +1556,64 @@ type ingestInput struct {
 	Body          apitypes.IngestRequest
 }
 
+// agentSelfInput is the auth-only envelope for /v1/agents/self/* — no path
+// params (the host id is derived from the agent_key) and no body.
+type agentSelfInput struct {
+	Authorization string `header:"Authorization" required:"true" doc:"Bearer <agent_key>"`
+}
+
+// resolveAgentSelf extracts and authenticates the caller's agent_key and
+// returns the owning host id. Used by both agent-self lifecycle handlers.
+func (s *Server) resolveAgentSelf(ctx context.Context, auth string) (uuid.UUID, error) {
+	key, ok := bearer(auth)
+	if !ok {
+		return uuid.Nil, huma.Error401Unauthorized("missing agent key")
+	}
+	if s.Store == nil {
+		return uuid.Nil, huma.Error503ServiceUnavailable("server has no store configured")
+	}
+	hostID, err := s.Store.AuthenticateAgent(ctx, key)
+	if err != nil {
+		if errors.Is(err, store.ErrAgentKeyInvalid) {
+			return uuid.Nil, huma.Error401Unauthorized("agent key invalid")
+		}
+		return uuid.Nil, internalErr(ctx, "auth failed", err)
+	}
+	return hostID, nil
+}
+
+// handleAgentSelfDeactivate is the agent-CLI counterpart of the admin
+// /v1/hosts/{id}/deactivate route: the running agent revokes its own key.
+func (s *Server) handleAgentSelfDeactivate(ctx context.Context, in *agentSelfInput) (*emptyOutput, error) {
+	hostID, err := s.resolveAgentSelf(ctx, in.Authorization)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.Store.RevokeHost(ctx, hostID); err != nil {
+		return nil, internalErr(ctx, "deactivate failed", err)
+	}
+	s.audit(ctx, "host.deactivate.self", hostID.String(), "")
+	out := &emptyOutput{}
+	out.Body.OK = true
+	return out, nil
+}
+
+// handleAgentSelfDelete is the agent-CLI counterpart of the admin DELETE
+// /v1/hosts/{id} route: the running agent removes its own host record.
+func (s *Server) handleAgentSelfDelete(ctx context.Context, in *agentSelfInput) (*emptyOutput, error) {
+	hostID, err := s.resolveAgentSelf(ctx, in.Authorization)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.Store.DeleteHost(ctx, hostID); err != nil {
+		return nil, internalErr(ctx, "delete failed", err)
+	}
+	s.audit(ctx, "host.delete.self", hostID.String(), "")
+	out := &emptyOutput{}
+	out.Body.OK = true
+	return out, nil
+}
+
 type ingestOutput struct {
 	Body apitypes.IngestResponse
 }
@@ -2031,6 +2128,53 @@ type hostSecurityOutput struct {
 		Fail2ban  []apitypes.Fail2banJailInfo `json:"fail2ban"`
 		CrowdSec  []apitypes.CrowdsecDecision `json:"crowdsec"`
 	}
+}
+
+// handleDeactivateHost revokes the agent_key for a host so the running
+// mon-agent can no longer push metrics, while keeping the host row and its
+// historical data in place. The operator can re-issue an enrollment to
+// re-bind the host later.
+func (s *Server) handleDeactivateHost(ctx context.Context, in *hostIDInput) (*emptyOutput, error) {
+	if s.Store == nil {
+		return nil, huma.Error503ServiceUnavailable("server has no store configured")
+	}
+	hostID, err := uuid.Parse(in.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid host id")
+	}
+	if err := s.Store.RevokeHost(ctx, hostID); err != nil {
+		if errors.Is(err, store.ErrHostNotFound) {
+			return nil, huma.Error404NotFound("host not found")
+		}
+		return nil, internalErr(ctx, "deactivate failed", err)
+	}
+	s.audit(ctx, "host.deactivate", in.ID, "")
+	out := &emptyOutput{}
+	out.Body.OK = true
+	return out, nil
+}
+
+// handleDeleteHost removes a host row entirely; FK CASCADE wipes every
+// host_id-keyed inventory and metric row. The action is irreversible and
+// admin-only.
+func (s *Server) handleDeleteHost(ctx context.Context, in *hostIDInput) (*emptyOutput, error) {
+	if s.Store == nil {
+		return nil, huma.Error503ServiceUnavailable("server has no store configured")
+	}
+	hostID, err := uuid.Parse(in.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid host id")
+	}
+	if err := s.Store.DeleteHost(ctx, hostID); err != nil {
+		if errors.Is(err, store.ErrHostNotFound) {
+			return nil, huma.Error404NotFound("host not found")
+		}
+		return nil, internalErr(ctx, "delete failed", err)
+	}
+	s.audit(ctx, "host.delete", in.ID, "")
+	out := &emptyOutput{}
+	out.Body.OK = true
+	return out, nil
 }
 
 func (s *Server) handleHostSecurity(ctx context.Context, in *hostIDInput) (*hostSecurityOutput, error) {

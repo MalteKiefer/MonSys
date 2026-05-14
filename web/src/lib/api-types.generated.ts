@@ -443,6 +443,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/agents/self": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Agent deletes its own host (cascades to inventory + metrics; irreversible) */
+        delete: operations["agent-self-delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agents/self/deactivate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Agent revokes its own key (host row + history retained) */
+        post: operations["agent-self-deactivate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/auth/2fa/challenge": {
         parameters: {
             query?: never;
@@ -883,6 +917,24 @@ export interface paths {
         get: operations["host-detail"];
         put?: never;
         post?: never;
+        /** Delete a host (cascades to inventory + metrics; irreversible) */
+        delete: operations["host-delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/hosts/{id}/deactivate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke a host's agent key (host row + history retained) */
+        post: operations["host-deactivate"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4267,6 +4319,70 @@ export interface operations {
             };
         };
     };
+    "agent-self-delete": {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Bearer <agent_key> */
+                Authorization: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmptyOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-self-deactivate": {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Bearer <agent_key> */
+                Authorization: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmptyOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "auth-2fa-challenge": {
         parameters: {
             query?: never;
@@ -5213,6 +5329,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HostDetail"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "host-delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description host UUID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmptyOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "host-deactivate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description host UUID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmptyOutputBody"];
                 };
             };
             /** @description Error */
