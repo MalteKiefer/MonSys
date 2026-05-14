@@ -45,7 +45,7 @@
     "http-server": "^14.1.1",
     "openapi-typescript": "^7.4.4",
     "postcss": "^8.5.14",
-    "tailwindcss": "^3.4.17",
+    "tailwindcss": "^4.3.0",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.59.3",
     "vite": "^6.0.7",
