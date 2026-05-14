@@ -30,7 +30,7 @@ export function HostHeader({ detail }: { detail: HostDetailT }) {
   const h = detail.host;
   const { t } = useT(["hostDetail", "common"]);
   return (
-    <Panel className="overflow-hidden">
+    <Panel className="overflow-visible">
       <div className="p-5">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
@@ -165,7 +165,7 @@ function ActionMenu({ hostId, hostLabel }: { hostId: string; hostLabel: string }
       {open && (
         <div
           role="menu"
-          className="absolute right-0 z-20 mt-1.5 min-w-[200px] overflow-hidden rounded-md border border-border bg-panel shadow-panel-strong"
+          className="absolute right-0 z-40 mt-1.5 min-w-[200px] overflow-hidden rounded-md border border-border bg-panel shadow-panel-strong"
         >
           <MenuItem
             icon={Tag}
