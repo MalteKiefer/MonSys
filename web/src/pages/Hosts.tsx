@@ -181,7 +181,11 @@ export function Hosts() {
             ) : (
               // Wide host table — let the scroll live inside the panel on
               // mobile so the body itself never gets a horizontal scrollbar.
-              <div className="overflow-x-auto">
+              // On md+ the table fits, so drop the overflow-x container
+              // entirely: CSS implicitly promotes the perpendicular axis to
+              // `auto` whenever one axis is non-visible, which would otherwise
+              // surface a spurious vertical scrollbar on desktop.
+              <div className="overflow-x-auto md:overflow-x-visible">
               <Table>
                 <THead>
                   <tr>
