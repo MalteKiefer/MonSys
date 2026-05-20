@@ -112,15 +112,36 @@ jobs:
           # Excluded rules with rationale:
           #   G115 - kernel uint64 -> int64 conversions in collectors are
           #          bounded; auditing each call site is pure noise.
+          #   G118 - context.WithCancel cancel funcs in probe scheduler are
+          #          stored in s.cancel[id] and invoked on reschedule /
+          #          shutdown (scheduler.go:104,120); gosec can't trace the
+          #          map handoff and flags every site.
           #   G123 - agent pins server cert via VerifyPeerCertificate, no TLS
           #          session reuse via net/http with custom dialer.
+          #   G204 - safeexec hardens lookup (fixed SafePath, scrubbed env,
+          #          argv-only, no shell); updater RestartCmd is operator-
+          #          supplied YAML config. Both already documented inline.
+          #   G304 - agent reads paths sourced from validated YAML config or
+          #          fixed kernel surfaces (/proc, /sys, /etc/machine-id,
+          #          spool dir). All call sites already carry inline
+          #          //nolint:gosec rationale for golangci-lint; standalone
+          #          gosec doesn't honour that pragma so we exclude here.
+          #   G306 - cmd/mon-server writes OpenAPI spec at operator-chosen
+          #          path: it is a public documentation artifact, 0o644 is
+          #          intentional so non-root users can read it.
           #   G402 - InsecureSkipVerify is opt-in operator config (SMTP +
           #          monitors + probes), labelled in the UI.
+          #   G404 - single use (transport client retry jitter) is
+          #          non-security timing variation; crypto/rand is overkill.
           #   G703 - pwFile path is operator-set MON_DSN_PASSWORD_FILE env.
+          #   G705 - taint-flagged ResponseWriter.Write sites are avatar
+          #          bytes (content-type validated on upload, X-Content-
+          #          Type-Options: nosniff set) and a QR-code PNG; both are
+          #          binary payloads, not HTML.
           # If new medium-severity findings appear after the 4.3.1.12 floor
           # lowering, document each here before adding it to the exclude
           # list. Do NOT add a rule without a rationale comment.
-          gosec -severity=medium -exclude=G115,G123,G402,G703 ./...
+          gosec -severity=medium -exclude=G115,G118,G123,G204,G304,G306,G402,G404,G703,G705 ./...
 
   web-lint:
     runs-on: ubuntu-latest
