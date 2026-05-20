@@ -418,7 +418,7 @@ jobs:
       # `inputs.tag_name`; falling back to github.ref would only work for
       # tag-triggered runs, so we pass it explicitly.
       - name: release (tag)
-        uses: softprops/action-gh-release@7b4da11513bf3f43f9999e90eabced41ab8bb048 # v2.2.2
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v2.2.2
         with:
           tag_name: ${{ needs.auto-tag.outputs.version }}
           name: ${{ needs.auto-tag.outputs.version }}
