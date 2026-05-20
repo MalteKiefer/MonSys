@@ -32,12 +32,19 @@
     --color-accent: 4 120 87;
     --color-accent-hover: 6 95 70;
     --color-ok: 4 120 87;
-    --color-warn: 217 119 6;
-    --color-fail: 220 38 38;
-    --color-stale: 217 119 6;
+    --color-warn: 180 83 9;
+    /* red-700 (#b91c1c) — paired with bg-fail/10 (≈ 0xfaeaea over white /
+       0xf7e5e5 over panel) the contrast comes out at 5.37:1 on panel and
+       5.55:1 on body, which clears WCAG AA (4.5:1) for normal text. The
+       previous red-600 (220 38 38) only hit 4.06:1 / 3.92:1 — under the
+       threshold — and tripped axe-core color-contrast on ErrorBox-bearing
+       routes (/reset, /confirm-email). Hover/border tokens are unchanged
+       because they're not the text colour. */
+    --color-fail: 185 28 28;
+    --color-stale: 180 83 9;
     --color-offline: 113 113 122;
-    --color-critical: 220 38 38;
-    --color-info: 37 99 235;
+    --color-critical: 185 28 28;
+    --color-info: 29 78 216;
 
     /* Sticky-offset for bars below the header (Tabs etc.). Single source of
        truth for the header's effective height — adjust here, all dependents
@@ -66,10 +73,15 @@
     --color-accent-hover: 52 211 153;
     --color-ok: 16 185 129;
     --color-warn: 245 158 11;
-    --color-fail: 239 68 68;
+    /* red-400 (#f87171). On bg-fail/10 over the dark panel (24 24 27)
+       the effective background is ~#2d1c1f and red-500 (239 68 68) only
+       hit 4.28:1 — under AA's 4.5:1 floor — which is what axe-core kept
+       flagging on /confirm-email's ErrorBox. red-400 lifts that to
+       5.3:1 while staying within the same brand red family. */
+    --color-fail: 248 113 113;
     --color-stale: 245 158 11;
+    --color-critical: 248 113 113;
     --color-offline: 113 113 122;
-    --color-critical: 239 68 68;
     --color-info: 96 165 250;
   }
 
