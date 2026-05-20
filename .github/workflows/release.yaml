@@ -396,91 +396,102 @@ jobs:
           sha256sum mon-* | sort > SHA256SUMS
           cat SHA256SUMS
 
-      # AUDIT-401: enumerate the .minisig files separately. They may not
-      # exist when the signing secrets aren't configured yet, so we don't
-      # fail the upload when they're missing — `fail_on_unmatched_files`
-      # is left on for the binaries themselves below.
-      - name: collect signature files
-        id: sigs
+      # Build the asset list once and reuse for both releases. AUDIT-401
+      # signature files only land in the list when they were actually
+      # produced by the signing step.
+      - name: assemble asset list
+        id: assets
         working-directory: artifacts
         run: |
           set -euo pipefail
-          files=""
+          assets=(
+            mon-agent-linux-amd64
+            mon-agent-linux-arm64
+            mon-server-linux-amd64
+            mon-server-linux-arm64
+            SHA256SUMS
+            SBOM-mon-server-linux-amd64.cdx.json
+            SBOM-mon-server-linux-arm64.cdx.json
+            SBOM-mon-agent-linux-amd64.cdx.json
+            SBOM-mon-agent-linux-arm64.cdx.json
+            SBOM-source.cdx.json
+            container-digest.txt
+          )
           for f in mon-agent-linux-amd64.minisig mon-agent-linux-arm64.minisig \
                    mon-server-linux-amd64.minisig mon-server-linux-arm64.minisig; do
-            if [ -f "$f" ]; then
-              files="${files}artifacts/${f}\n"
+            [ -f "$f" ] && assets+=("$f")
+          done
+          missing=0
+          for f in "${assets[@]}"; do
+            if [ ! -f "$f" ]; then
+              echo "::error::expected release asset missing: $f"
+              missing=1
             fi
           done
-          # GITHUB_OUTPUT multi-line: print the paths for the next step to read.
+          [ "$missing" -eq 0 ] || exit 1
           {
             echo "files<<EOF"
-            printf '%b' "$files"
+            printf '%s\n' "${assets[@]}"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
-      # Cut the permanent immutable release at the version the auto-tag
-      # job created (on main pushes) or that was pushed manually (on tag
-      # runs). softprops/action-gh-release infers tag_name from
-      # `inputs.tag_name`; falling back to github.ref would only work for
-      # tag-triggered runs, so we pass it explicitly.
-      - name: release (tag)
-        uses: softprops/action-gh-release@7b4da11513bf3f43f9999e90eabced41ab8bb048 # v2.2.2
-        with:
-          tag_name: ${{ needs.auto-tag.outputs.version }}
-          name: ${{ needs.auto-tag.outputs.version }}
-          files: |
-            artifacts/mon-agent-linux-amd64
-            artifacts/mon-agent-linux-arm64
-            artifacts/mon-server-linux-amd64
-            artifacts/mon-server-linux-arm64
-            artifacts/SHA256SUMS
-            artifacts/SBOM-mon-server-linux-amd64.cdx.json
-            artifacts/SBOM-mon-server-linux-arm64.cdx.json
-            artifacts/SBOM-mon-agent-linux-amd64.cdx.json
-            artifacts/SBOM-mon-agent-linux-arm64.cdx.json
-            artifacts/SBOM-source.cdx.json
-            artifacts/container-digest.txt
-            ${{ steps.sigs.outputs.files }}
-          generate_release_notes: true
-          fail_on_unmatched_files: true
-
-      # Refresh the rolling "latest" pre-release so existing auto-update
-      # clients pinned to that channel get the new binaries without an
-      # operator intervention. The release title (rel.Name) is set to the
-      # immutable version string so the agent's downgrade comparator can
-      # tell consecutive rolling builds apart.
-      - name: release (latest)
+      # gh CLI release create + upload with bounded retry. softprops/
+      # action-gh-release was randomly tripping over GitHub's asset
+      # upload backend ("Request body length does not match content-
+      # length header") with no recovery, which left an empty release
+      # behind. Doing it ourselves lets us retry the flaky calls and
+      # keep the workflow self-healing per the no-manual-steps policy.
+      - name: publish releases (immutable + rolling)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.auto-tag.outputs.version }}
+          ASSETS: ${{ steps.assets.outputs.files }}
+        working-directory: artifacts
         run: |
           set -euo pipefail
-          tag="latest"
-          gh release view "$tag" >/dev/null 2>&1 || \
-            gh release create "$tag" --title "$VERSION" \
-              --notes "Auto-built rolling pointer. See $VERSION for the immutable release." \
-              --prerelease
-          uploads=(
-            artifacts/mon-agent-linux-amd64
-            artifacts/mon-agent-linux-arm64
-            artifacts/mon-server-linux-amd64
-            artifacts/mon-server-linux-arm64
-            artifacts/SHA256SUMS
-            artifacts/SBOM-mon-server-linux-amd64.cdx.json
-            artifacts/SBOM-mon-server-linux-arm64.cdx.json
-            artifacts/SBOM-mon-agent-linux-amd64.cdx.json
-            artifacts/SBOM-mon-agent-linux-arm64.cdx.json
-            artifacts/SBOM-source.cdx.json
-            artifacts/container-digest.txt
-          )
-          # AUDIT-401: include any minisig files that were produced.
-          for f in mon-agent-linux-amd64.minisig mon-agent-linux-arm64.minisig \
-                   mon-server-linux-amd64.minisig mon-server-linux-arm64.minisig; do
-            if [ -f "artifacts/${f}" ]; then
-              uploads+=("artifacts/${f}")
+
+          # Bounded retry around any gh call that touches the asset
+          # upload backend. Five attempts with exponential backoff is
+          # enough to ride out the minute-or-so blips we've been seeing
+          # without turning a real outage into a 30-minute job.
+          retry() {
+            local attempts=5 delay=5
+            local i
+            for ((i=1; i<=attempts; i++)); do
+              if "$@"; then return 0; fi
+              if [ "$i" -lt "$attempts" ]; then
+                echo "::warning::attempt $i/$attempts failed: $*; retrying in ${delay}s"
+                sleep "$delay"
+                delay=$((delay * 2))
+              fi
+            done
+            echo "::error::gave up after $attempts attempts: $*"
+            return 1
+          }
+
+          # Read asset list back into an array.
+          mapfile -t assets <<< "$ASSETS"
+
+          publish_to() {
+            local tag="$1" title="$2" notes="$3" prerelease="$4"
+            local create_args=( --title "$title" --notes "$notes" )
+            [ "$prerelease" = "1" ] && create_args+=( --prerelease )
+            if gh release view "$tag" >/dev/null 2>&1; then
+              retry gh release edit "$tag" "${create_args[@]}"
+            else
+              retry gh release create "$tag" "${create_args[@]}"
             fi
-          done
-          gh release upload "$tag" --clobber "${uploads[@]}"
-          gh release edit "$tag" --title "$VERSION" \
-            --notes "Auto-built rolling pointer. See \`$VERSION\` for the immutable release."
+            retry gh release upload "$tag" --clobber "${assets[@]}"
+          }
+
+          # Immutable versioned release.
+          publish_to "$VERSION" "$VERSION" \
+            "Auto-built immutable release at \`$VERSION\`." \
+            0
+
+          # Rolling pointer for auto-update clients. Title is the
+          # immutable version so the agent's downgrade comparator parses
+          # it as a real semver instead of the lex-compare fallback.
+          publish_to "latest" "$VERSION" \
+            "Auto-built rolling pointer. See \`$VERSION\` for the immutable release." \
+            1
