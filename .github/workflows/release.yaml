@@ -1,9 +1,14 @@
 name: release
 
 # Builds mon-agent + mon-server linux/amd64 + linux/arm64 statics on every
-# push to main and on every pushed tag. The "latest" GitHub Release is
-# updated on main pushes (so auto-update clients can pin to it). Tags
-# (v*.*.*) cut a permanent immutable release with the same artifacts.
+# push to main, auto-tags the head commit with the next patch-bumped
+# v*.*.* tag, and cuts an immutable GitHub Release at that tag. The "latest"
+# rolling pointer is refreshed in the same run so existing auto-update
+# clients keep working without operator intervention.
+#
+# Manual `git tag v*.*.*` pushes still work for hot-fix releases — the
+# auto-tag job detects a tag-triggered run and forwards the pushed tag
+# name as the build version instead of bumping a new one.
 #
 # Supply-chain bits added in audit pass 2026-05-12 (§4.3.1):
 #   - CycloneDX SBOM per binary + per source tree (4.3.1.7)
@@ -21,7 +26,11 @@ on:
 
 # AUDIT 4.3.1.17: never cancel an in-flight release — partial releases are
 # worse than serialised ones. Tag pushes and main pushes both group on ref
-# so a re-pushed tag waits for the first run to finish.
+# so a re-pushed tag waits for the first run to finish. The auto-tag job
+# below pushes a tag and then continues in the SAME workflow run rather
+# than triggering a second one (GITHUB_TOKEN-pushed tags don't trigger
+# downstream workflows anyway), so concurrency on the original ref is
+# sufficient.
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
@@ -35,7 +44,56 @@ permissions:
 # 1.26.x is still security-supported on each scheduled audit pass.
 
 jobs:
+  # auto-tag is the single source of truth for the build version. On a
+  # push to main it inspects the most recent v*.*.* tag, bumps the patch
+  # component, pushes the new tag back to the repo via GITHUB_TOKEN, and
+  # exposes it as `version`. On a tag-triggered run it just forwards the
+  # pushed tag name. Downstream jobs depend on this output so the binary
+  # ldflags, the SBOM filenames, the container image tag, and the
+  # GitHub Release name all agree.
+  #
+  # GITHUB_TOKEN-pushed tags intentionally do NOT trigger another
+  # workflow run (GitHub disallows it to prevent recursion), so the
+  # build+publish jobs below run in the same workflow execution that
+  # created the tag. No `repository_dispatch` or PAT plumbing required.
+  auto-tag:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+      channel: ${{ steps.tag.outputs.channel }}
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          fetch-depth: 0
+      - name: bump or forward tag
+        id: tag
+        env:
+          REF: ${{ github.ref }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ "$REF" == refs/tags/* ]]; then
+            version="${REF##refs/tags/}"
+            channel="stable"
+          else
+            latest="$(git tag -l 'v*.*.*' --sort=-v:refname | head -n1)"
+            if [ -z "$latest" ]; then
+              version="v0.1.0"
+            else
+              IFS=. read -r maj min pat <<<"${latest#v}"
+              version="v${maj}.${min}.$((pat + 1))"
+            fi
+            channel="latest"
+            git config user.name  "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$version" -m "Auto-release $version"
+            git push origin "$version"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: auto-tag
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -45,6 +103,9 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false # AUDIT 4.3.1.18
+          # Pull the freshly-pushed tag from auto-tag too, so this
+          # checkout sees the v*.*.* the publish step will release at.
+          ref: ${{ needs.auto-tag.outputs.version }}
       - uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
         with:
           go-version: '1.26.3'
@@ -53,15 +114,11 @@ jobs:
       - name: derive version
         id: ver
         env:
-          REF: ${{ github.ref }}
+          VERSION: ${{ needs.auto-tag.outputs.version }}
+          CHANNEL: ${{ needs.auto-tag.outputs.channel }}
         run: |
-          if [[ "$REF" == refs/tags/* ]]; then
-            echo "version=${REF##refs/tags/}" >> "$GITHUB_OUTPUT"
-            echo "channel=stable" >> "$GITHUB_OUTPUT"
-          else
-            echo "version=$(git describe --tags --always --dirty)" >> "$GITHUB_OUTPUT"
-            echo "channel=latest" >> "$GITHUB_OUTPUT"
-          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
           echo "commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
           echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
@@ -196,7 +253,7 @@ jobs:
   # the signature with the `cosign verify` command documented in
   # docs/RELEASE.md.
   container:
-    needs: build
+    needs: [auto-tag, build]
     runs-on: ubuntu-latest
     # AUDIT 4.3.1.8: scoped permissions for this job only — id-token: write
     # enables cosign keyless OIDC signing against the public sigstore Fulcio
@@ -210,24 +267,22 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false # AUDIT 4.3.1.18
+          ref: ${{ needs.auto-tag.outputs.version }}
 
-      - name: derive version + image tags
+      - name: derive image tags
         id: ver
         env:
-          REF: ${{ github.ref }}
+          VERSION: ${{ needs.auto-tag.outputs.version }}
           REPO_OWNER: ${{ github.repository_owner }}
         run: |
           set -euo pipefail
           owner_lc="${REPO_OWNER,,}"
           image="ghcr.io/${owner_lc}/monsys-server"
-          if [[ "$REF" == refs/tags/* ]]; then
-            tag="${REF##refs/tags/}"
-            tags="${image}:${tag}"$'\n'"${image}:latest"
-          else
-            short="$(git rev-parse --short HEAD)"
-            tag="sha-${short}"
-            tags="${image}:${tag}"
-          fi
+          tag="$VERSION"
+          # Every release publishes both the immutable version tag and
+          # the rolling :latest pointer so existing deployments that pin
+          # ":latest" keep pulling fresh builds.
+          tags="${image}:${tag}"$'\n'"${image}:latest"
           {
             echo "image=${image}"
             echo "primary_tag=${tag}"
@@ -304,22 +359,17 @@ jobs:
           path: container-digest.txt
 
   publish:
-    needs: [build, sbom-source, container]
+    needs: [auto-tag, build, sbom-source, container]
     runs-on: ubuntu-latest
     steps:
       # NOTE: this checkout intentionally does NOT set persist-credentials:
       # false because the `release (latest)` step below uses `gh release
       # upload`, which needs GITHUB_TOKEN credentials in the local git
       # config. AUDIT 4.3.1.18 carve-out.
-      #
-      # fetch-depth: 0 pulls the full commit + tag history so the
-      # `derive version` step below can run `git describe --tags` to stamp
-      # the rolling release with a per-build identifier — the manifest
-      # endpoint reads that title as Manifest.Version, and a bare "latest"
-      # tag_name breaks the agent's downgrade comparator.
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
         with:
-          fetch-depth: 0
+          fetch-depth: 1
+          ref: ${{ needs.auto-tag.outputs.version }}
       - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
           path: artifacts
@@ -328,13 +378,9 @@ jobs:
       - name: derive version
         id: ver
         env:
-          REF: ${{ github.ref }}
+          VERSION: ${{ needs.auto-tag.outputs.version }}
         run: |
-          if [[ "$REF" == refs/tags/* ]]; then
-            echo "version=${REF##refs/tags/}" >> "$GITHUB_OUTPUT"
-          else
-            echo "version=$(git describe --tags --always --dirty)" >> "$GITHUB_OUTPUT"
-          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: combined sha256 manifest
         working-directory: artifacts
@@ -366,10 +412,16 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
+      # Cut the permanent immutable release at the version the auto-tag
+      # job created (on main pushes) or that was pushed manually (on tag
+      # runs). softprops/action-gh-release infers tag_name from
+      # `inputs.tag_name`; falling back to github.ref would only work for
+      # tag-triggered runs, so we pass it explicitly.
       - name: release (tag)
-        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@7b4da11513bf3f43f9999e90eabced41ab8bb048 # v2.2.2
         with:
+          tag_name: ${{ needs.auto-tag.outputs.version }}
+          name: ${{ needs.auto-tag.outputs.version }}
           files: |
             artifacts/mon-agent-linux-amd64
             artifacts/mon-agent-linux-arm64
@@ -386,17 +438,21 @@ jobs:
           generate_release_notes: true
           fail_on_unmatched_files: true
 
+      # Refresh the rolling "latest" pre-release so existing auto-update
+      # clients pinned to that channel get the new binaries without an
+      # operator intervention. The release title (rel.Name) is set to the
+      # immutable version string so the agent's downgrade comparator can
+      # tell consecutive rolling builds apart.
       - name: release (latest)
-        if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.ver.outputs.version }}
+          VERSION: ${{ needs.auto-tag.outputs.version }}
         run: |
           set -euo pipefail
           tag="latest"
           gh release view "$tag" >/dev/null 2>&1 || \
             gh release create "$tag" --title "$VERSION" \
-              --notes "Auto-built from main. Use a versioned tag for pinned installs." \
+              --notes "Auto-built rolling pointer. See $VERSION for the immutable release." \
               --prerelease
           uploads=(
             artifacts/mon-agent-linux-amd64
@@ -419,11 +475,5 @@ jobs:
             fi
           done
           gh release upload "$tag" --clobber "${uploads[@]}"
-          # The release's TITLE (rel.Name) carries the per-build describe
-          # string the manifest endpoint reads as Manifest.Version. The
-          # tag_name "latest" is a moving pointer that never changes, so
-          # comparing it against the agent's stamped `git describe` always
-          # looks like a downgrade. Always refresh the title (and the body)
-          # so an existing rolling release picks up the new identifier.
           gh release edit "$tag" --title "$VERSION" \
-            --notes "Auto-built from main at \`$VERSION\`. Use a versioned tag for pinned installs."
+            --notes "Auto-built rolling pointer. See \`$VERSION\` for the immutable release."
