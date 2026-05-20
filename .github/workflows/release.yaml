@@ -370,10 +370,17 @@ jobs:
         with:
           fetch-depth: 1
           ref: ${{ needs.auto-tag.outputs.version }}
+      # Pull only the artifacts the publish job actually uses. The
+      # `*.dockerbuild` blob auto-uploaded by docker/build-push-action
+      # (provenance metadata) is large enough that GitHub's artifact
+      # backend keeps timing out the download — and we don't consume it
+      # here anyway. Restricting the pattern keeps the publish job
+      # resilient to that infra flake.
       - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
           path: artifacts
           merge-multiple: true
+          pattern: '{bin-linux-*,sbom-source,container-digest}'
 
       - name: derive version
         id: ver
