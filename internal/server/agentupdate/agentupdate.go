@@ -165,8 +165,16 @@ func (r *Resolver) githubManifest(ctx context.Context) (*Manifest, error) {
 		return nil, fmt.Errorf("github releases decode: %w", err)
 	}
 
+	// Prefer rel.Name over rel.TagName because rolling channels (r.tag
+	// == "latest") publish under a moving git tag — the tag_name never
+	// changes between builds. The release publish workflow stamps the
+	// per-build `git describe` output into the release Name field so the
+	// agent's downgrade comparator can tell a fresh rolling release apart
+	// from the agent's own version. For real versioned tag pushes the two
+	// usually agree, but TagName remains the fallback when an operator
+	// publishes a release without a custom name.
 	m := &Manifest{
-		Version:   firstNonEmpty(rel.TagName, rel.Name),
+		Version:   firstNonEmpty(rel.Name, rel.TagName),
 		Channel:   r.tag,
 		CheckedAt: time.Now().UTC(),
 		Source:    "github",

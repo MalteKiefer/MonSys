@@ -311,11 +311,30 @@ jobs:
       # false because the `release (latest)` step below uses `gh release
       # upload`, which needs GITHUB_TOKEN credentials in the local git
       # config. AUDIT 4.3.1.18 carve-out.
+      #
+      # fetch-depth: 0 pulls the full commit + tag history so the
+      # `derive version` step below can run `git describe --tags` to stamp
+      # the rolling release with a per-build identifier — the manifest
+      # endpoint reads that title as Manifest.Version, and a bare "latest"
+      # tag_name breaks the agent's downgrade comparator.
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          fetch-depth: 0
       - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
           path: artifacts
           merge-multiple: true
+
+      - name: derive version
+        id: ver
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          if [[ "$REF" == refs/tags/* ]]; then
+            echo "version=${REF##refs/tags/}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=$(git describe --tags --always --dirty)" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: combined sha256 manifest
         working-directory: artifacts
@@ -371,11 +390,12 @@ jobs:
         if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
           set -euo pipefail
           tag="latest"
           gh release view "$tag" >/dev/null 2>&1 || \
-            gh release create "$tag" --title "latest (rolling)" \
+            gh release create "$tag" --title "$VERSION" \
               --notes "Auto-built from main. Use a versioned tag for pinned installs." \
               --prerelease
           uploads=(
@@ -399,3 +419,11 @@ jobs:
             fi
           done
           gh release upload "$tag" --clobber "${uploads[@]}"
+          # The release's TITLE (rel.Name) carries the per-build describe
+          # string the manifest endpoint reads as Manifest.Version. The
+          # tag_name "latest" is a moving pointer that never changes, so
+          # comparing it against the agent's stamped `git describe` always
+          # looks like a downgrade. Always refresh the title (and the body)
+          # so an existing rolling release picks up the new identifier.
+          gh release edit "$tag" --title "$VERSION" \
+            --notes "Auto-built from main at \`$VERSION\`. Use a versioned tag for pinned installs."
