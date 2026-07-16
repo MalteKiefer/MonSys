@@ -1,0 +1,5 @@
+# SSH allowed-signers for verifying commit signatures in CI (the commit-signing
+# job in ci.yaml points gpg.ssh.allowedSignersFile here). One line per trusted
+# maintainer signing key: "<committer-email> namespaces=\"git\" <key>".
+# Add a contributor's *signing* key here when they start signing commits.
+malte.kiefer@mailbox.org namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGbTRZn7tO3Zpw9491nXQICExYHG1J5aJEO5AfvjKaJI pr0ph37

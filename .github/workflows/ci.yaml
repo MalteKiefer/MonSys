@@ -300,12 +300,16 @@ jobs:
       - name: verify signatures
         run: |
           set -euo pipefail
+          # AUDIT-2026-07-16: %G? can only return G/U for SSH-signed commits
+          # when git has an allowed-signers file; point it at the committed
+          # maintainer key list so signatures actually verify on the runner.
+          git config gpg.ssh.allowedSignersFile "${GITHUB_WORKSPACE}/.github/allowed_signers"
           base="${{ github.event.pull_request.base.sha }}"
           head="${{ github.event.pull_request.head.sha }}"
           unsigned=$(git log "$base..$head" --pretty=format:'%H %G?' \
             | awk '$2 != "G" && $2 != "U" { print $1 }')
           if [ -n "$unsigned" ]; then
-            echo "::error::Unsigned commits found:"
+            echo "::error::Unsigned or unverifiable commits found:"
             echo "$unsigned"
             exit 1
           fi
