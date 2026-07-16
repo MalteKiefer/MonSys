@@ -271,45 +271,40 @@ func Run(ctx context.Context, o Options) (Result, error) {
 		}
 	}
 
-	// AUDIT-401: cryptographic signature verification. Fetch the .minisig
-	// file matched to the binary URL and verify it against the embedded
-	// public key BEFORE the atomic rename. The MON_AGENT_UPDATE_INSECURE
-	// escape hatch is the only way to skip this when a public key IS
-	// embedded; agents built without an embedded key fall through the
-	// sig fetch entirely because there is no trust anchor — demanding a
-	// signature anyway would add zero security and break self-update on
-	// every host whose binary was compiled without -X updater.PublicKey.
+	// AUDIT-401 / AUDIT-2026-07-16 C1+M1: cryptographic signature verification.
+	// Fetch the .minisig file matched to the binary URL and verify it against
+	// the embedded public key BEFORE the atomic rename. This ALWAYS runs and is
+	// fail-closed:
+	//   - No/placeholder key embedded  → verifyMinisig returns
+	//     errVerificationDisabled → update aborts. There is no fall-through to
+	//     SHA-256-only trust: the SHA-256 comes from the same server as the
+	//     binary and authenticates nothing against a hostile update server.
+	//   - MON_AGENT_UPDATE_INSECURE=1  → may skip *fetching* a signature (last
+	//     resort when the server has none), but a *failed* verification is
+	//     never accepted.
 	insecure := os.Getenv(EnvInsecureOverride) == "1"
-	switch {
-	case PublicKey == "":
-		componentLogger.Warn("self-update: skipping minisign verification (no public key embedded in this binary)",
-			"hint", "rebuild with -X github.com/MalteKiefer/MonSys/internal/agent/updater.PublicKey=<key> to enable")
-	default:
-		sigURL := bin.MinisigURL
-		if sigURL == "" {
-			sigURL = bin.URL + ".minisig"
-		}
-		sigErr := downloadFile(ctx, o.HTTPClient, sigURL, sigTmpPath)
-		if sigErr != nil {
-			if !insecure {
-				_ = os.Remove(tmpPath)
-				_ = os.Remove(sigTmpPath)
-				return res, fmt.Errorf("download signature %s: %w", sigURL, sigErr)
-			}
-			componentLogger.Error("self-update: signature download failed but MON_AGENT_UPDATE_INSECURE=1; proceeding with sha256-only verification",
-				"url", sigURL, "err", sigErr)
-		} else {
-			ok, vErr := verifyMinisig(tmpPath, sigTmpPath, PublicKey)
+	sigURL := bin.MinisigURL
+	if sigURL == "" {
+		sigURL = bin.URL + ".minisig"
+	}
+	sigErr := downloadFile(ctx, o.HTTPClient, sigURL, sigTmpPath)
+	if sigErr != nil {
+		if !insecure {
+			_ = os.Remove(tmpPath)
 			_ = os.Remove(sigTmpPath)
-			if !ok {
-				if insecure {
-					componentLogger.Error("self-update: minisign verification FAILED but MON_AGENT_UPDATE_INSECURE=1; proceeding anyway",
-						"err", vErr)
-				} else {
-					_ = os.Remove(tmpPath)
-					return res, fmt.Errorf("minisign verify: %w", vErr)
-				}
-			}
+			return res, fmt.Errorf("download signature %s: %w", sigURL, sigErr)
+		}
+		componentLogger.Error("self-update: signature download failed but MON_AGENT_UPDATE_INSECURE=1; proceeding with sha256-only verification",
+			"url", sigURL, "err", sigErr)
+	} else {
+		ok, vErr := verifyMinisig(tmpPath, sigTmpPath, PublicKey)
+		_ = os.Remove(sigTmpPath)
+		if !ok {
+			// A signature was present but did not verify. Never install it,
+			// even under the insecure override — a failed signature is a
+			// stronger negative signal than a missing one.
+			_ = os.Remove(tmpPath)
+			return res, fmt.Errorf("minisign verify: %w", vErr)
 		}
 	}
 

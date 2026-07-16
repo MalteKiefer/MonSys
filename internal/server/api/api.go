@@ -10,8 +10,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	httppprof "net/http/pprof"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -22,6 +24,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/httprate"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/MalteKiefer/MonSys/internal/server/agentupdate"
@@ -97,7 +100,10 @@ func New(s *store.Store) *Server {
 	// humachi.New below registers the openapi/docs routes, so all
 	// middleware must be installed first — including the docs gate that
 	// closes over srv.
-	r.Use(middleware.RealIP)
+	// AUDIT-2026-07-16 M4: honour X-Forwarded-For / X-Real-IP only when the
+	// direct peer is a trusted proxy, so a directly-reachable client cannot
+	// spoof its IP to evade per-IP rate limits or poison audit logs.
+	r.Use(trustedRealIP)
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Recoverer)
 	// AUDIT-011: clamp request body sizes immediately after Recoverer so the
@@ -130,6 +136,61 @@ func New(s *store.Store) *Server {
 }
 
 // bodySizeLimiter wraps r.Body in an http.MaxBytesReader so handlers and
+// trustedProxyNets is the set of peer ranges whose forwarded headers we honour.
+// Default: loopback + RFC1918/ULA (the reverse proxy typically runs on the same
+// host or private network). MON_TRUSTED_PROXIES (comma-separated CIDRs) replaces
+// the default entirely for stricter deployments.
+var trustedProxyNets = func() []*net.IPNet {
+	spec := os.Getenv("MON_TRUSTED_PROXIES")
+	cidrs := []string{"127.0.0.0/8", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"}
+	if strings.TrimSpace(spec) != "" {
+		cidrs = strings.Split(spec, ",")
+	}
+	out := make([]*net.IPNet, 0, len(cidrs))
+	for _, c := range cidrs {
+		if _, n, err := net.ParseCIDR(strings.TrimSpace(c)); err == nil {
+			out = append(out, n)
+		}
+	}
+	return out
+}()
+
+func peerIsTrustedProxy(remoteAddr string) bool {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		host = remoteAddr
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	for _, n := range trustedProxyNets {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// trustedRealIP rewrites RemoteAddr from X-Real-IP / X-Forwarded-For ONLY when
+// the direct peer is a trusted proxy (AUDIT-2026-07-16 M4). When the peer is
+// untrusted (e.g. the server is exposed directly), forwarded headers are
+// ignored and the real socket peer is used for rate limiting and audit.
+func trustedRealIP(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if peerIsTrustedProxy(r.RemoteAddr) {
+			if xrip := r.Header.Get("X-Real-IP"); xrip != "" {
+				r.RemoteAddr = net.JoinHostPort(strings.TrimSpace(xrip), "0")
+			} else if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+				if first, _, ok := strings.Cut(xff, ","); ok || first != "" {
+					r.RemoteAddr = net.JoinHostPort(strings.TrimSpace(first), "0")
+				}
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // JSON decoders enforce a hard cap. /v1/ingest gets a higher cap to fit
 // large package inventories; everything else uses the conservative default.
 // AUDIT-011.
@@ -347,6 +408,19 @@ func internalErr(ctx context.Context, op string, err error) error {
 	return huma.Error500InternalServerError("internal error")
 }
 
+// badRequest returns a 400 carrying the error's own message for validation
+// errors, but routes a wrapped database error through internalErr so raw
+// Postgres detail (table/column/constraint names, SQL) never reaches the
+// client (AUDIT-2026-07-16 L5). Validation strings the store returns via
+// errors.New are safe and still surface to the caller.
+func (s *Server) badRequest(ctx context.Context, err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return internalErr(ctx, "database error", err)
+	}
+	return huma.Error400BadRequest(err.Error())
+}
+
 // sessionExpiresAt computes the wall-clock expiry the API surface advertises
 // in LoginResponse.ExpiresAt. The actual TTL applied to the session row is
 // enforced inside Store.IssueSession via effectiveSessionTTL; we recompute
@@ -466,7 +540,10 @@ func (s *Server) registerHealthRoutes() {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()
 		if err := s.Store.Pool.Ping(ctx); err != nil {
-			http.Error(w, "not ready: "+err.Error(), http.StatusServiceUnavailable)
+			// audit 2026-07-16 L3: /readyz is unauthenticated — never echo the
+			// pgx/DSN error detail to the client; log it server-side only.
+			slog.Warn("readyz: database ping failed", "err", err)
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
 			return
 		}
 		w.WriteHeader(http.StatusOK)
@@ -1903,7 +1980,7 @@ func (s *Server) handleSetHostTags(ctx context.Context, in *setHostTagsInput) (*
 		if errors.Is(err, store.ErrHostNotFound) {
 			return nil, huma.Error404NotFound("host not found")
 		}
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 	out := &emptyOutput{}
 	out.Body.OK = true
@@ -1961,7 +2038,7 @@ func (s *Server) handleCreateGroup(ctx context.Context, in *createGroupInput) (*
 	u, _ := userFromContext(ctx)
 	g, err := s.Store.CreateGroup(ctx, in.Body, u.Email)
 	if err != nil {
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 	return &groupOutput{Body: g}, nil
 }
@@ -1981,7 +2058,7 @@ func (s *Server) handleUpdateGroup(ctx context.Context, in *updateGroupInput) (*
 		if errors.Is(err, store.ErrGroupNotFound) {
 			return nil, huma.Error404NotFound("group not found")
 		}
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 	return &groupOutput{Body: g}, nil
 }
@@ -2315,7 +2392,7 @@ func (s *Server) handleCreateRule(ctx context.Context, in *createRuleInput) (*ru
 	u, _ := userFromContext(ctx)
 	r, err := s.Store.CreateRule(ctx, in.Body, u.Email)
 	if err != nil {
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 	s.audit(ctx, "rule.create", r.ID, r.Name)
 	return &ruleOutput{Body: r}, nil
@@ -2342,7 +2419,7 @@ func (s *Server) handleCreateRuleGroup(ctx context.Context, in *ruleGroupInput) 
 		if strings.Contains(err.Error(), "required") ||
 			strings.Contains(err.Error(), "already exists") ||
 			strings.Contains(err.Error(), "repeat_interval_sec") {
-			return nil, huma.Error400BadRequest(err.Error())
+			return nil, s.badRequest(ctx, err)
 		}
 		return nil, internalErr(ctx, "create rule group", err)
 	}
@@ -2367,7 +2444,7 @@ func (s *Server) handleUpdateRule(ctx context.Context, in *updateRuleInput) (*ru
 		if errors.Is(err, store.ErrRuleNotFound) {
 			return nil, huma.Error404NotFound("rule not found")
 		}
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 	s.audit(ctx, "rule.update", r.ID, r.Name)
 	return &ruleOutput{Body: r}, nil
@@ -2475,7 +2552,7 @@ func (s *Server) handleCreateMonitor(ctx context.Context, in *createMonitorInput
 	u, _ := userFromContext(ctx)
 	m, err := s.Store.CreateMonitor(ctx, in.Body, u.Email)
 	if err != nil {
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 	return &monitorOutput{Body: m}, nil
 }
@@ -2510,7 +2587,7 @@ func (s *Server) handleUpdateMonitor(ctx context.Context, in *updateMonitorInput
 		if errors.Is(err, store.ErrMonitorNotFound) {
 			return nil, huma.Error404NotFound("monitor not found")
 		}
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 	return &monitorOutput{Body: m}, nil
 }
@@ -2604,7 +2681,7 @@ func (s *Server) handleCreateChannel(ctx context.Context, in *channelInput) (*ch
 	owner := &u.ID
 	c, err := s.Store.CreateChannel(ctx, in.Body, u.Email, owner)
 	if err != nil {
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 	s.audit(ctx, "channel.create", c.ID, c.Type+":"+c.Name)
 	return &channelOutput{Body: c}, nil
@@ -2650,7 +2727,7 @@ func (s *Server) handleUpdateChannel(ctx context.Context, in *updateChannelInput
 		if errors.Is(err, store.ErrChannelNotFound) {
 			return nil, huma.Error404NotFound("channel not found")
 		}
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 	s.audit(ctx, "channel.update", c.ID, c.Type+":"+c.Name)
 	return &channelOutput{Body: c}, nil
@@ -2751,11 +2828,12 @@ func (s *Server) handleLogin(ctx context.Context, in *loginInput) (*loginOutput,
 	u, err := s.Store.AuthenticateUser(ctx, in.Body.Email, in.Body.Password)
 	if err != nil {
 		// Avoid leaking whether the email exists.
-		if errors.Is(err, store.ErrUserNotFound) || errors.Is(err, store.ErrPasswordMismatch) {
+		// audit 2026-07-16 L1: a disabled account must be indistinguishable
+		// from an unknown one, so it also collapses to the generic 401 rather
+		// than a distinct "user is disabled" 403 (account-enumeration oracle).
+		if errors.Is(err, store.ErrUserNotFound) || errors.Is(err, store.ErrPasswordMismatch) ||
+			errors.Is(err, store.ErrUserDisabled) {
 			return nil, huma.Error401Unauthorized("invalid credentials")
-		}
-		if errors.Is(err, store.ErrUserDisabled) {
-			return nil, huma.Error403Forbidden("user is disabled")
 		}
 		if errors.Is(err, store.ErrUserLockedOut) {
 			return nil, huma.Error429TooManyRequests("account temporarily locked; retry later")
@@ -2845,7 +2923,7 @@ func (s *Server) handleChangePassword(ctx context.Context, in *changePasswordInp
 		return nil, huma.Error400BadRequest("current_password and new_password required")
 	}
 	if err := s.Store.CheckPassword(ctx, in.Body.NewPassword); err != nil {
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 	// audit 2026-05-12 F-3: pass the caller's session token so the store can
 	// revoke every other session while keeping this device logged in.
@@ -2877,7 +2955,7 @@ func (s *Server) handleChangeEmail(ctx context.Context, in *changeEmailInput) (*
 		if errors.Is(err, store.ErrUserExists) {
 			return nil, huma.Error409Conflict("email already in use")
 		}
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 	out := &emptyOutput{}
 	out.Body.OK = true
@@ -2901,7 +2979,7 @@ func (s *Server) handleSetLanguage(ctx context.Context, in *setLanguageInput) (*
 		}
 		// Invalid language value (or other validation error) — surface the
 		// store's message to the caller so the SPA can display it verbatim.
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 	s.audit(ctx, "user.language.set", u.ID.String(), in.Body.Language)
 	out := &emptyOutput{}
@@ -2937,7 +3015,7 @@ func (s *Server) handleTOTPVerify(ctx context.Context, in *totpVerifyInput) (*em
 		return nil, huma.Error401Unauthorized("no session")
 	}
 	if err := s.Store.VerifyTOTP(ctx, u.ID, in.Body.Code); err != nil {
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 	out := &emptyOutput{}
 	out.Body.OK = true
@@ -3133,9 +3211,13 @@ func (s *Server) requireMethodCompliance(c huma.Context, next func(huma.Context)
 			s.applyComplianceDecision(c, next, entry.complies, entry.grace)
 			return
 		}
-		slog.Warn("policy compliance lookup failed; no cached decision; failing open",
+		// audit 2026-07-16 M3: fail CLOSED when we have no cached decision.
+		// A security gate that lets requests through on a transient DB error
+		// is defeatable by inducing the error; deny and let the client retry.
+		slog.Warn("policy compliance lookup failed; no cached decision; failing closed",
 			"user_id", u.ID, "err", err)
-		next(c)
+		_ = huma.WriteErr(s.API, c, http.StatusServiceUnavailable,
+			"policy check temporarily unavailable; retry")
 		return
 	}
 
@@ -3202,7 +3284,7 @@ func (s *Server) handleConsumeReset(ctx context.Context, in *consumeResetInput) 
 		return nil, huma.Error400BadRequest("token and new_password required")
 	}
 	if err := s.Store.CheckPassword(ctx, in.Body.NewPassword); err != nil {
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 	// audit 2026-05-12 F-19: only accept password_reset or invite kinds.
 	// An empty expectedKind here would let an email_change / login_2fa /
@@ -3272,14 +3354,14 @@ func (s *Server) handleAdminCreateUser(ctx context.Context, in *adminCreateUserI
 
 	if in.Body.Password != "" {
 		if err := s.Store.CheckPassword(ctx, in.Body.Password); err != nil {
-			return nil, huma.Error400BadRequest(err.Error())
+			return nil, s.badRequest(ctx, err)
 		}
 		u, err := s.Store.CreateUser(ctx, in.Body.Email, in.Body.Password, role)
 		if err != nil {
 			if errors.Is(err, store.ErrUserExists) {
 				return nil, huma.Error409Conflict("user already exists")
 			}
-			return nil, huma.Error400BadRequest(err.Error())
+			return nil, s.badRequest(ctx, err)
 		}
 		out.Body.User = apitypes.AdminUserSummary{
 			ID: u.ID.String(), Email: u.Email, Role: u.Role, CreatedAt: u.CreatedAt,
@@ -3299,7 +3381,7 @@ func (s *Server) handleAdminCreateUser(ctx context.Context, in *adminCreateUserI
 		if errors.Is(err, store.ErrUserExists) {
 			return nil, huma.Error409Conflict("user already exists")
 		}
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 
 	actor, _ := userFromContext(ctx)
@@ -3564,7 +3646,7 @@ func (s *Server) handleAdminPutSmtp(ctx context.Context, in *smtpInput) (*smtpOu
 	u, _ := userFromContext(ctx)
 	saved, err := s.Store.UpsertSmtpSettings(ctx, in.Body, u.Email)
 	if err != nil {
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 	s.audit(ctx, "smtp.update", saved.Host, saved.FromAddress)
 	return &smtpOutput{Body: saved}, nil
@@ -3719,7 +3801,7 @@ func (s *Server) handleUpsertAgentConfig(ctx context.Context, in *upsertAgentCon
 	u, _ := userFromContext(ctx)
 	c, err := s.Store.UpsertAgentConfig(ctx, in.Body, u.Email)
 	if err != nil {
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 	s.audit(ctx, "agent_config.upsert", c.ID, c.Scope+":"+c.TargetID)
 	return &agentConfigEntryOutput{Body: c}, nil
@@ -3907,7 +3989,7 @@ type setPolicyInput struct {
 func (s *Server) handleSetPasswordPolicy(ctx context.Context, in *setPolicyInput) (*passwordPolicyOutput, error) {
 	actor, _ := userFromContext(ctx)
 	if err := s.Store.SetPasswordPolicy(ctx, in.Body, actor.Email); err != nil {
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 	p, _ := s.Store.GetPasswordPolicy(ctx)
 	s.audit(ctx, "policy.update", "password_policy", "")
@@ -4074,10 +4156,10 @@ func (s *Server) handleWebAuthnLoginFinish(ctx context.Context, in *webAuthnLogi
 		if errors.Is(err, store.ErrPasskeyNotConfigured) {
 			return nil, huma.Error503ServiceUnavailable("passkey support not configured")
 		}
-		if errors.Is(err, store.ErrUserDisabled) {
-			return nil, huma.Error403Forbidden("user is disabled")
-		}
-		if errors.Is(err, store.ErrUserNotFound) || errors.Is(err, store.ErrActionTokenInvalid) {
+		// audit 2026-07-16 L1: collapse the disabled case into the generic
+		// "passkey not recognised" 401 (no account-enumeration oracle).
+		if errors.Is(err, store.ErrUserDisabled) ||
+			errors.Is(err, store.ErrUserNotFound) || errors.Is(err, store.ErrActionTokenInvalid) {
 			return nil, huma.Error401Unauthorized("passkey not recognised")
 		}
 		return nil, internalErr(ctx, "passkey login finish", err)
@@ -4132,7 +4214,7 @@ func (s *Server) handleRenamePasskey(ctx context.Context, in *renamePasskeyInput
 		if errors.Is(err, store.ErrUserNotFound) {
 			return nil, huma.Error404NotFound("passkey not found")
 		}
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 	out := &emptyOutput{}
 	out.Body.OK = true
@@ -4223,7 +4305,7 @@ func (s *Server) handleSetSecurityPolicy(ctx context.Context, in *setSecurityPol
 	}
 
 	if err := s.Store.SetSecurityPolicy(ctx, in.Body, actor.Email); err != nil {
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 	detail := fmt.Sprintf("force_mode=%s grace_days=%d max_session_hours=%d idle_timeout_minutes=%d",
 		in.Body.ForceMode, in.Body.GraceDays, in.Body.MaxSessionHours, in.Body.IdleTimeoutMinutes)

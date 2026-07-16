@@ -197,6 +197,17 @@ func main() {
 		return
 	}
 
+	// AUDIT-2026-07-16 M2: fail fast on a malformed at-rest encryption key
+	// rather than discovering it on the first TOTP write.
+	if enabled, kerr := store.EncryptionConfigured(); kerr != nil {
+		slog.Error("data-at-rest encryption key invalid", "err", kerr)
+		cancel()
+		stop()
+		os.Exit(1) //nolint:gocritic // manual cleanup above
+	} else if enabled {
+		slog.Info("data-at-rest encryption enabled (MON_DATA_ENCRYPTION_KEY set)")
+	}
+
 	st, err := store.Open(openCtx, dsn)
 	if err != nil {
 		slog.Error("db open", "err", err)
@@ -450,13 +461,23 @@ func main() {
 	// WebAuthn relying-party service. Configured from env so operators can
 	// run multiple deployments without rebuilding. RPID must be the bare
 	// hostname; RPOrigin the full origin including scheme (and port for dev).
+	// AUDIT-2026-07-16 L4: the localhost fallback is only safe in development.
+	// In any other MON_ENV, refuse to start rather than silently register
+	// passkeys against an insecure localhost origin.
+	devMode := envOr("MON_ENV", "production") == "development"
 	rpID := os.Getenv("MON_RP_ID")
-	if rpID == "" {
-		rpID = "localhost"
-	}
 	rpOrigin := os.Getenv("MON_RP_ORIGIN")
-	if rpOrigin == "" {
-		rpOrigin = "http://localhost:5173"
+	if rpID == "" || rpOrigin == "" {
+		if !devMode {
+			slog.Error("webauthn: MON_RP_ID and MON_RP_ORIGIN must be set when MON_ENV != development")
+			os.Exit(1)
+		}
+		if rpID == "" {
+			rpID = "localhost"
+		}
+		if rpOrigin == "" {
+			rpOrigin = "http://localhost:5173"
+		}
 	}
 	wa, werr := webauthn.New(webauthn.Config{
 		RPID:    rpID,
@@ -490,11 +511,34 @@ func main() {
 	go func() {
 		var serveErr error
 		if tlsCert != "" && tlsKey != "" {
-			srv.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+			// AUDIT-2026-07-16 M8: TLS 1.2 floor with AEAD-only ECDHE suites
+			// (no CBC/RSA-kex). CipherSuites is ignored for TLS 1.3, which
+			// only offers AEAD suites anyway.
+			srv.TLSConfig = &tls.Config{
+				MinVersion: tls.VersionTLS12,
+				CipherSuites: []uint16{
+					tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+					tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+					tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+					tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+					tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
+					tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
+				},
+			}
 			slog.Info("mon-server starting (TLS)", "addr", addr, "version", version.String())
 			serveErr = srv.ListenAndServeTLS(tlsCert, tlsKey)
 		} else {
-			slog.Info("mon-server starting (plain HTTP)", "addr", addr, "version", version.String())
+			// AUDIT-2026-07-16 M8: the server sets Secure/HSTS cookies, so
+			// serving plain HTTP leaks session tokens unless a TLS-terminating
+			// proxy sits in front. Require an explicit opt-in to make that
+			// deployment assumption a conscious choice rather than a silent
+			// default.
+			if os.Getenv("MON_ALLOW_INSECURE_HTTP") != "1" {
+				slog.Error("refusing to start on plain HTTP: set MON_TLS_CERT/MON_TLS_KEY, or MON_ALLOW_INSECURE_HTTP=1 if a TLS-terminating proxy sits in front")
+				stop()
+				return
+			}
+			slog.Warn("mon-server starting (plain HTTP; MON_ALLOW_INSECURE_HTTP=1 — a TLS proxy MUST terminate in front)", "addr", addr, "version", version.String())
 			serveErr = srv.ListenAndServe()
 		}
 		if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {

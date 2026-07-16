@@ -49,19 +49,19 @@ A `Verification ok` message means:
 - the signing certificate was issued by the public Sigstore Fulcio CA
 - the signature is logged in Rekor (so revocation by transparency works)
 
-After verifying, pin the digest from `container-digest.txt` in your
-production compose file:
+After verifying, pin the exact digest from `container-digest.txt` in your
+production compose file (by digest, not tag — a tag is mutable and can be
+repushed after you verify it):
 
 ```
-MONSYS_TAG=v0.4.2 docker compose \
+MONSYS_DIGEST=sha256:... docker compose \
   -f deploy/docker-compose.yaml \
   -f deploy/docker-compose.prod.yaml \
-  up -d
+  up -d --no-build
 ```
 
-The overlay refuses to start unless `MONSYS_TAG` is set, which is the
-mechanism that forces an operator to consciously bump to a verified
-version.
+The overlay refuses to start unless `MONSYS_DIGEST` is set, which forces an
+operator to consciously deploy the exact digest they verified.
 
 ## Verifying the SBOM
 

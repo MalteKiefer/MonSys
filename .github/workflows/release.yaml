@@ -35,8 +35,11 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
+# AUDIT-2026-07-16 L2: least privilege. The default token is read-only; only
+# the jobs that push a tag (auto-tag) or upload release assets (publish) get
+# contents: write, and the container job scopes its own extra permissions.
 permissions:
-  contents: write
+  contents: read
 
 # NOTE: Go patch pin (4.3.1.19) — keep go-version in lockstep with go.mod's
 # `go <X.Y.Z>` line. Bump procedure: update go.mod, then sweep this file for
@@ -58,6 +61,8 @@ jobs:
   # created the tag. No `repository_dispatch` or PAT plumbing required.
   auto-tag:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # pushes the bumped version tag
     outputs:
       version: ${{ steps.tag.outputs.version }}
       channel: ${{ steps.tag.outputs.channel }}
@@ -108,7 +113,7 @@ jobs:
           ref: ${{ needs.auto-tag.outputs.version }}
       - uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
         with:
-          go-version: '1.26.3'
+          go-version: '1.26.5'
           cache: true
 
       - name: derive version
@@ -136,6 +141,18 @@ jobs:
             -X github.com/MalteKiefer/MonSys/internal/shared/version.Version=${VERSION} \
             -X github.com/MalteKiefer/MonSys/internal/shared/version.Commit=${COMMIT} \
             -X github.com/MalteKiefer/MonSys/internal/shared/version.Date=${DATE}"
+          # AUDIT-2026-07-16 C1: embed the minisign public key so the agent's
+          # self-updater has an out-of-band trust anchor. The key lives in
+          # deploy/release.pub (line 2 of a minisign .pub is the base64 key).
+          # Without it the agent falls back to placeholder and self-update
+          # fails closed (never SHA-256-only), so a missing key degrades to
+          # "no auto-update", not "unsigned auto-update".
+          if [ -f deploy/release.pub ]; then
+            PUBKEY="$(tail -n1 deploy/release.pub)"
+            LDFLAGS="$LDFLAGS -X github.com/MalteKiefer/MonSys/internal/agent/updater.PublicKey=${PUBKEY}"
+          else
+            echo "::warning title=agent update key::deploy/release.pub absent; mon-agent self-update will be disabled (fail-closed) in this build."
+          fi
           go build -trimpath -ldflags="$LDFLAGS" -o "out/mon-agent-linux-${GOARCH}"  ./cmd/mon-agent
           go build -trimpath -ldflags="$LDFLAGS" -o "out/mon-server-linux-${GOARCH}" ./cmd/mon-server
 
@@ -173,12 +190,12 @@ jobs:
       - name: stage SBOMs alongside binaries
         run: mv SBOM-*.cdx.json out/
 
-      # AUDIT-401: detached minisign signatures alongside each binary. The
-      # agent updater pulls these from the same release URL and verifies
-      # them against the public key compiled into the binary. We skip
-      # signing (with a warning, not a failure) when either secret is
-      # unset so the very first run after introducing this step doesn't
-      # break the release pipeline before secrets have been added.
+      # AUDIT-401 / AUDIT-2026-07-16 C1: detached minisign signatures
+      # alongside each binary. The agent updater pulls these from the same
+      # release URL and verifies them against the public key compiled into
+      # the binary. Signing is REQUIRED — if the secrets are missing the job
+      # fails rather than publishing unsigned artifacts, because the agent
+      # fleet auto-updates from these binaries as root.
       - name: sign artifacts (minisign)
         working-directory: out
         env:
@@ -187,9 +204,12 @@ jobs:
           MINISIGN_PASSWORD: ${{ secrets.MONSYS_MINISIGN_PASSWORD }}
         run: |
           set -euo pipefail
-          if [ -z "${MINISIGN_SECRET_KEY:-}" ] || [ -z "${MINISIGN_PASSWORD:-}" ]; then
-            echo "::warning title=minisign skipped::MONSYS_MINISIGN_SECRET_KEY and/or MONSYS_MINISIGN_PASSWORD not set; release will publish without signatures."
-            exit 0
+          # AUDIT-2026-07-16 C1: signing is required. The secret key is an
+          # UNENCRYPTED minisign key (matching deploy/release.pub); minisign -S
+          # signs it non-interactively, so no password is needed in CI.
+          if [ -z "${MINISIGN_SECRET_KEY:-}" ]; then
+            echo "::error title=minisign secret missing::set the MONSYS_MINISIGN_SECRET_KEY secret (unencrypted key matching deploy/release.pub); refusing to publish unsigned release artifacts."
+            exit 1
           fi
           # AUDIT 4.3.1.14: pin minisign by SHA256 instead of apt-get. The
           # distro package may lag on security fixes and is unverified
@@ -255,6 +275,10 @@ jobs:
   container:
     needs: [auto-tag, build]
     runs-on: ubuntu-latest
+    # AUDIT-2026-07-16 M5: gate artifact publishing behind a protected
+    # environment. Configure Settings > Environments > "release" with required
+    # reviewers so an unreviewed push to main cannot auto-ship to the fleet.
+    environment: release
     # AUDIT 4.3.1.8: scoped permissions for this job only — id-token: write
     # enables cosign keyless OIDC signing against the public sigstore Fulcio
     # instance; packages: write enables GHCR push.
@@ -361,6 +385,12 @@ jobs:
   publish:
     needs: [auto-tag, build, sbom-source, container]
     runs-on: ubuntu-latest
+    # AUDIT-2026-07-16 M5: same protected "release" environment gate as the
+    # container job — requires the configured reviewers to approve before
+    # binaries/release assets are published.
+    environment: release
+    permissions:
+      contents: write # creates releases and uploads release assets
     steps:
       # NOTE: this checkout intentionally does NOT set persist-credentials:
       # false because the `release (latest)` step below uses `gh release

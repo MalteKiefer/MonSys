@@ -33,6 +33,17 @@ func (s *Store) StartTOTPSetup(ctx context.Context, u User) (apitypes.TOTPSetupR
 	if err != nil {
 		return apitypes.TOTPSetupResponse{}, err
 	}
+	// AUDIT-2026-07-16 M2: encrypt the seed at rest (no-op when no key is set)
+	// and store backup codes as bcrypt hashes; the plaintext is only returned
+	// here, shown to the user once.
+	encSecret, err := EncryptAtRest(secret)
+	if err != nil {
+		return apitypes.TOTPSetupResponse{}, err
+	}
+	hashedBackups, err := auth2fa.HashBackupCodes(backups)
+	if err != nil {
+		return apitypes.TOTPSetupResponse{}, err
+	}
 	_, err = s.Pool.Exec(ctx, `
 		INSERT INTO user_totp (user_id, secret_b32, backup_codes)
 		VALUES ($1, $2, $3)
@@ -41,7 +52,7 @@ func (s *Store) StartTOTPSetup(ctx context.Context, u User) (apitypes.TOTPSetupR
 			backup_codes = EXCLUDED.backup_codes,
 			enabled_at   = NULL,
 			last_used_at = NULL`,
-		u.ID, secret, backups)
+		u.ID, encSecret, hashedBackups)
 	if err != nil {
 		return apitypes.TOTPSetupResponse{}, fmt.Errorf("user_totp upsert: %w", err)
 	}
@@ -59,26 +70,38 @@ func (s *Store) StartTOTPSetup(ctx context.Context, u User) (apitypes.TOTPSetupR
 // at any time (consumed on use).
 func (s *Store) VerifyTOTP(ctx context.Context, userID uuid.UUID, code string) error {
 	var (
-		secret  string
-		enabled *time.Time
-		backups []string
+		secret   string
+		enabled  *time.Time
+		backups  []string
+		lastStep int64
 	)
 	err := s.Pool.QueryRow(ctx,
-		`SELECT secret_b32, enabled_at, backup_codes FROM user_totp WHERE user_id = $1`, userID,
-	).Scan(&secret, &enabled, &backups)
+		`SELECT secret_b32, enabled_at, backup_codes, last_used_step FROM user_totp WHERE user_id = $1`, userID,
+	).Scan(&secret, &enabled, &backups, &lastStep)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrTOTPNotPending
 	}
 	if err != nil {
 		return err
 	}
+	// AUDIT-2026-07-16 M2: decrypt the seed (legacy plaintext passes through).
+	secret, err = DecryptAtRest(secret)
+	if err != nil {
+		return err
+	}
 
-	if auth2fa.Validate(secret, strings.TrimSpace(code)) {
+	if step, ok := auth2fa.ValidateAndStep(secret, strings.TrimSpace(code)); ok {
+		// AUDIT-2026-07-16 M7 / ASVS V2.8.4: reject a step already consumed so
+		// a code observed within its skew window cannot be replayed.
+		if step <= lastStep {
+			return ErrTOTPCodeInvalid
+		}
 		_, err = s.Pool.Exec(ctx, `
 			UPDATE user_totp SET
-				enabled_at   = COALESCE(enabled_at, now()),
-				last_used_at = now()
-			WHERE user_id = $1`, userID)
+				enabled_at     = COALESCE(enabled_at, now()),
+				last_used_at   = now(),
+				last_used_step = $2
+			WHERE user_id = $1`, userID, step)
 		return err
 	}
 

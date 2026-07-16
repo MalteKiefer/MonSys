@@ -1,26 +1,27 @@
-# AUDIT 4.3.1.8: production overlay that pulls a signed image from GHCR
-# instead of building the server locally. Apply with:
+# AUDIT 4.3.1.8 / AUDIT-2026-07-16 M6: production overlay that pulls a signed
+# image from GHCR instead of building the server locally. Apply with:
 #
-#   MONSYS_TAG=v0.4.2 \
+#   MONSYS_DIGEST=sha256:... \
 #     docker compose \
 #       -f docker-compose.yaml \
 #       -f docker-compose.prod.yaml \
-#       up -d
+#       up -d --no-build
 #
-# Verify the image signature first (see docs/RELEASE.md for the full
-# command). Skipping the verify is acceptable on a once-bootstrapped host
-# only if `cosign verify` was run against the digest you're about to pull.
+# Pin by DIGEST, not tag. A tag is mutable on GHCR — the image behind a tag can
+# be repushed after you verify it (TOCTOU), so verifying the signature and then
+# deploying by tag defeats the check. Take the exact digest you `cosign verify`d
+# (the value in the release's container-digest.txt) and set MONSYS_DIGEST to it.
+# The digest is content-addressed and immutable, so no `pull_policy: always` is
+# needed — the pulled bytes are guaranteed identical to what you verified.
 #
-# Compose v2 interpolates ${MONSYS_TAG} from the env at `compose up` time;
-# we deliberately do NOT default it so a missing tag fails loudly rather
-# than silently pulling `:latest`. Use the explicit value once you've
-# verified that exact tag's signature.
+# Compose v2 interpolates ${MONSYS_DIGEST} at `compose up` time; we deliberately
+# do NOT default it so a missing digest fails loudly rather than pulling latest.
 
 name: mon
 
 services:
   mon-server:
-    # Override the `build:` from docker-compose.yaml with a pinned image.
+    # Override the `build:` from docker-compose.yaml with a digest-pinned image.
     # Compose-spec semantics: when both `image:` and `build:` are present,
     # `docker compose up --no-build` (or `pull`) uses the image; we DON'T
     # use the compose-spec `!reset` extension on `build:` because it
@@ -30,5 +31,4 @@ services:
     #   docker compose -f docker-compose.yaml -f docker-compose.prod.yaml \
     #     up -d --no-build
     # to bring the stack up against the pulled, signed image.
-    image: ghcr.io/maltekiefer/monsys-server:${MONSYS_TAG:?set MONSYS_TAG to the verified release tag}
-    pull_policy: always
+    image: ghcr.io/maltekiefer/monsys-server@${MONSYS_DIGEST:?set MONSYS_DIGEST to the cosign-verified digest from container-digest.txt}

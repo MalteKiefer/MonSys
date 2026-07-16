@@ -17,8 +17,10 @@ import (
 	"net"
 	"net/http"
 	"net/smtp"
+	"net/url"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -66,8 +68,75 @@ func Dispatch(ctx context.Context, ch Channel, m Message) error {
 	return fmt.Errorf("notify: unsupported channel type %q", ch.Type)
 }
 
+// webhookHardDenyCIDRs are destinations an outbound webhook must never reach:
+// loopback and link-local, most importantly the cloud instance metadata
+// endpoint (169.254.169.254). RFC1918/ULA is intentionally NOT blocked —
+// self-hosted Slack/Mattermost/ntfy on private networks is a supported target
+// for this self-hosted tool (audit 2026-07-16 H3).
+var webhookHardDenyCIDRs = func() []*net.IPNet {
+	out := make([]*net.IPNet, 0, 4)
+	for _, c := range []string{"127.0.0.0/8", "169.254.0.0/16", "::1/128", "fe80::/10"} {
+		if _, n, err := net.ParseCIDR(c); err == nil {
+			out = append(out, n)
+		}
+	}
+	return out
+}()
+
+// denyDial rejects a connection whose resolved address is in a hard-denied
+// range. Because it runs on the post-resolution address, it also defeats DNS
+// rebinding and re-checks every redirect hop's target.
+func denyDial(_, address string, _ syscall.RawConn) error {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		host = address
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return nil
+	}
+	for _, n := range webhookHardDenyCIDRs {
+		if n.Contains(ip) {
+			return fmt.Errorf("webhook: destination %s is in a denied range (SSRF guard)", host)
+		}
+	}
+	return nil
+}
+
+// validateWebhookScheme rejects any URL that is not plain http/https, so a
+// channel cannot be pointed at file://, gopher://, etc.
+func validateWebhookScheme(rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid webhook url: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("webhook url scheme %q not allowed (use http or https)", u.Scheme)
+	}
+	return nil
+}
+
 // httpClient is shared so HTTP-based backends benefit from connection reuse.
-var httpClient = &http.Client{Timeout: 15 * time.Second}
+// Its dialer blocks SSRF-prone targets and it caps redirects at 10, re-checking
+// each hop through the same dialer.
+var httpClient = &http.Client{
+	Timeout: 15 * time.Second,
+	CheckRedirect: func(_ *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		return nil
+	},
+	Transport: &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           (&net.Dialer{Timeout: 10 * time.Second, Control: denyDial}).DialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	},
+}
 
 // --- SMTP ------------------------------------------------------------------
 
@@ -181,8 +250,8 @@ func buildRFC5322(from, to, subject, body string) string {
 type Slack struct{}
 
 func (Slack) Send(ctx context.Context, ch Channel, m Message) error {
-	url := stringField(ch.Config, "webhook_url")
-	if url == "" {
+	endpoint := stringField(ch.Config, "webhook_url")
+	if endpoint == "" {
 		return errors.New("slack config requires webhook_url")
 	}
 	color := severityColor(m.Severity)
@@ -192,7 +261,7 @@ func (Slack) Send(ctx context.Context, ch Channel, m Message) error {
 			{"color": color, "text": m.Body},
 		},
 	}
-	return postJSON(ctx, url, payload)
+	return postJSON(ctx, endpoint, payload)
 }
 
 func severityColor(s string) string {
@@ -211,8 +280,8 @@ func severityColor(s string) string {
 type Mattermost struct{}
 
 func (Mattermost) Send(ctx context.Context, ch Channel, m Message) error {
-	url := stringField(ch.Config, "webhook_url")
-	if url == "" {
+	endpoint := stringField(ch.Config, "webhook_url")
+	if endpoint == "" {
 		return errors.New("mattermost config requires webhook_url")
 	}
 	username := stringField(ch.Config, "username")
@@ -223,7 +292,7 @@ func (Mattermost) Send(ctx context.Context, ch Channel, m Message) error {
 		"username": username,
 		"text":     fmt.Sprintf("**%s**\n%s", m.Subject, m.Body),
 	}
-	return postJSON(ctx, url, payload)
+	return postJSON(ctx, endpoint, payload)
 }
 
 // --- Discord (incoming webhook) -------------------------------------------
@@ -234,8 +303,8 @@ func (Mattermost) Send(ctx context.Context, ch Channel, m Message) error {
 type Discord struct{}
 
 func (Discord) Send(ctx context.Context, ch Channel, m Message) error {
-	url := stringField(ch.Config, "webhook_url")
-	if url == "" {
+	endpoint := stringField(ch.Config, "webhook_url")
+	if endpoint == "" {
 		return errors.New("discord config requires webhook_url")
 	}
 	username := stringField(ch.Config, "username")
@@ -257,7 +326,7 @@ func (Discord) Send(ctx context.Context, ch Channel, m Message) error {
 			},
 		},
 	}
-	return postJSON(ctx, url, payload)
+	return postJSON(ctx, endpoint, payload)
 }
 
 // discordColor returns the integer color value Discord expects (0xRRGGBB).
@@ -286,12 +355,15 @@ func (Ntfy) Send(ctx context.Context, ch Channel, m Message) error {
 	if topic == "" {
 		return errors.New("ntfy config requires topic")
 	}
-	url := strings.TrimRight(server, "/") + "/" + topic
+	endpoint := strings.TrimRight(server, "/") + "/" + topic
+	if err := validateWebhookScheme(endpoint); err != nil {
+		return err
+	}
 	priority := ntfyPriority(m.Severity)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(m.Body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(m.Body))
 	if err != nil {
-		return err
+		return fmt.Errorf("ntfy: build request: %w", err)
 	}
 	req.Header.Set("Title", m.Subject)
 	req.Header.Set("Priority", priority)
@@ -328,19 +400,22 @@ func ntfyPriority(s string) string {
 
 // --- shared HTTP helper ----------------------------------------------------
 
-func postJSON(ctx context.Context, url string, payload any) error {
-	body, err := json.Marshal(payload)
-	if err != nil {
+func postJSON(ctx context.Context, rawURL string, payload any) error {
+	if err := validateWebhookScheme(rawURL); err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	body, err := json.Marshal(payload)
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal webhook payload: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, rawURL, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("build webhook request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("send webhook request: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {

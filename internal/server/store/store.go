@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -102,5 +101,3 @@ func withPasswordFile(dsn string) (string, error) {
 	rest := dsn[idx:]
 	return dsn[:scheme+3] + user + ":" + pw + rest, nil
 }
-
-var _ = sql.ErrNoRows
