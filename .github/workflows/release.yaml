@@ -141,6 +141,18 @@ jobs:
             -X github.com/MalteKiefer/MonSys/internal/shared/version.Version=${VERSION} \
             -X github.com/MalteKiefer/MonSys/internal/shared/version.Commit=${COMMIT} \
             -X github.com/MalteKiefer/MonSys/internal/shared/version.Date=${DATE}"
+          # AUDIT-2026-07-16 C1: embed the minisign public key so the agent's
+          # self-updater has an out-of-band trust anchor. The key lives in
+          # deploy/release.pub (line 2 of a minisign .pub is the base64 key).
+          # Without it the agent falls back to placeholder and self-update
+          # fails closed (never SHA-256-only), so a missing key degrades to
+          # "no auto-update", not "unsigned auto-update".
+          if [ -f deploy/release.pub ]; then
+            PUBKEY="$(tail -n1 deploy/release.pub)"
+            LDFLAGS="$LDFLAGS -X github.com/MalteKiefer/MonSys/internal/agent/updater.PublicKey=${PUBKEY}"
+          else
+            echo "::warning title=agent update key::deploy/release.pub absent; mon-agent self-update will be disabled (fail-closed) in this build."
+          fi
           go build -trimpath -ldflags="$LDFLAGS" -o "out/mon-agent-linux-${GOARCH}"  ./cmd/mon-agent
           go build -trimpath -ldflags="$LDFLAGS" -o "out/mon-server-linux-${GOARCH}" ./cmd/mon-server
 
@@ -178,12 +190,12 @@ jobs:
       - name: stage SBOMs alongside binaries
         run: mv SBOM-*.cdx.json out/
 
-      # AUDIT-401: detached minisign signatures alongside each binary. The
-      # agent updater pulls these from the same release URL and verifies
-      # them against the public key compiled into the binary. We skip
-      # signing (with a warning, not a failure) when either secret is
-      # unset so the very first run after introducing this step doesn't
-      # break the release pipeline before secrets have been added.
+      # AUDIT-401 / AUDIT-2026-07-16 C1: detached minisign signatures
+      # alongside each binary. The agent updater pulls these from the same
+      # release URL and verifies them against the public key compiled into
+      # the binary. Signing is REQUIRED — if the secrets are missing the job
+      # fails rather than publishing unsigned artifacts, because the agent
+      # fleet auto-updates from these binaries as root.
       - name: sign artifacts (minisign)
         working-directory: out
         env:
@@ -193,8 +205,8 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${MINISIGN_SECRET_KEY:-}" ] || [ -z "${MINISIGN_PASSWORD:-}" ]; then
-            echo "::warning title=minisign skipped::MONSYS_MINISIGN_SECRET_KEY and/or MONSYS_MINISIGN_PASSWORD not set; release will publish without signatures."
-            exit 0
+            echo "::error title=minisign secrets missing::set MONSYS_MINISIGN_SECRET_KEY and MONSYS_MINISIGN_PASSWORD; refusing to publish unsigned release artifacts."
+            exit 1
           fi
           # AUDIT 4.3.1.14: pin minisign by SHA256 instead of apt-get. The
           # distro package may lag on security fixes and is unverified

@@ -24,6 +24,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/httprate"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/MalteKiefer/MonSys/internal/server/agentupdate"
@@ -405,6 +406,19 @@ func (s *Server) requireSessionForDocs(next http.Handler) http.Handler {
 func internalErr(ctx context.Context, op string, err error) error {
 	slog.ErrorContext(ctx, "internal error", "op", op, "err", err)
 	return huma.Error500InternalServerError("internal error")
+}
+
+// badRequest returns a 400 carrying the error's own message for validation
+// errors, but routes a wrapped database error through internalErr so raw
+// Postgres detail (table/column/constraint names, SQL) never reaches the
+// client (AUDIT-2026-07-16 L5). Validation strings the store returns via
+// errors.New are safe and still surface to the caller.
+func (s *Server) badRequest(ctx context.Context, err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return internalErr(ctx, "database error", err)
+	}
+	return huma.Error400BadRequest(err.Error())
 }
 
 // sessionExpiresAt computes the wall-clock expiry the API surface advertises
@@ -1966,7 +1980,7 @@ func (s *Server) handleSetHostTags(ctx context.Context, in *setHostTagsInput) (*
 		if errors.Is(err, store.ErrHostNotFound) {
 			return nil, huma.Error404NotFound("host not found")
 		}
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 	out := &emptyOutput{}
 	out.Body.OK = true
@@ -2024,7 +2038,7 @@ func (s *Server) handleCreateGroup(ctx context.Context, in *createGroupInput) (*
 	u, _ := userFromContext(ctx)
 	g, err := s.Store.CreateGroup(ctx, in.Body, u.Email)
 	if err != nil {
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 	return &groupOutput{Body: g}, nil
 }
@@ -2044,7 +2058,7 @@ func (s *Server) handleUpdateGroup(ctx context.Context, in *updateGroupInput) (*
 		if errors.Is(err, store.ErrGroupNotFound) {
 			return nil, huma.Error404NotFound("group not found")
 		}
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 	return &groupOutput{Body: g}, nil
 }
@@ -2378,7 +2392,7 @@ func (s *Server) handleCreateRule(ctx context.Context, in *createRuleInput) (*ru
 	u, _ := userFromContext(ctx)
 	r, err := s.Store.CreateRule(ctx, in.Body, u.Email)
 	if err != nil {
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 	s.audit(ctx, "rule.create", r.ID, r.Name)
 	return &ruleOutput{Body: r}, nil
@@ -2405,7 +2419,7 @@ func (s *Server) handleCreateRuleGroup(ctx context.Context, in *ruleGroupInput) 
 		if strings.Contains(err.Error(), "required") ||
 			strings.Contains(err.Error(), "already exists") ||
 			strings.Contains(err.Error(), "repeat_interval_sec") {
-			return nil, huma.Error400BadRequest(err.Error())
+			return nil, s.badRequest(ctx, err)
 		}
 		return nil, internalErr(ctx, "create rule group", err)
 	}
@@ -2430,7 +2444,7 @@ func (s *Server) handleUpdateRule(ctx context.Context, in *updateRuleInput) (*ru
 		if errors.Is(err, store.ErrRuleNotFound) {
 			return nil, huma.Error404NotFound("rule not found")
 		}
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 	s.audit(ctx, "rule.update", r.ID, r.Name)
 	return &ruleOutput{Body: r}, nil
@@ -2538,7 +2552,7 @@ func (s *Server) handleCreateMonitor(ctx context.Context, in *createMonitorInput
 	u, _ := userFromContext(ctx)
 	m, err := s.Store.CreateMonitor(ctx, in.Body, u.Email)
 	if err != nil {
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 	return &monitorOutput{Body: m}, nil
 }
@@ -2573,7 +2587,7 @@ func (s *Server) handleUpdateMonitor(ctx context.Context, in *updateMonitorInput
 		if errors.Is(err, store.ErrMonitorNotFound) {
 			return nil, huma.Error404NotFound("monitor not found")
 		}
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 	return &monitorOutput{Body: m}, nil
 }
@@ -2667,7 +2681,7 @@ func (s *Server) handleCreateChannel(ctx context.Context, in *channelInput) (*ch
 	owner := &u.ID
 	c, err := s.Store.CreateChannel(ctx, in.Body, u.Email, owner)
 	if err != nil {
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 	s.audit(ctx, "channel.create", c.ID, c.Type+":"+c.Name)
 	return &channelOutput{Body: c}, nil
@@ -2713,7 +2727,7 @@ func (s *Server) handleUpdateChannel(ctx context.Context, in *updateChannelInput
 		if errors.Is(err, store.ErrChannelNotFound) {
 			return nil, huma.Error404NotFound("channel not found")
 		}
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 	s.audit(ctx, "channel.update", c.ID, c.Type+":"+c.Name)
 	return &channelOutput{Body: c}, nil
@@ -2909,7 +2923,7 @@ func (s *Server) handleChangePassword(ctx context.Context, in *changePasswordInp
 		return nil, huma.Error400BadRequest("current_password and new_password required")
 	}
 	if err := s.Store.CheckPassword(ctx, in.Body.NewPassword); err != nil {
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 	// audit 2026-05-12 F-3: pass the caller's session token so the store can
 	// revoke every other session while keeping this device logged in.
@@ -2941,7 +2955,7 @@ func (s *Server) handleChangeEmail(ctx context.Context, in *changeEmailInput) (*
 		if errors.Is(err, store.ErrUserExists) {
 			return nil, huma.Error409Conflict("email already in use")
 		}
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 	out := &emptyOutput{}
 	out.Body.OK = true
@@ -2965,7 +2979,7 @@ func (s *Server) handleSetLanguage(ctx context.Context, in *setLanguageInput) (*
 		}
 		// Invalid language value (or other validation error) — surface the
 		// store's message to the caller so the SPA can display it verbatim.
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 	s.audit(ctx, "user.language.set", u.ID.String(), in.Body.Language)
 	out := &emptyOutput{}
@@ -3001,7 +3015,7 @@ func (s *Server) handleTOTPVerify(ctx context.Context, in *totpVerifyInput) (*em
 		return nil, huma.Error401Unauthorized("no session")
 	}
 	if err := s.Store.VerifyTOTP(ctx, u.ID, in.Body.Code); err != nil {
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 	out := &emptyOutput{}
 	out.Body.OK = true
@@ -3270,7 +3284,7 @@ func (s *Server) handleConsumeReset(ctx context.Context, in *consumeResetInput) 
 		return nil, huma.Error400BadRequest("token and new_password required")
 	}
 	if err := s.Store.CheckPassword(ctx, in.Body.NewPassword); err != nil {
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 	// audit 2026-05-12 F-19: only accept password_reset or invite kinds.
 	// An empty expectedKind here would let an email_change / login_2fa /
@@ -3340,14 +3354,14 @@ func (s *Server) handleAdminCreateUser(ctx context.Context, in *adminCreateUserI
 
 	if in.Body.Password != "" {
 		if err := s.Store.CheckPassword(ctx, in.Body.Password); err != nil {
-			return nil, huma.Error400BadRequest(err.Error())
+			return nil, s.badRequest(ctx, err)
 		}
 		u, err := s.Store.CreateUser(ctx, in.Body.Email, in.Body.Password, role)
 		if err != nil {
 			if errors.Is(err, store.ErrUserExists) {
 				return nil, huma.Error409Conflict("user already exists")
 			}
-			return nil, huma.Error400BadRequest(err.Error())
+			return nil, s.badRequest(ctx, err)
 		}
 		out.Body.User = apitypes.AdminUserSummary{
 			ID: u.ID.String(), Email: u.Email, Role: u.Role, CreatedAt: u.CreatedAt,
@@ -3367,7 +3381,7 @@ func (s *Server) handleAdminCreateUser(ctx context.Context, in *adminCreateUserI
 		if errors.Is(err, store.ErrUserExists) {
 			return nil, huma.Error409Conflict("user already exists")
 		}
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 
 	actor, _ := userFromContext(ctx)
@@ -3632,7 +3646,7 @@ func (s *Server) handleAdminPutSmtp(ctx context.Context, in *smtpInput) (*smtpOu
 	u, _ := userFromContext(ctx)
 	saved, err := s.Store.UpsertSmtpSettings(ctx, in.Body, u.Email)
 	if err != nil {
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 	s.audit(ctx, "smtp.update", saved.Host, saved.FromAddress)
 	return &smtpOutput{Body: saved}, nil
@@ -3787,7 +3801,7 @@ func (s *Server) handleUpsertAgentConfig(ctx context.Context, in *upsertAgentCon
 	u, _ := userFromContext(ctx)
 	c, err := s.Store.UpsertAgentConfig(ctx, in.Body, u.Email)
 	if err != nil {
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 	s.audit(ctx, "agent_config.upsert", c.ID, c.Scope+":"+c.TargetID)
 	return &agentConfigEntryOutput{Body: c}, nil
@@ -3975,7 +3989,7 @@ type setPolicyInput struct {
 func (s *Server) handleSetPasswordPolicy(ctx context.Context, in *setPolicyInput) (*passwordPolicyOutput, error) {
 	actor, _ := userFromContext(ctx)
 	if err := s.Store.SetPasswordPolicy(ctx, in.Body, actor.Email); err != nil {
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 	p, _ := s.Store.GetPasswordPolicy(ctx)
 	s.audit(ctx, "policy.update", "password_policy", "")
@@ -4200,7 +4214,7 @@ func (s *Server) handleRenamePasskey(ctx context.Context, in *renamePasskeyInput
 		if errors.Is(err, store.ErrUserNotFound) {
 			return nil, huma.Error404NotFound("passkey not found")
 		}
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 	out := &emptyOutput{}
 	out.Body.OK = true
@@ -4291,7 +4305,7 @@ func (s *Server) handleSetSecurityPolicy(ctx context.Context, in *setSecurityPol
 	}
 
 	if err := s.Store.SetSecurityPolicy(ctx, in.Body, actor.Email); err != nil {
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, s.badRequest(ctx, err)
 	}
 	detail := fmt.Sprintf("force_mode=%s grace_days=%d max_session_hours=%d idle_timeout_minutes=%d",
 		in.Body.ForceMode, in.Body.GraceDays, in.Body.MaxSessionHours, in.Body.IdleTimeoutMinutes)

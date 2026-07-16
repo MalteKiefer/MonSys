@@ -26,7 +26,7 @@ const publicKeyPlaceholder = "PLACEHOLDER_MINISIGN_PUBLIC_KEY"
 //
 //  1. Linker-injected at build time via:
 //
-//     -ldflags "-X github.com/MalteKiefer/MonSys/internal/agent/updater.PublicKey=$(cat deploy/keys/mon-agent.pub | tail -n1)"
+//     -ldflags "-X github.com/MalteKiefer/MonSys/internal/agent/updater.PublicKey=$(tail -n1 deploy/release.pub)"
 //
 //     This is the default in release builds. The .pub file is committed to
 //     the repository; the matching secret lives in the GitHub Actions
@@ -44,9 +44,12 @@ const publicKeyPlaceholder = "PLACEHOLDER_MINISIGN_PUBLIC_KEY"
 // binary. The whole point of minisign here is that the trust anchor
 // predates the network fetch.
 //
-// The keypair was generated with:
+// The keypair is generated with:
 //
-//	minisign -G -p deploy/keys/mon-agent.pub -s mon-agent.key
+//	minisign -G -p deploy/release.pub -s mon-agent.key
+//
+// Commit deploy/release.pub; store the secret key + password in the GitHub
+// Actions secrets MONSYS_MINISIGN_SECRET_KEY / MONSYS_MINISIGN_PASSWORD.
 //
 //nolint:gochecknoglobals // Linker-injected at build time.
 var PublicKey = publicKeyPlaceholder
