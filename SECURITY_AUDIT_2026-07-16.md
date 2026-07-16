@@ -243,4 +243,16 @@ Injection: **none** — every dynamic query uses `$N` placeholders; `fmt.Sprintf
 - **L5** — per-site `err.Error()` review; recommend a `store.ValidationError` type to separate user-safe validation messages from wrapped DB errors, then route only the latter through `internalErr()`.
 - Optional backfill migration to re-encrypt/re-hash existing TOTP rows once `MON_DATA_ENCRYPTION_KEY` is set (dual-read makes it non-urgent).
 
+### Batch 4 — 2026-07-16 (same branch)
+
+| ID | Change |
+|----|--------|
+| C1 (release wiring) | Build step embeds `updater.PublicKey` from `deploy/release.pub` via ldflags when present (missing key ⇒ fail-closed no-auto-update, never unsigned). Minisign signing step is now **required** — the release fails instead of publishing unsigned artifacts when secrets are absent. `verify.go` docs reconciled to `deploy/release.pub`. |
+| L5 | 23 `Error400BadRequest(err.Error())` sites routed through a `badRequest` helper: validation messages still surface, but wrapped `pgconn.PgError` goes through `internalErr` so raw SQL/table/column detail never reaches the client. |
+
 **Every source-fixable audit finding is now remediated on the branch.**
+
+**Owner-only remainder (cannot be done from source):**
+- **C1 key material** — generate the minisign keypair, commit `deploy/release.pub`, set `MONSYS_MINISIGN_SECRET_KEY`/`MONSYS_MINISIGN_PASSWORD` GitHub secrets. The build/CI wiring is now in place and waits for the key.
+- **M5 reviewer policy** — add required reviewers to the `release` environment in repo Settings.
+- Optional backfill to re-encrypt/re-hash existing TOTP rows once `MON_DATA_ENCRYPTION_KEY` is set (dual-read makes it non-urgent; needs an app-side one-shot, not a SQL migration).
