@@ -10,8 +10,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	httppprof "net/http/pprof"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -97,7 +99,10 @@ func New(s *store.Store) *Server {
 	// humachi.New below registers the openapi/docs routes, so all
 	// middleware must be installed first — including the docs gate that
 	// closes over srv.
-	r.Use(middleware.RealIP)
+	// AUDIT-2026-07-16 M4: honour X-Forwarded-For / X-Real-IP only when the
+	// direct peer is a trusted proxy, so a directly-reachable client cannot
+	// spoof its IP to evade per-IP rate limits or poison audit logs.
+	r.Use(trustedRealIP)
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Recoverer)
 	// AUDIT-011: clamp request body sizes immediately after Recoverer so the
@@ -130,6 +135,61 @@ func New(s *store.Store) *Server {
 }
 
 // bodySizeLimiter wraps r.Body in an http.MaxBytesReader so handlers and
+// trustedProxyNets is the set of peer ranges whose forwarded headers we honour.
+// Default: loopback + RFC1918/ULA (the reverse proxy typically runs on the same
+// host or private network). MON_TRUSTED_PROXIES (comma-separated CIDRs) replaces
+// the default entirely for stricter deployments.
+var trustedProxyNets = func() []*net.IPNet {
+	spec := os.Getenv("MON_TRUSTED_PROXIES")
+	cidrs := []string{"127.0.0.0/8", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"}
+	if strings.TrimSpace(spec) != "" {
+		cidrs = strings.Split(spec, ",")
+	}
+	out := make([]*net.IPNet, 0, len(cidrs))
+	for _, c := range cidrs {
+		if _, n, err := net.ParseCIDR(strings.TrimSpace(c)); err == nil {
+			out = append(out, n)
+		}
+	}
+	return out
+}()
+
+func peerIsTrustedProxy(remoteAddr string) bool {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		host = remoteAddr
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	for _, n := range trustedProxyNets {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// trustedRealIP rewrites RemoteAddr from X-Real-IP / X-Forwarded-For ONLY when
+// the direct peer is a trusted proxy (AUDIT-2026-07-16 M4). When the peer is
+// untrusted (e.g. the server is exposed directly), forwarded headers are
+// ignored and the real socket peer is used for rate limiting and audit.
+func trustedRealIP(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if peerIsTrustedProxy(r.RemoteAddr) {
+			if xrip := r.Header.Get("X-Real-IP"); xrip != "" {
+				r.RemoteAddr = net.JoinHostPort(strings.TrimSpace(xrip), "0")
+			} else if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+				if first, _, ok := strings.Cut(xff, ","); ok || first != "" {
+					r.RemoteAddr = net.JoinHostPort(strings.TrimSpace(first), "0")
+				}
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // JSON decoders enforce a hard cap. /v1/ingest gets a higher cap to fit
 // large package inventories; everything else uses the conservative default.
 // AUDIT-011.

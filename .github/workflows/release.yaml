@@ -260,6 +260,10 @@ jobs:
   container:
     needs: [auto-tag, build]
     runs-on: ubuntu-latest
+    # AUDIT-2026-07-16 M5: gate artifact publishing behind a protected
+    # environment. Configure Settings > Environments > "release" with required
+    # reviewers so an unreviewed push to main cannot auto-ship to the fleet.
+    environment: release
     # AUDIT 4.3.1.8: scoped permissions for this job only — id-token: write
     # enables cosign keyless OIDC signing against the public sigstore Fulcio
     # instance; packages: write enables GHCR push.
@@ -366,6 +370,10 @@ jobs:
   publish:
     needs: [auto-tag, build, sbom-source, container]
     runs-on: ubuntu-latest
+    # AUDIT-2026-07-16 M5: same protected "release" environment gate as the
+    # container job — requires the configured reviewers to approve before
+    # binaries/release assets are published.
+    environment: release
     permissions:
       contents: write # creates releases and uploads release assets
     steps:

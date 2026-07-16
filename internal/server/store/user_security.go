@@ -33,6 +33,17 @@ func (s *Store) StartTOTPSetup(ctx context.Context, u User) (apitypes.TOTPSetupR
 	if err != nil {
 		return apitypes.TOTPSetupResponse{}, err
 	}
+	// AUDIT-2026-07-16 M2: encrypt the seed at rest (no-op when no key is set)
+	// and store backup codes as bcrypt hashes; the plaintext is only returned
+	// here, shown to the user once.
+	encSecret, err := EncryptAtRest(secret)
+	if err != nil {
+		return apitypes.TOTPSetupResponse{}, err
+	}
+	hashedBackups, err := auth2fa.HashBackupCodes(backups)
+	if err != nil {
+		return apitypes.TOTPSetupResponse{}, err
+	}
 	_, err = s.Pool.Exec(ctx, `
 		INSERT INTO user_totp (user_id, secret_b32, backup_codes)
 		VALUES ($1, $2, $3)
@@ -41,7 +52,7 @@ func (s *Store) StartTOTPSetup(ctx context.Context, u User) (apitypes.TOTPSetupR
 			backup_codes = EXCLUDED.backup_codes,
 			enabled_at   = NULL,
 			last_used_at = NULL`,
-		u.ID, secret, backups)
+		u.ID, encSecret, hashedBackups)
 	if err != nil {
 		return apitypes.TOTPSetupResponse{}, fmt.Errorf("user_totp upsert: %w", err)
 	}
@@ -70,6 +81,11 @@ func (s *Store) VerifyTOTP(ctx context.Context, userID uuid.UUID, code string) e
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrTOTPNotPending
 	}
+	if err != nil {
+		return err
+	}
+	// AUDIT-2026-07-16 M2: decrypt the seed (legacy plaintext passes through).
+	secret, err = DecryptAtRest(secret)
 	if err != nil {
 		return err
 	}

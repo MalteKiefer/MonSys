@@ -12,10 +12,12 @@ import (
 	"encoding/hex"
 	"fmt"
 	"image/png"
+	"strings"
 	"time"
 
 	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // totpPeriod is the TOTP step in seconds (RFC 6238 default).
@@ -101,16 +103,39 @@ func NewBackupCodes(count int) ([]string, error) {
 	return out, nil
 }
 
-// MatchAndConsume looks for code in the slice (with or without dashes); on
-// hit, it returns a new slice with that code removed. Caller persists the
-// remaining slice.
+// HashBackupCodes bcrypt-hashes each plaintext backup code for storage
+// (AUDIT-2026-07-16 M2). The canonical (dash-stripped, lower-cased) form is
+// hashed so validation is dash-insensitive. Callers store the hashes and show
+// the plaintext to the user exactly once.
+func HashBackupCodes(plain []string) ([]string, error) {
+	out := make([]string, 0, len(plain))
+	for _, c := range plain {
+		h, err := bcrypt.GenerateFromPassword([]byte(canonical(c)), bcrypt.DefaultCost)
+		if err != nil {
+			return nil, fmt.Errorf("hash backup code: %w", err)
+		}
+		out = append(out, string(h))
+	}
+	return out, nil
+}
+
+// MatchAndConsume looks for code among the stored entries; on hit it returns a
+// new slice with that entry removed (caller persists it). Each stored entry is
+// either a bcrypt hash (new format, prefix "$2") or a legacy plaintext code —
+// both are accepted so pre-M2 rows keep working without a migration.
 func MatchAndConsume(codes []string, code string) (remaining []string, ok bool) {
 	canon := canonical(code)
 	if canon == "" {
 		return codes, false
 	}
 	for i, c := range codes {
-		if canonical(c) == canon {
+		var hit bool
+		if strings.HasPrefix(c, "$2") {
+			hit = bcrypt.CompareHashAndPassword([]byte(c), []byte(canon)) == nil
+		} else {
+			hit = subtle.ConstantTimeCompare([]byte(canonical(c)), []byte(canon)) == 1
+		}
+		if hit {
 			remaining = make([]string, 0, len(codes)-1)
 			remaining = append(remaining, codes[:i]...)
 			remaining = append(remaining, codes[i+1:]...)

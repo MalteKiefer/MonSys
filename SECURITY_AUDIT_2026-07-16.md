@@ -224,3 +224,16 @@ Injection: **none** — every dynamic query uses `$N` placeholders; `fmt.Sprintf
 - **M4** (trusted-proxy CIDR — need your proxy range), **M5** (release approval gate — CI policy), **M6** (deploy-by-digest — ops), **M8** (TLS 1.3 / refuse-plaintext — affects non-TLS deploys).
 - **L5** (broad `err.Error()` on 400 paths) — deferred: most sites are legitimate validation messages users depend on; a blanket rewrite risks degrading them. Needs per-site review.
 - **C1 key wiring** — still needs the real minisign keypair (see above).
+
+### Batch 3 — 2026-07-16 (same branch)
+
+| ID | Change |
+|----|--------|
+| M2 | TOTP seed encrypted at rest (AES-256-GCM, `internal/server/store/secrets.go`), opt-in via `MON_DATA_ENCRYPTION_KEY` (base64 32 bytes) with **dual-read** so legacy plaintext rows keep working — no forced migration/lockout. Backup codes now **bcrypt-hashed** (`auth2fa.HashBackupCodes`); `MatchAndConsume` accepts hash-or-legacy-plaintext. Startup fails fast on a malformed key. Unit tests added. |
+| M8 | TLS 1.2 floor + AEAD-only ECDHE cipher suites; server refuses plain-HTTP startup unless `MON_ALLOW_INSECURE_HTTP=1`. |
+| M4 | `middleware.RealIP` → `trustedRealIP`: forwarded headers honoured only from loopback/RFC1918 peers (default) or `MON_TRUSTED_PROXIES` CIDRs. |
+| M5 | `container` + `publish` release jobs gated behind a protected `release` environment (add reviewers in repo Settings to finish the gate). |
+
+**New env vars:** `MON_DATA_ENCRYPTION_KEY` (opt-in at-rest encryption), `MON_ALLOW_INSECURE_HTTP=1` (behind-proxy plain HTTP), `MON_TRUSTED_PROXIES` (trusted-proxy CIDRs).
+
+**Genuinely still owner-only:** C1 key wiring · M5 reviewer policy (GitHub settings) · M6 deploy-by-digest · L5 per-site error review · optional backfill migration to re-encrypt/re-hash existing rows once the key is set.
