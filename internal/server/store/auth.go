@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -374,10 +373,10 @@ func (s *Store) AuthenticateAgent(ctx context.Context, agentKey string) (hostID 
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("agent auth: %w", err)
 	}
-	// Constant-time compare against a copy of the key hash so timing
-	// signal in the SELECT path doesn't leak bytes (hash is only matched
-	// inside the DB; this is paranoia against future code paths).
-	_ = subtle.ConstantTimeCompare(keyHash, keyHash)
+	// The key hash is matched inside the DB via `WHERE key_hash = $1` on the
+	// SHA-256 of a 256-bit random key, so there is no attacker-timeable
+	// comparison in Go. (Removed a no-op subtle.ConstantTimeCompare(x, x) that
+	// compared a value to itself and provided no protection — audit I1.)
 	return hostID, nil
 }
 

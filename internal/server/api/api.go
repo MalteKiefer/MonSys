@@ -466,7 +466,10 @@ func (s *Server) registerHealthRoutes() {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()
 		if err := s.Store.Pool.Ping(ctx); err != nil {
-			http.Error(w, "not ready: "+err.Error(), http.StatusServiceUnavailable)
+			// audit 2026-07-16 L3: /readyz is unauthenticated — never echo the
+			// pgx/DSN error detail to the client; log it server-side only.
+			slog.Warn("readyz: database ping failed", "err", err)
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
 			return
 		}
 		w.WriteHeader(http.StatusOK)
@@ -2751,11 +2754,12 @@ func (s *Server) handleLogin(ctx context.Context, in *loginInput) (*loginOutput,
 	u, err := s.Store.AuthenticateUser(ctx, in.Body.Email, in.Body.Password)
 	if err != nil {
 		// Avoid leaking whether the email exists.
-		if errors.Is(err, store.ErrUserNotFound) || errors.Is(err, store.ErrPasswordMismatch) {
+		// audit 2026-07-16 L1: a disabled account must be indistinguishable
+		// from an unknown one, so it also collapses to the generic 401 rather
+		// than a distinct "user is disabled" 403 (account-enumeration oracle).
+		if errors.Is(err, store.ErrUserNotFound) || errors.Is(err, store.ErrPasswordMismatch) ||
+			errors.Is(err, store.ErrUserDisabled) {
 			return nil, huma.Error401Unauthorized("invalid credentials")
-		}
-		if errors.Is(err, store.ErrUserDisabled) {
-			return nil, huma.Error403Forbidden("user is disabled")
 		}
 		if errors.Is(err, store.ErrUserLockedOut) {
 			return nil, huma.Error429TooManyRequests("account temporarily locked; retry later")
@@ -3133,9 +3137,13 @@ func (s *Server) requireMethodCompliance(c huma.Context, next func(huma.Context)
 			s.applyComplianceDecision(c, next, entry.complies, entry.grace)
 			return
 		}
-		slog.Warn("policy compliance lookup failed; no cached decision; failing open",
+		// audit 2026-07-16 M3: fail CLOSED when we have no cached decision.
+		// A security gate that lets requests through on a transient DB error
+		// is defeatable by inducing the error; deny and let the client retry.
+		slog.Warn("policy compliance lookup failed; no cached decision; failing closed",
 			"user_id", u.ID, "err", err)
-		next(c)
+		_ = huma.WriteErr(s.API, c, http.StatusServiceUnavailable,
+			"policy check temporarily unavailable; retry")
 		return
 	}
 
@@ -4074,10 +4082,10 @@ func (s *Server) handleWebAuthnLoginFinish(ctx context.Context, in *webAuthnLogi
 		if errors.Is(err, store.ErrPasskeyNotConfigured) {
 			return nil, huma.Error503ServiceUnavailable("passkey support not configured")
 		}
-		if errors.Is(err, store.ErrUserDisabled) {
-			return nil, huma.Error403Forbidden("user is disabled")
-		}
-		if errors.Is(err, store.ErrUserNotFound) || errors.Is(err, store.ErrActionTokenInvalid) {
+		// audit 2026-07-16 L1: collapse the disabled case into the generic
+		// "passkey not recognised" 401 (no account-enumeration oracle).
+		if errors.Is(err, store.ErrUserDisabled) ||
+			errors.Is(err, store.ErrUserNotFound) || errors.Is(err, store.ErrActionTokenInvalid) {
 			return nil, huma.Error401Unauthorized("passkey not recognised")
 		}
 		return nil, internalErr(ctx, "passkey login finish", err)

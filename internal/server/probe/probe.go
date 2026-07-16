@@ -77,50 +77,60 @@ func finish(start time.Time, r Result) Result {
 
 // --- SSRF guard ------------------------------------------------------------
 
-// privateCIDRs lists ranges that are typically off-limits for probes when
-// the operator opts into the deny mode: RFC1918, loopback, link-local,
-// IPv6 ULA, and IPv6 link-local. The cloud metadata endpoint
-// (169.254.169.254) is covered by 169.254.0.0/16.
-var privateCIDRs = func() []*net.IPNet {
-	cidrs := []string{
-		"127.0.0.0/8",
-		"10.0.0.0/8",
-		"172.16.0.0/12",
-		"192.168.0.0/16",
-		"169.254.0.0/16",
-		"::1/128",
-		"fc00::/7",
-		"fe80::/10",
-	}
+func parseCIDRs(cidrs ...string) []*net.IPNet {
 	out := make([]*net.IPNet, 0, len(cidrs))
 	for _, c := range cidrs {
-		_, n, err := net.ParseCIDR(c)
-		if err == nil {
+		if _, n, err := net.ParseCIDR(c); err == nil {
 			out = append(out, n)
 		}
 	}
 	return out
-}()
+}
+
+// hardDenyCIDRs are NEVER valid probe targets and are rejected unconditionally,
+// even when the operator has enabled internal probing. This covers loopback and
+// link-local — most importantly the cloud instance metadata endpoint
+// (169.254.169.254, inside 169.254.0.0/16), whose exposure would leak IAM
+// credentials via the probe result read-back (AUDIT-2026-07-16 H1).
+var hardDenyCIDRs = parseCIDRs(
+	"127.0.0.0/8",
+	"169.254.0.0/16",
+	"::1/128",
+	"fe80::/10",
+)
+
+// rfc1918CIDRs are private/ULA ranges. They are denied by default (fail-closed)
+// and only permitted when the operator sets MON_PROBE_ALLOW_INTERNAL=1, which is
+// needed to probe internal services (DBs on RFC1918 networks, etc.).
+var rfc1918CIDRs = parseCIDRs(
+	"10.0.0.0/8",
+	"172.16.0.0/12",
+	"192.168.0.0/16",
+	"fc00::/7",
+)
+
+func containsAny(nets []*net.IPNet, ip net.IP) bool {
+	for _, n := range nets {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
 
 // denyDestination resolves host (which may be a bare hostname or contain a
-// port) and rejects probes whose targets fall inside privateCIDRs.
+// port) and rejects SSRF-prone probe targets.
 //
-// Default policy: allow internal targets. Operators routinely run probes
-// against internal services (DBs on RFC1918 networks, etc.), so the deny
-// list is opt-in. Set MON_PROBE_ALLOW_INTERNAL=0 or MON_PROBE_DENY_INTERNAL=1
-// to enable. All resolved IPs are checked, which partially mitigates DNS
-// rebinding (a hostname returning multiple A records mixing public and
-// private addresses is rejected if any is private).
+// Policy (fail-closed): loopback and link-local (incl. cloud metadata) are
+// ALWAYS rejected. RFC1918/ULA ranges are rejected by default and permitted
+// only when MON_PROBE_ALLOW_INTERNAL=1. All resolved IPs are checked, which
+// mitigates DNS rebinding (a hostname returning multiple A records mixing
+// public and private addresses is rejected if any is denied).
 func denyDestination(ctx context.Context, host string) error {
 	if host == "" {
 		return nil
 	}
-	allow := os.Getenv("MON_PROBE_ALLOW_INTERNAL")
-	deny := os.Getenv("MON_PROBE_DENY_INTERNAL")
-	// Default = allow. Only enforce when the operator opts in.
-	if allow != "0" && deny != "1" {
-		return nil
-	}
+	allowInternal := os.Getenv("MON_PROBE_ALLOW_INTERNAL") == "1"
 
 	// Strip optional :port suffix. net.SplitHostPort fails on bare hosts,
 	// so try it but fall back to the raw string.
@@ -145,10 +155,11 @@ func denyDestination(ctx context.Context, host string) error {
 		}
 	}
 	for _, ip := range ips {
-		for _, n := range privateCIDRs {
-			if n.Contains(ip) {
-				return errors.New("destination is in a denied range")
-			}
+		if containsAny(hardDenyCIDRs, ip) {
+			return errors.New("destination is in a denied range")
+		}
+		if !allowInternal && containsAny(rfc1918CIDRs, ip) {
+			return errors.New("destination is in a denied range (set MON_PROBE_ALLOW_INTERNAL=1 to probe internal networks)")
 		}
 	}
 	return nil

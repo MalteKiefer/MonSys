@@ -31,7 +31,7 @@ jobs:
           persist-credentials: false # AUDIT 4.3.1.18
       - uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
         with:
-          go-version: '1.26.3'
+          go-version: '1.26.5'
           cache: true
 
       - name: vet
@@ -62,7 +62,7 @@ jobs:
           persist-credentials: false # AUDIT 4.3.1.18
       - uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
         with:
-          go-version: '1.26.3'
+          go-version: '1.26.5'
       # AUDIT 4.3.1.13: pin govulncheck to a specific tag rather than @latest
       # so a malicious or accidental upstream tag move can't silently land in
       # CI. Annual review: bump to current latest on each scheduled audit pass
@@ -85,7 +85,7 @@ jobs:
           persist-credentials: false # AUDIT 4.3.1.18
       - uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
         with:
-          go-version: '1.26.3'
+          go-version: '1.26.5'
           cache: false # golangci-lint-action manages its own caches
       - uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
         with:
@@ -99,7 +99,7 @@ jobs:
           persist-credentials: false # AUDIT 4.3.1.18
       - uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
         with:
-          go-version: '1.26.3'
+          go-version: '1.26.5'
       # AUDIT 4.3.1.12: severity floor lowered from "high" to "medium" so we
       # don't silently miss medium-severity findings. Any newly-surfaced
       # medium false positive must be added to -exclude with an inline
@@ -242,7 +242,7 @@ jobs:
           persist-credentials: false # AUDIT 4.3.1.18
       - uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
         with:
-          go-version: '1.26.3'
+          go-version: '1.26.5'
           cache: true
       - name: test-migrations
         run: make test-migrations
@@ -263,7 +263,7 @@ jobs:
           persist-credentials: false # AUDIT 4.3.1.18
       - uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
         with:
-          go-version: '1.26.3'
+          go-version: '1.26.5'
           cache: true
       - name: regenerate spec
         run: |
