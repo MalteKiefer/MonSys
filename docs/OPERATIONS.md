@@ -20,8 +20,9 @@ compose). The stack is two services under `deploy/docker-compose.yaml`:
 
 Overlays layered on top of the base compose file:
 
-- `deploy/docker-compose.prod.yaml` — pulls the signed image from GHCR
-  (`ghcr.io/maltekiefer/monsys-server:${MONSYS_TAG}`) instead of building.
+- `deploy/docker-compose.prod.yaml` — pulls the signed image from GHCR by
+  digest (`ghcr.io/maltekiefer/monsys-server@${MONSYS_DIGEST}`) instead of
+  building.
 - `deploy/docker-compose.tls.yaml` — turns on TLS on the `mon-server` HTTP
   listener directly (only needed if Caddy is bypassed).
 
@@ -347,12 +348,12 @@ make compose-up                  # rebuilds mon-server from the reverted main
 If you're on the signed-image overlay (prod), pin the previous tag:
 
 ```sh
-MONSYS_TAG=v0.4.1 \
+MONSYS_DIGEST=sha256:... \
   docker compose \
     -f deploy/docker-compose.yaml \
     -f deploy/docker-compose.prod.yaml \
     pull mon-server
-MONSYS_TAG=v0.4.1 \
+MONSYS_DIGEST=sha256:... \
   docker compose \
     -f deploy/docker-compose.yaml \
     -f deploy/docker-compose.prod.yaml \
