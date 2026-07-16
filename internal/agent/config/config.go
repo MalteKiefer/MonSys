@@ -16,6 +16,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// defaultRspamdStatURL is the Rspamd statistics endpoint assumed when the YAML
+// omits mail.rspamd_stat_url. Rspamd listens on 11334 by default.
+const defaultRspamdStatURL = "http://127.0.0.1:11334/stat"
+
 // Default knobs applied when the YAML omits the corresponding field. These are
 // intentionally conservative — small enough that an idle host stays cheap, but
 // large enough that a busy host can buffer through a multi-hour outage.
@@ -84,6 +88,8 @@ type Config struct {
 	Redact RedactConfig `yaml:"redact"`
 	// AutoUpdate opts the agent in or out of the timer-driven self-updater.
 	AutoUpdate AutoUpdateConfig `yaml:"auto_update"`
+	// Mail configures the mail-stack collector (Rspamd statistics endpoint).
+	Mail MailConfig `yaml:"mail"`
 }
 
 // AutoUpdateConfig opts an agent in or out of the timer-driven self-updater.
@@ -101,6 +107,34 @@ func (c Config) AutoUpdateEnabled() bool {
 		return true
 	}
 	return *c.AutoUpdate.Enabled
+}
+
+// MailConfig enables and configures the mail-stack collector. Default
+// Enabled=true so hosts with a mail stack are monitored without extra
+// operator steps; operators can opt out by setting enabled: false.
+type MailConfig struct {
+	// Enabled is a tri-state pointer: nil means "default on", explicit
+	// false opts out, explicit true is a no-op affirmation.
+	Enabled *bool `yaml:"enabled"`
+	// RspamdStatURL is the Rspamd HTTP statistics endpoint. Defaults to
+	// defaultRspamdStatURL when unset.
+	RspamdStatURL string `yaml:"rspamd_stat_url"`
+}
+
+// MailEnabled returns true unless the operator explicitly set false.
+func (c Config) MailEnabled() bool {
+	if c.Mail.Enabled == nil {
+		return true
+	}
+	return *c.Mail.Enabled
+}
+
+// RspamdStatURL returns the configured Rspamd statistics URL or the default.
+func (c Config) RspamdStatURL() string {
+	if c.Mail.RspamdStatURL == "" {
+		return defaultRspamdStatURL
+	}
+	return c.Mail.RspamdStatURL
 }
 
 // RedactConfig controls agent-side PII filtering applied before payloads ever
