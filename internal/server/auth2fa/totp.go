@@ -6,14 +6,20 @@ package auth2fa
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base32"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"image/png"
+	"time"
 
+	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
 )
+
+// totpPeriod is the TOTP step in seconds (RFC 6238 default).
+const totpPeriod = 30
 
 const (
 	BackupCodeCount = 10
@@ -56,6 +62,27 @@ func Generate(accountName string) (secretB32, otpURL, qrPNGBase64 string, backup
 // pquerna/otp.Validate handles the skew.
 func Validate(secretB32, code string) bool {
 	return totp.Validate(code, secretB32)
+}
+
+// ValidateAndStep is like Validate but, on success, also returns the RFC 6238
+// time-step counter the code matched. Callers persist the highest consumed
+// step and reject any code whose step is <= it, enforcing single-use OTP
+// (ASVS V2.8.4) so a code observed within its ±1-step skew window cannot be
+// replayed. It scans the same [-1, 0, +1] skew window totp.Validate uses.
+func ValidateAndStep(secretB32, code string) (int64, bool) {
+	opts := totp.ValidateOpts{Period: totpPeriod, Skew: 0, Digits: otp.DigitsSix, Algorithm: otp.AlgorithmSHA1}
+	base := time.Now().Unix() / totpPeriod
+	for _, skew := range []int64{1, 0, -1} {
+		step := base + skew
+		candidate, err := totp.GenerateCodeCustom(secretB32, time.Unix(step*totpPeriod, 0), opts)
+		if err != nil {
+			continue
+		}
+		if subtle.ConstantTimeCompare([]byte(candidate), []byte(code)) == 1 {
+			return step, true
+		}
+	}
+	return 0, false
 }
 
 // NewBackupCodes returns count cryptographically random codes in the form

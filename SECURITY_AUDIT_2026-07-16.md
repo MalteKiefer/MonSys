@@ -207,3 +207,20 @@ Injection: **none** — every dynamic query uses `$N` placeholders; `fmt.Sprintf
 - **M9** reconcile PRIVACY.md retention vs migrations (which direction is authoritative?).
 - **L2, L4, L5, L6** + code-quality (dead `Sender` interface, `var _` lines, error-string matching, file splits).
 - Frontend `npm audit`: 3 high in `ws` via puppeteer/selenium — **dev/e2e tooling only, not shipped**; left as-is to avoid breaking the e2e stack.
+
+### Batch 2 — 2026-07-16 (same branch)
+
+| ID | Change |
+|----|--------|
+| M7 | TOTP replay protection: new `last_used_step` column (migration 0034) + `auth2fa.ValidateAndStep`; `VerifyTOTP` rejects a step ≤ the last consumed one (ASVS V2.8.4). No separate 2FA lockout added — the challenge token is already single-use (`ConsumeActionToken` sets `used_at`), so a wrong code forces a fresh password login, which is lockout-protected. |
+| M9 | Migration 0033 lowers `login_events`/`alert_history`/`audit_log` retention to 90 days, matching PRIVACY.md (per your decision). No doc change needed — it already stated 90 d. |
+| L2 | `release.yaml` root permissions → `contents: read`; `contents: write` scoped to the `auto-tag` and `publish` jobs only. |
+| L4 | `main.go` refuses to start with the localhost WebAuthn RP fallback unless `MON_ENV=development`. |
+| I2/cleanup | Removed dead `var _ = sql.ErrNoRows` / `pgx.ErrNoRows` (+ orphaned `database/sql`, `pgx` imports). |
+
+**Deferred pending your go-ahead (real decision, not code-only):**
+
+- **M2** — encrypting TOTP seeds at rest requires introducing a **new mandatory secret** (`MON_DATA_ENCRYPTION_KEY`) plus a data migration of existing plaintext rows; a mis-set key locks users out of 2FA. Needs a rollout decision before I implement. Backup-code hashing can be done independently — say the word.
+- **M4** (trusted-proxy CIDR — need your proxy range), **M5** (release approval gate — CI policy), **M6** (deploy-by-digest — ops), **M8** (TLS 1.3 / refuse-plaintext — affects non-TLS deploys).
+- **L5** (broad `err.Error()` on 400 paths) — deferred: most sites are legitimate validation messages users depend on; a blanket rewrite risks degrading them. Needs per-site review.
+- **C1 key wiring** — still needs the real minisign keypair (see above).

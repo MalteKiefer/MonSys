@@ -59,13 +59,14 @@ func (s *Store) StartTOTPSetup(ctx context.Context, u User) (apitypes.TOTPSetupR
 // at any time (consumed on use).
 func (s *Store) VerifyTOTP(ctx context.Context, userID uuid.UUID, code string) error {
 	var (
-		secret  string
-		enabled *time.Time
-		backups []string
+		secret   string
+		enabled  *time.Time
+		backups  []string
+		lastStep int64
 	)
 	err := s.Pool.QueryRow(ctx,
-		`SELECT secret_b32, enabled_at, backup_codes FROM user_totp WHERE user_id = $1`, userID,
-	).Scan(&secret, &enabled, &backups)
+		`SELECT secret_b32, enabled_at, backup_codes, last_used_step FROM user_totp WHERE user_id = $1`, userID,
+	).Scan(&secret, &enabled, &backups, &lastStep)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrTOTPNotPending
 	}
@@ -73,12 +74,18 @@ func (s *Store) VerifyTOTP(ctx context.Context, userID uuid.UUID, code string) e
 		return err
 	}
 
-	if auth2fa.Validate(secret, strings.TrimSpace(code)) {
+	if step, ok := auth2fa.ValidateAndStep(secret, strings.TrimSpace(code)); ok {
+		// AUDIT-2026-07-16 M7 / ASVS V2.8.4: reject a step already consumed so
+		// a code observed within its skew window cannot be replayed.
+		if step <= lastStep {
+			return ErrTOTPCodeInvalid
+		}
 		_, err = s.Pool.Exec(ctx, `
 			UPDATE user_totp SET
-				enabled_at   = COALESCE(enabled_at, now()),
-				last_used_at = now()
-			WHERE user_id = $1`, userID)
+				enabled_at     = COALESCE(enabled_at, now()),
+				last_used_at   = now(),
+				last_used_step = $2
+			WHERE user_id = $1`, userID, step)
 		return err
 	}
 

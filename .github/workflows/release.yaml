@@ -35,8 +35,11 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
+# AUDIT-2026-07-16 L2: least privilege. The default token is read-only; only
+# the jobs that push a tag (auto-tag) or upload release assets (publish) get
+# contents: write, and the container job scopes its own extra permissions.
 permissions:
-  contents: write
+  contents: read
 
 # NOTE: Go patch pin (4.3.1.19) — keep go-version in lockstep with go.mod's
 # `go <X.Y.Z>` line. Bump procedure: update go.mod, then sweep this file for
@@ -58,6 +61,8 @@ jobs:
   # created the tag. No `repository_dispatch` or PAT plumbing required.
   auto-tag:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # pushes the bumped version tag
     outputs:
       version: ${{ steps.tag.outputs.version }}
       channel: ${{ steps.tag.outputs.channel }}
@@ -361,6 +366,8 @@ jobs:
   publish:
     needs: [auto-tag, build, sbom-source, container]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # creates releases and uploads release assets
     steps:
       # NOTE: this checkout intentionally does NOT set persist-credentials:
       # false because the `release (latest)` step below uses `gh release

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 
 	"github.com/MalteKiefer/MonSys/internal/shared/apitypes"
 )
@@ -710,5 +709,3 @@ func (s *Store) SearchPackages(ctx context.Context, q, manager string, hostID *u
 	}
 	return out, total, rows.Err()
 }
-
-var _ = pgx.ErrNoRows

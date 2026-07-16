@@ -450,13 +450,23 @@ func main() {
 	// WebAuthn relying-party service. Configured from env so operators can
 	// run multiple deployments without rebuilding. RPID must be the bare
 	// hostname; RPOrigin the full origin including scheme (and port for dev).
+	// AUDIT-2026-07-16 L4: the localhost fallback is only safe in development.
+	// In any other MON_ENV, refuse to start rather than silently register
+	// passkeys against an insecure localhost origin.
+	devMode := envOr("MON_ENV", "production") == "development"
 	rpID := os.Getenv("MON_RP_ID")
-	if rpID == "" {
-		rpID = "localhost"
-	}
 	rpOrigin := os.Getenv("MON_RP_ORIGIN")
-	if rpOrigin == "" {
-		rpOrigin = "http://localhost:5173"
+	if rpID == "" || rpOrigin == "" {
+		if !devMode {
+			slog.Error("webauthn: MON_RP_ID and MON_RP_ORIGIN must be set when MON_ENV != development")
+			os.Exit(1)
+		}
+		if rpID == "" {
+			rpID = "localhost"
+		}
+		if rpOrigin == "" {
+			rpOrigin = "http://localhost:5173"
+		}
 	}
 	wa, werr := webauthn.New(webauthn.Config{
 		RPID:    rpID,
