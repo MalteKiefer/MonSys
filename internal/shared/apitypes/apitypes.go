@@ -40,6 +40,7 @@ type IngestRequest struct {
 	Workloads  []WorkloadSample `json:"workloads,omitempty"`
 	Packages   *PackageReport   `json:"packages,omitempty"   doc:"Optional package state"`
 	Security   *SecurityReport  `json:"security,omitempty"   doc:"Firewall, fail2ban, crowdsec snapshot"`
+	Mail       *MailReport      `json:"mail,omitempty"       doc:"Mail stack status (postfix/dovecot/rspamd)"`
 	Logins     []LoginEvent     `json:"logins,omitempty"     doc:"Incremental login/auth events since previous tick"`
 }
 
@@ -129,6 +130,45 @@ type CrowdsecDecision struct {
 	Type       string    `json:"type,omitempty"     maxLength:"64"  doc:"ban, captcha, …"`
 	Reason     string    `json:"reason,omitempty"   maxLength:"500"`
 	Until      time.Time `json:"until,omitempty"`
+}
+
+type MailReport struct {
+	Time     time.Time       `json:"time"`
+	Services []MailService   `json:"services,omitempty"`
+	Queue    *PostfixQueue   `json:"queue,omitempty"`
+	Rspamd   *RspamdStat     `json:"rspamd,omitempty"`
+	Ports    []MailPortCheck `json:"ports,omitempty"`
+}
+
+type MailService struct {
+	Name     string `json:"name"      maxLength:"64"`
+	Active   bool   `json:"active"`
+	SubState string `json:"sub_state,omitempty" maxLength:"32"`
+}
+
+type PostfixQueue struct {
+	Active   int `json:"active"`
+	Deferred int `json:"deferred"`
+	Hold     int `json:"hold"`
+	Incoming int `json:"incoming"`
+	Total    int `json:"total"`
+}
+
+type RspamdStat struct {
+	Reachable  bool  `json:"reachable"`
+	Scanned    int64 `json:"scanned"`
+	Rejected   int64 `json:"rejected"`
+	Greylisted int64 `json:"greylisted"`
+	Learned    int64 `json:"learned"`
+}
+
+type MailPortCheck struct {
+	Port        int        `json:"port"`
+	Proto       string     `json:"proto" maxLength:"16"`
+	Open        bool       `json:"open"`
+	TLS         bool       `json:"tls"`
+	CertNotAfter *time.Time `json:"cert_not_after,omitempty"`
+	CertTrusted bool       `json:"cert_trusted"`
 }
 
 type DiskInfo struct {
