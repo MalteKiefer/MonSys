@@ -204,8 +204,11 @@ jobs:
           MINISIGN_PASSWORD: ${{ secrets.MONSYS_MINISIGN_PASSWORD }}
         run: |
           set -euo pipefail
-          if [ -z "${MINISIGN_SECRET_KEY:-}" ] || [ -z "${MINISIGN_PASSWORD:-}" ]; then
-            echo "::error title=minisign secrets missing::set MONSYS_MINISIGN_SECRET_KEY and MONSYS_MINISIGN_PASSWORD; refusing to publish unsigned release artifacts."
+          # AUDIT-2026-07-16 C1: signing is required. The secret key is an
+          # UNENCRYPTED minisign key (matching deploy/release.pub); minisign -S
+          # signs it non-interactively, so no password is needed in CI.
+          if [ -z "${MINISIGN_SECRET_KEY:-}" ]; then
+            echo "::error title=minisign secret missing::set the MONSYS_MINISIGN_SECRET_KEY secret (unencrypted key matching deploy/release.pub); refusing to publish unsigned release artifacts."
             exit 1
           fi
           # AUDIT 4.3.1.14: pin minisign by SHA256 instead of apt-get. The
