@@ -250,8 +250,8 @@ func buildRFC5322(from, to, subject, body string) string {
 type Slack struct{}
 
 func (Slack) Send(ctx context.Context, ch Channel, m Message) error {
-	url := stringField(ch.Config, "webhook_url")
-	if url == "" {
+	endpoint := stringField(ch.Config, "webhook_url")
+	if endpoint == "" {
 		return errors.New("slack config requires webhook_url")
 	}
 	color := severityColor(m.Severity)
@@ -261,7 +261,7 @@ func (Slack) Send(ctx context.Context, ch Channel, m Message) error {
 			{"color": color, "text": m.Body},
 		},
 	}
-	return postJSON(ctx, url, payload)
+	return postJSON(ctx, endpoint, payload)
 }
 
 func severityColor(s string) string {
@@ -280,8 +280,8 @@ func severityColor(s string) string {
 type Mattermost struct{}
 
 func (Mattermost) Send(ctx context.Context, ch Channel, m Message) error {
-	url := stringField(ch.Config, "webhook_url")
-	if url == "" {
+	endpoint := stringField(ch.Config, "webhook_url")
+	if endpoint == "" {
 		return errors.New("mattermost config requires webhook_url")
 	}
 	username := stringField(ch.Config, "username")
@@ -292,7 +292,7 @@ func (Mattermost) Send(ctx context.Context, ch Channel, m Message) error {
 		"username": username,
 		"text":     fmt.Sprintf("**%s**\n%s", m.Subject, m.Body),
 	}
-	return postJSON(ctx, url, payload)
+	return postJSON(ctx, endpoint, payload)
 }
 
 // --- Discord (incoming webhook) -------------------------------------------
@@ -303,8 +303,8 @@ func (Mattermost) Send(ctx context.Context, ch Channel, m Message) error {
 type Discord struct{}
 
 func (Discord) Send(ctx context.Context, ch Channel, m Message) error {
-	url := stringField(ch.Config, "webhook_url")
-	if url == "" {
+	endpoint := stringField(ch.Config, "webhook_url")
+	if endpoint == "" {
 		return errors.New("discord config requires webhook_url")
 	}
 	username := stringField(ch.Config, "username")
@@ -326,7 +326,7 @@ func (Discord) Send(ctx context.Context, ch Channel, m Message) error {
 			},
 		},
 	}
-	return postJSON(ctx, url, payload)
+	return postJSON(ctx, endpoint, payload)
 }
 
 // discordColor returns the integer color value Discord expects (0xRRGGBB).
@@ -355,13 +355,13 @@ func (Ntfy) Send(ctx context.Context, ch Channel, m Message) error {
 	if topic == "" {
 		return errors.New("ntfy config requires topic")
 	}
-	url := strings.TrimRight(server, "/") + "/" + topic
-	if err := validateWebhookScheme(url); err != nil {
+	endpoint := strings.TrimRight(server, "/") + "/" + topic
+	if err := validateWebhookScheme(endpoint); err != nil {
 		return err
 	}
 	priority := ntfyPriority(m.Severity)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(m.Body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(m.Body))
 	if err != nil {
 		return fmt.Errorf("ntfy: build request: %w", err)
 	}

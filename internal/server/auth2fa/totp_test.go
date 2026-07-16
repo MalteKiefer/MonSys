@@ -77,7 +77,7 @@ func TestValidateAndStepRejectsReplay(t *testing.T) {
 	if !ok || step2 != step {
 		t.Fatalf("expected stable step, got ok=%v step=%d (first %d)", ok, step2, step)
 	}
-	if !(step2 <= step) {
+	if step2 > step {
 		t.Fatal("replay guard precondition failed: step2 should equal step")
 	}
 }
