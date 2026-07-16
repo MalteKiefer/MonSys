@@ -26,6 +26,7 @@ import (
 	"github.com/MalteKiefer/MonSys/internal/server/liveness"
 	"github.com/MalteKiefer/MonSys/internal/server/notify"
 	"github.com/MalteKiefer/MonSys/internal/server/probe"
+	"github.com/MalteKiefer/MonSys/internal/server/store"
 )
 
 // OnAlertFired is an optional metric-emission hook called from fire()
@@ -39,6 +40,14 @@ var OnAlertFired func(conditionType, severity string)
 // start; Run(ctx) is the single goroutine that drives everything.
 type Engine struct {
 	Pool *pgxpool.Pool
+
+	// Store enriches alert notifications with host context (HTML email). May
+	// be nil (tests / minimal wiring), in which case alerts still deliver
+	// without the host block.
+	Store *store.Store
+	// PublicURL, when set (MON_PUBLIC_URL), produces a deep link to the host
+	// page in the notification.
+	PublicURL string
 
 	LivenessOut <-chan liveness.Transition
 	MonitorOut  <-chan probe.ResultEvent
@@ -531,6 +540,7 @@ func (e *Engine) fire(ctx context.Context, r ruleRow, subject, body, dedup strin
 	}
 
 	m := notify.Message{Subject: subject, Body: body, Severity: severity}
+	e.enrichHost(ctx, r.Name, dedup, &m)
 
 	delivered := []string{}
 	deliverErrs := map[string]string{}
@@ -693,6 +703,48 @@ func (e *Engine) resolve(ctx context.Context, dedup, body string) {
 // "<kind>:<uuid>" and returns them as driver-friendly any values. nil means
 // "store NULL"; this lets the upsert skip host_id for monitor-scoped rules
 // and vice versa without a separate code path.
+// enrichHost adds host context + deep link to an outgoing alert message so the
+// HTML email can name the host and show its facts. Best-effort: any failure
+// leaves the message plain and delivery proceeds.
+func (e *Engine) enrichHost(ctx context.Context, ruleName, dedup string, m *notify.Message) {
+	m.RuleName = ruleName
+	m.FiredAt = time.Now()
+	if e.Store == nil {
+		return
+	}
+	hostArg, _ := splitDedupKey(dedup)
+	hid, ok := hostArg.(uuid.UUID)
+	if !ok {
+		return
+	}
+	f, err := e.Store.HostFactsFor(ctx, hid)
+	if err != nil {
+		return
+	}
+	m.Host = &notify.HostContext{
+		Name:         f.Hostname,
+		IP:           f.IP,
+		OS:           f.Distro,
+		Kernel:       f.Kernel,
+		Arch:         f.Arch,
+		CPUCores:     f.CPUCores,
+		RAMBytes:     f.RAMBytes,
+		AgentVersion: f.AgentVersion,
+		Status:       f.Status,
+		LastSeen:     f.LastSeen,
+		UptimeSec:    e.uptimeFor(hid),
+	}
+	if e.PublicURL != "" {
+		m.HostURL = strings.TrimRight(e.PublicURL, "/") + "/hosts/" + hid.String()
+	}
+}
+
+func (e *Engine) uptimeFor(id uuid.UUID) int64 {
+	e.stateMu.Lock()
+	defer e.stateMu.Unlock()
+	return e.hostUptime[id]
+}
+
 func splitDedupKey(dedup string) (hostArg, monitorArg any) {
 	idx := strings.IndexByte(dedup, ':')
 	if idx < 0 || idx == len(dedup)-1 {

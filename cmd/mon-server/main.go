@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -450,6 +451,10 @@ func main() {
 	// stateful checks (failed-login threshold, security updates) on a
 	// 60s tick.
 	eng := alerts.New(st.Pool, lw.Out, sched.Out)
+	// Host-context enrichment for HTML alert emails; MON_PUBLIC_URL (optional)
+	// adds a deep link to the host page.
+	eng.Store = st
+	eng.PublicURL = strings.TrimSpace(os.Getenv("MON_PUBLIC_URL"))
 	go eng.Run(ctx)
 
 	// Housekeeping reaper: bounds tables that don't have a Timescale

@@ -31,6 +31,39 @@ type Message struct {
 	// Severity is informational and may be used by backends that support
 	// priority (ntfy, Slack color). Optional.
 	Severity string // info | warning | critical
+
+	// The fields below are optional structured context. They drive the rich
+	// HTML email (SMTP channel); Subject/Body remain the canonical plain-text
+	// form every channel uses. All are safe to leave zero — the HTML template
+	// omits any block whose data is absent.
+	FiredAt  time.Time     // when the alert fired (zero = omit)
+	RuleName string        // the rule that tripped
+	Metric   *MetricDetail // populated for metric-threshold alerts
+	Host     *HostContext  // populated for host-scoped alerts
+	HostURL  string        // deep link to the host page (set when MON_PUBLIC_URL is configured)
+}
+
+// MetricDetail describes the metric that tripped a threshold rule.
+type MetricDetail struct {
+	Name      string // e.g. "ram_used_pct"
+	Current   string // formatted current value, e.g. "87.4%"
+	Threshold string // formatted threshold, e.g. "> 80%"
+}
+
+// HostContext carries human-readable facts about the affected host for the
+// email body. Zero fields are omitted from the rendered table.
+type HostContext struct {
+	Name         string
+	IP           string
+	OS           string // distro, e.g. "Debian 13"
+	Kernel       string
+	Arch         string
+	CPUCores     int
+	RAMBytes     int64
+	AgentVersion string
+	Status       string // "online" | "offline" | "unknown"
+	LastSeen     time.Time
+	UptimeSec    int64
 }
 
 // Channel is the minimal projection of a notification_channels row that
@@ -160,7 +193,7 @@ func (SMTP) Send(ctx context.Context, ch Channel, m Message) error {
 
 	addr := net.JoinHostPort(host, strconv.Itoa(port))
 	rcptList := strings.Join(tos, ", ")
-	body := buildRFC5322(from, rcptList, m.Subject, m.Body)
+	body := buildEmail(from, rcptList, m)
 
 	var auth smtp.Auth
 	if user != "" {
