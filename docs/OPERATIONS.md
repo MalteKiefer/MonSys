@@ -512,6 +512,10 @@ See `docs/SIGNING.md` for the full procedure.
 | `MON_TLS_KEY`         | unset   | Private key for direct TLS. |
 | `MON_RP_ID`           | `localhost` | WebAuthn RP ID — must be the bare host. |
 | `MON_RP_ORIGIN`       | `http://localhost:5173` | WebAuthn RP origin — full scheme+host(+port). |
+| `MON_PUBLIC_URL`      | unset   | Public base URL (e.g. `https://mon.example.com`); adds a "View host" deep link to HTML alert emails. |
+| `MON_ALLOW_INSECURE_HTTP` | unset | Set to `1` to permit plain-HTTP startup behind a TLS-terminating proxy. |
+| `MON_TRUSTED_PROXIES` | loopback + RFC1918 | Comma-separated CIDRs whose `X-Forwarded-For`/`X-Real-IP` headers are trusted. |
+| `MON_DATA_ENCRYPTION_KEY` | unset | Base64 32-byte AES-256 key; enables TOTP-seed encryption at rest. |
 | `MON_LOG_BUFFER`      | `5000`  | In-memory log ring buffer size. |
 | `MON_INGEST_BUFFER`   | `100`   | Captured-ingest ring buffer size. |
 | `MON_INGEST_MAX_BYTES`| `1048576` | Max captured ingest body size. |
