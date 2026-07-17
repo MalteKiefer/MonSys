@@ -193,3 +193,112 @@ func TestMetricMailQueueDeferred(t *testing.T) {
 		t.Errorf("alert_state open rows for dedup %q: got %d, want 1", expectedDedup, stateCount)
 	}
 }
+
+// TestMailServiceDown verifies that a mail_service_down rule fires for a host
+// whose latest host_mail_status report contains an inactive service, and does
+// not fire for a host where all services are active.
+func TestMailServiceDown(t *testing.T) {
+	if !dockerEnabledEngine(t) {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	pool, cleanup := startEngineDB(ctx, t)
+	defer cleanup()
+
+	// Host 1: has postfix inactive → should fire.
+	downHostID := insertEngineHost(ctx, t, pool, "mail-down-host")
+
+	// Host 2: all services active → should NOT fire.
+	upHostID := insertEngineHost(ctx, t, pool, "mail-up-host")
+
+	// Seed host_mail_status for the down host: postfix inactive.
+	downReport := `{"time":"2026-01-01T00:00:00Z","services":[{"name":"postfix","active":false,"sub_state":"dead"},{"name":"dovecot","active":true,"sub_state":"running"}]}`
+	_, err := pool.Exec(ctx,
+		`INSERT INTO host_mail_status (host_id, updated_at, report) VALUES ($1, now(), $2::jsonb)`,
+		downHostID, downReport)
+	if err != nil {
+		t.Fatalf("insert host_mail_status (down host): %v", err)
+	}
+
+	// Seed host_mail_status for the up host: all services active.
+	upReport := `{"time":"2026-01-01T00:00:00Z","services":[{"name":"postfix","active":true,"sub_state":"running"},{"name":"dovecot","active":true,"sub_state":"running"}]}`
+	_, err = pool.Exec(ctx,
+		`INSERT INTO host_mail_status (host_id, updated_at, report) VALUES ($1, now(), $2::jsonb)`,
+		upHostID, upReport)
+	if err != nil {
+		t.Fatalf("insert host_mail_status (up host): %v", err)
+	}
+
+	// Insert a mail_service_down notification rule (targets all hosts).
+	ruleID := uuid.New()
+	_, err = pool.Exec(ctx, `
+		INSERT INTO notification_rules
+		    (id, name, enabled, condition_type, condition_params, channel_ids,
+		     severity, throttle_sec, repeat_interval_sec, notify_on_resolve,
+		     target_host_ids, target_tags, target_group_ids)
+		VALUES ($1,$2,true,'mail_service_down','{}','{}','critical',0,0,false,'{}','{}','{}')`,
+		ruleID, "test-mail-service-down")
+	if err != nil {
+		t.Fatalf("insert notification_rule: %v", err)
+	}
+
+	// Run the evaluator.
+	eng := New(pool, nil, nil)
+	rules, err := eng.loadRules(ctx, "mail_service_down")
+	if err != nil {
+		t.Fatalf("loadRules: %v", err)
+	}
+	eng.evalMailServiceDown(ctx, rules)
+
+	// Assert: alert fires for down host + postfix service.
+	expectedDedup := fmt.Sprintf("mail_service_down:%s:postfix", downHostID)
+	var histCount int
+	err = pool.QueryRow(ctx,
+		`SELECT count(*) FROM alert_history WHERE dedup_key = $1`,
+		expectedDedup).Scan(&histCount)
+	if err != nil {
+		t.Fatalf("query alert_history (down host): %v", err)
+	}
+	if histCount != 1 {
+		t.Errorf("alert_history rows for dedup %q: got %d, want 1", expectedDedup, histCount)
+	}
+
+	var stateCount int
+	err = pool.QueryRow(ctx,
+		`SELECT count(*) FROM alert_state WHERE dedup_key = $1 AND resolved_at IS NULL`,
+		expectedDedup).Scan(&stateCount)
+	if err != nil {
+		t.Fatalf("query alert_state (down host): %v", err)
+	}
+	if stateCount != 1 {
+		t.Errorf("alert_state open rows for dedup %q: got %d, want 1", expectedDedup, stateCount)
+	}
+
+	// Assert: dovecot on down host is active → no alert fired for it.
+	dovecotDedup := fmt.Sprintf("mail_service_down:%s:dovecot", downHostID)
+	var dovecotCount int
+	err = pool.QueryRow(ctx,
+		`SELECT count(*) FROM alert_history WHERE dedup_key = $1`,
+		dovecotDedup).Scan(&dovecotCount)
+	if err != nil {
+		t.Fatalf("query alert_history (dovecot): %v", err)
+	}
+	if dovecotCount != 0 {
+		t.Errorf("alert_history rows for active dovecot dedup %q: got %d, want 0", dovecotDedup, dovecotCount)
+	}
+
+	// Assert: up host has no alert fired at all.
+	var upCount int
+	err = pool.QueryRow(ctx,
+		`SELECT count(*) FROM alert_history WHERE dedup_key LIKE $1`,
+		fmt.Sprintf("mail_service_down:%s:%%", upHostID)).Scan(&upCount)
+	if err != nil {
+		t.Fatalf("query alert_history (up host): %v", err)
+	}
+	if upCount != 0 {
+		t.Errorf("alert_history rows for up-host dedup prefix: got %d, want 0", upCount)
+	}
+}

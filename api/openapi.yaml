@@ -2898,6 +2898,7 @@ components:
             - audit_action
             - host_flap
             - unexpected_reboot
+            - mail_service_down
           type: string
         created_at:
           format: date-time
@@ -3006,6 +3007,7 @@ components:
             - audit_action
             - host_flap
             - unexpected_reboot
+            - mail_service_down
           type: string
       required:
         - condition_type
@@ -3154,6 +3156,7 @@ components:
             - audit_action
             - host_flap
             - unexpected_reboot
+            - mail_service_down
           type: string
         enabled:
           type: boolean

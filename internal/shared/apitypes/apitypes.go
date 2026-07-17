@@ -422,6 +422,11 @@ const (
 	// without a matching package-update pending_reboot resolve.
 	// Params: none.
 	ConditionUnexpectedReboot = "unexpected_reboot"
+
+	// mail_service_down: periodic; a systemd service in the latest host_mail_status
+	// report has active=false. Fires per down service.
+	// Params: none beyond targeting.
+	ConditionMailServiceDown = "mail_service_down"
 )
 
 // MetricKind identifies the numeric series metric_threshold operates on.
@@ -459,14 +464,14 @@ const (
 // source of truth that mirrors the const block.
 //
 //nolint:unused // referenced via struct tags
-const conditionTypeEnum = "host_offline,monitor_failed,cert_expiring,login_failed_threshold,security_updates_pending,metric_threshold,agent_outdated,image_update_pending,package_update_available,pending_reboot,repo_metadata_stale,login_anomaly,inventory_drift,firewall_state_change,fail2ban_jail_disappeared,crowdsec_decision_threshold,nic_link_down,nic_bond_degraded,vm_state_change,container_state_change,audit_action,host_flap,unexpected_reboot"
+const conditionTypeEnum = "host_offline,monitor_failed,cert_expiring,login_failed_threshold,security_updates_pending,metric_threshold,agent_outdated,image_update_pending,package_update_available,pending_reboot,repo_metadata_stale,login_anomaly,inventory_drift,firewall_state_change,fail2ban_jail_disappeared,crowdsec_decision_threshold,nic_link_down,nic_bond_degraded,vm_state_change,container_state_change,audit_action,host_flap,unexpected_reboot,mail_service_down"
 
 type NotificationRule struct {
 	ID                string         `json:"id"               format:"uuid" maxLength:"36" readOnly:"true"`
 	Name              string         `json:"name"             maxLength:"100"`
 	GroupID           *uuid.UUID     `json:"group_id,omitempty" doc:"set when this rule is one leg of a rule group"`
 	Enabled           bool           `json:"enabled"`
-	ConditionType     string         `json:"condition_type"   enum:"host_offline,monitor_failed,cert_expiring,login_failed_threshold,security_updates_pending,metric_threshold,agent_outdated,image_update_pending,package_update_available,pending_reboot,repo_metadata_stale,login_anomaly,inventory_drift,firewall_state_change,fail2ban_jail_disappeared,crowdsec_decision_threshold,nic_link_down,nic_bond_degraded,vm_state_change,container_state_change,audit_action,host_flap,unexpected_reboot"`
+	ConditionType     string         `json:"condition_type"   enum:"host_offline,monitor_failed,cert_expiring,login_failed_threshold,security_updates_pending,metric_threshold,agent_outdated,image_update_pending,package_update_available,pending_reboot,repo_metadata_stale,login_anomaly,inventory_drift,firewall_state_change,fail2ban_jail_disappeared,crowdsec_decision_threshold,nic_link_down,nic_bond_degraded,vm_state_change,container_state_change,audit_action,host_flap,unexpected_reboot,mail_service_down"`
 	ConditionParams   map[string]any `json:"condition_params,omitempty"`
 	ChannelIDs        []string       `json:"channel_ids"`
 	Severity          string         `json:"severity"            enum:"info,warning,critical"`
@@ -484,7 +489,7 @@ type NotificationRuleInput struct {
 	Name              string         `json:"name"                minLength:"1" maxLength:"100"`
 	Enabled           bool           `json:"enabled"`
 	GroupID           *uuid.UUID     `json:"group_id,omitempty"`
-	ConditionType     string         `json:"condition_type"      enum:"host_offline,monitor_failed,cert_expiring,login_failed_threshold,security_updates_pending,metric_threshold,agent_outdated,image_update_pending,package_update_available,pending_reboot,repo_metadata_stale,login_anomaly,inventory_drift,firewall_state_change,fail2ban_jail_disappeared,crowdsec_decision_threshold,nic_link_down,nic_bond_degraded,vm_state_change,container_state_change,audit_action,host_flap,unexpected_reboot"`
+	ConditionType     string         `json:"condition_type"      enum:"host_offline,monitor_failed,cert_expiring,login_failed_threshold,security_updates_pending,metric_threshold,agent_outdated,image_update_pending,package_update_available,pending_reboot,repo_metadata_stale,login_anomaly,inventory_drift,firewall_state_change,fail2ban_jail_disappeared,crowdsec_decision_threshold,nic_link_down,nic_bond_degraded,vm_state_change,container_state_change,audit_action,host_flap,unexpected_reboot,mail_service_down"`
 	ConditionParams   map[string]any `json:"condition_params,omitempty"`
 	ChannelIDs        []string       `json:"channel_ids"         minItems:"1"`
 	Severity          string         `json:"severity"            enum:"info,warning,critical"`
@@ -524,7 +529,7 @@ type NotificationRuleGroupInput struct {
 // NotificationRuleCondition is one (condition_type, condition_params) pair
 // inside a rule group.
 type NotificationRuleCondition struct {
-	ConditionType   string         `json:"condition_type"   enum:"host_offline,monitor_failed,cert_expiring,login_failed_threshold,security_updates_pending,metric_threshold,agent_outdated,image_update_pending,package_update_available,pending_reboot,repo_metadata_stale,login_anomaly,inventory_drift,firewall_state_change,fail2ban_jail_disappeared,crowdsec_decision_threshold,nic_link_down,nic_bond_degraded,vm_state_change,container_state_change,audit_action,host_flap,unexpected_reboot"`
+	ConditionType   string         `json:"condition_type"   enum:"host_offline,monitor_failed,cert_expiring,login_failed_threshold,security_updates_pending,metric_threshold,agent_outdated,image_update_pending,package_update_available,pending_reboot,repo_metadata_stale,login_anomaly,inventory_drift,firewall_state_change,fail2ban_jail_disappeared,crowdsec_decision_threshold,nic_link_down,nic_bond_degraded,vm_state_change,container_state_change,audit_action,host_flap,unexpected_reboot,mail_service_down"`
 	ConditionParams map[string]any `json:"condition_params,omitempty"`
 }
 

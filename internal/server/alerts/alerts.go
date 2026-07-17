@@ -27,6 +27,7 @@ import (
 	"github.com/MalteKiefer/MonSys/internal/server/notify"
 	"github.com/MalteKiefer/MonSys/internal/server/probe"
 	"github.com/MalteKiefer/MonSys/internal/server/store"
+	"github.com/MalteKiefer/MonSys/internal/shared/apitypes"
 )
 
 // OnAlertFired is an optional metric-emission hook called from fire()
@@ -285,6 +286,9 @@ func (e *Engine) runPeriodic(ctx context.Context) {
 			e.evalSecurityUpdates(ctx, r)
 		}
 	}
+	if rules, err := e.loadRules(ctx, "mail_service_down"); err == nil {
+		e.evalMailServiceDown(ctx, rules)
+	}
 
 	// New condition evaluators (R2). Each is internally guarded with slog.Warn
 	// on DB error so a missing table or column never crashes the engine.
@@ -487,6 +491,63 @@ func (e *Engine) evalSecurityUpdates(ctx context.Context, r ruleRow) {
 		body := fmt.Sprintf("Host %s has %d security updates available (threshold %d, observed at %s).",
 			id, sec, threshold, t.UTC().Format(time.RFC3339))
 		e.fire(ctx, r, subj, body, dedup)
+	}
+}
+
+// evalMailServiceDown fires when the latest host_mail_status report for a host
+// contains any service with active=false. One alert is fired per (host, service)
+// pair using dedup "mail_service_down:<host_id>:<service_name>".
+func (e *Engine) evalMailServiceDown(ctx context.Context, rules []ruleRow) {
+	rows, err := e.Pool.Query(ctx, `
+		SELECT ms.host_id, h.hostname, ms.report
+		FROM host_mail_status ms
+		JOIN hosts h ON h.id = ms.host_id`)
+	if err != nil {
+		slog.Warn("alerts: mail_service_down query", "err", err)
+		return
+	}
+	defer rows.Close()
+
+	type hostEntry struct {
+		hostID   uuid.UUID
+		hostname string
+		report   apitypes.MailReport
+	}
+	var hosts []hostEntry
+	for rows.Next() {
+		var he hostEntry
+		var raw []byte
+		if err := rows.Scan(&he.hostID, &he.hostname, &raw); err != nil {
+			slog.Warn("alerts: mail_service_down scan", "err", err)
+			continue
+		}
+		if err := json.Unmarshal(raw, &he.report); err != nil {
+			slog.Warn("alerts: mail_service_down unmarshal", "host", he.hostID, "err", err)
+			continue
+		}
+		hosts = append(hosts, he)
+	}
+	if err := rows.Err(); err != nil {
+		slog.Warn("alerts: mail_service_down iter", "err", err)
+	}
+
+	for _, he := range hosts {
+		tags, groupIDs := e.fetchHostScope(ctx, he.hostID)
+		for _, r := range rules {
+			if !r.matchesHost(he.hostID, tags, groupIDs) {
+				continue
+			}
+			for _, svc := range he.report.Services {
+				if svc.Active {
+					continue
+				}
+				dedup := fmt.Sprintf("mail_service_down:%s:%s", he.hostID, svc.Name)
+				subj := fmt.Sprintf("[MonSys] %s: mail service %s is down", he.hostname, svc.Name)
+				body := fmt.Sprintf("Host %s reports mail service %q as inactive (sub_state: %s).",
+					he.hostname, svc.Name, svc.SubState)
+				e.fire(ctx, r, subj, body, dedup)
+			}
+		}
 	}
 }
 
@@ -769,7 +830,7 @@ func splitDedupKey(dedup string) (hostArg, monitorArg any) {
 		"agent_outdated", "image_update_pending", "package_update_available",
 		"pending_reboot", "repo_metadata_stale", "inventory_drift",
 		"login_anomaly", "audit_action", "firewall_state_change",
-		"fail2ban_jail_disappeared", "crowdsec_decisions":
+		"fail2ban_jail_disappeared", "crowdsec_decisions", "mail_service_down":
 		return id, nil
 	case "monitor_failed", "cert_expiring":
 		return nil, id
