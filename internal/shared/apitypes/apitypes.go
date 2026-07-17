@@ -449,6 +449,8 @@ const (
 	MetricCrowdSecActive     = "crowdsec_active_decisions"
 	MetricRepoMetadataAgeSec = "repo_metadata_age_sec"
 	MetricMonitorLatencyMs   = "monitor_last_latency_ms"
+	MetricMailQueueDeferred  = "mail_queue_deferred"
+	MetricMailQueueTotal     = "mail_queue_total"
 )
 
 // The condition_type enum value used in the OpenAPI tags below. Keep this
@@ -549,7 +551,7 @@ type NotificationRuleGroupResponse struct {
 // MetricThresholdParams is the documented shape of condition_params when
 // condition_type=metric_threshold.
 type MetricThresholdParams struct {
-	Metric     string            `json:"metric"     enum:"cpu_usage_pct,cpu_per_core_pct,load_1,load_5,load_15,ram_used_pct,swap_used_pct,swap_used_bytes,disk_used_pct,disk_inode_used_pct,disk_iops_total,disk_io_util_pct,nic_rx_bytes_per_sec,nic_tx_bytes_per_sec,nic_err_per_sec,nic_drop_per_sec,workload_cpu_usage_pct,workload_mem_used_pct,fail2ban_currently_banned,crowdsec_active_decisions,repo_metadata_age_sec,monitor_last_latency_ms"`
+	Metric     string            `json:"metric"     enum:"cpu_usage_pct,cpu_per_core_pct,load_1,load_5,load_15,ram_used_pct,swap_used_pct,swap_used_bytes,disk_used_pct,disk_inode_used_pct,disk_iops_total,disk_io_util_pct,nic_rx_bytes_per_sec,nic_tx_bytes_per_sec,nic_err_per_sec,nic_drop_per_sec,workload_cpu_usage_pct,workload_mem_used_pct,fail2ban_currently_banned,crowdsec_active_decisions,repo_metadata_age_sec,monitor_last_latency_ms,mail_queue_deferred,mail_queue_total"`
 	Comparator string            `json:"comparator" enum:">,>=,<,<="`
 	Value      float64           `json:"value"`
 	WindowSec  int               `json:"window_sec" minimum:"1" maximum:"86400" doc:"observation window in seconds; clamped to [1, 86400]"`

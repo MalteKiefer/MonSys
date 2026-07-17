@@ -1447,6 +1447,10 @@ func (e *Engine) runMetricRule(ctx context.Context, r ruleRow, metric, op string
 		e.metricFail2banBanned(ctx, r, op, val)
 	case "crowdsec_active_decisions":
 		e.metricCrowdSecActive(ctx, r, op, val)
+	case "mail_queue_deferred":
+		e.metricMailQueue(ctx, r, "queue_deferred", op, val)
+	case "mail_queue_total":
+		e.metricMailQueue(ctx, r, "queue_total", op, val)
 	case "repo_metadata_age_sec":
 		e.metricRepoMetadataAge(ctx, r, op, val)
 	case "monitor_last_latency_ms":
@@ -1462,8 +1466,8 @@ func (e *Engine) runMetricRule(ctx context.Context, r ruleRow, metric, op string
 //   the per-metric helpers below (metricSimpleHost, metricSwapPct,
 //   metricCPUPerCore, metricDiskExpr, metricDiskRate, metricDiskUtil,
 //   metricNICRate, metricWorkloadExpr, metricFail2banBanned,
-//   metricCrowdSecActive, metricRepoMetadataAge, metricMonitorLatency, and
-//   driftScalarHost) are COMPILE-TIME CONSTANTS only. They are spliced into
+//   metricCrowdSecActive, metricRepoMetadataAge, metricMonitorLatency,
+//   metricMailQueue, and driftScalarHost) are COMPILE-TIME CONSTANTS only. They are spliced into
 //   the SQL via fmt.Sprintf because Postgres named-parameter binding does
 //   not extend to identifiers, projections, or arithmetic expressions.
 //
@@ -1853,6 +1857,51 @@ func (e *Engine) metricCrowdSecActive(ctx context.Context, r ruleRow, op string,
 			continue
 		}
 		e.fireMetricRule(ctx, r, hostID, "crowdsec_active_decisions", "", op, val, time.Now())
+	}
+}
+
+// metricMailQueue reads the latest metrics_mail row per host and compares the
+// requested column (queue_deferred or queue_total) against the threshold.
+// No time window: this is a one-shot latest-value check, mirroring
+// metricFail2banBanned / metricCrowdSecActive.
+//
+// `column` MUST be one of the two allowlisted identifiers (queue_deferred,
+// queue_total) — callers are switch-case constants, never user input.
+// `op` is the only other spliced fragment — sqlComparator-validated.
+// See the SQL-injection contract above.
+func (e *Engine) metricMailQueue(ctx context.Context, r ruleRow, column, op string, val float64) {
+	// Allowlist guard: column is always a compile-time constant from runMetricRule,
+	// but an explicit check prevents future callers from accidentally passing
+	// user-supplied strings here.
+	if column != "queue_deferred" && column != "queue_total" {
+		slog.Warn("alerts: metricMailQueue called with unknown column", "column", column)
+		return
+	}
+	// Use a subquery so DISTINCT ON resolves before the HAVING filter.
+	// column and op are both compile-time constants (see SQL-injection contract
+	// above); val is parameterised as $1.
+	sql := fmt.Sprintf(`
+		SELECT host_id, %s
+		FROM (
+			SELECT DISTINCT ON (host_id) host_id, %s::float AS %s
+			FROM metrics_mail
+			ORDER BY host_id, time DESC
+		) latest
+		WHERE %s %s $1`, column, column, column, column, op)
+	rows, err := e.Pool.Query(ctx, sql, val)
+	if err != nil {
+		slog.Warn("alerts: metric_threshold mail_queue query", "column", column, "err", err)
+		return
+	}
+	defer rows.Close()
+	metricName := "mail_queue_" + column[len("queue_"):]
+	for rows.Next() {
+		var hostID uuid.UUID
+		var v float64
+		if err := rows.Scan(&hostID, &v); err != nil {
+			continue
+		}
+		e.fireMetricRule(ctx, r, hostID, metricName, "", op, val, time.Now())
 	}
 }
 
