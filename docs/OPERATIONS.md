@@ -258,6 +258,80 @@ once the manifest is parsed.
 
 ---
 
+## 4b. Mail-stack monitoring
+
+The agent automatically detects whether a host runs a mail stack by querying
+systemd for `postfix.service`, `dovecot.service`, `rspamd.service`, and
+`postgrey.service`. If at least one unit is present the agent collects a
+`MailReport` on every ingest tick and ships it alongside the regular metrics
+payload. Hosts with no mail units produce no mail payload and no Mail tab.
+
+### Mail tab (host detail page)
+
+Open a host's detail page and select the **Mail** tab. It shows:
+
+- **Service state** — up/down for each detected unit (postfix, dovecot,
+  rspamd, postgrey). A red indicator means the unit is inactive or failed.
+- **Postfix queue** — active, deferred, and total message counts read from
+  the Postfix spool directory.
+- **Rspamd statistics** — scanned/rejected/greylist counts from the Rspamd
+  HTTP stat endpoint.
+- **Port/TLS reachability** — TCP dial result and TLS handshake for SMTP
+  (25, 587), IMAP (143), and IMAPS (993), scoped to the units actually
+  present.
+
+### Agent config keys (`/etc/mon-agent/config.yaml`)
+
+```yaml
+mail:
+  enabled: true                              # set false to disable entirely
+  rspamd_stat_url: http://127.0.0.1:11334/stat  # default; override if rspamd
+                                             # listens on a non-standard address
+```
+
+`enabled` defaults to `true`; operators on non-mail hosts can set `false` to
+suppress the detection pass entirely. `rspamd_stat_url` is optional and
+defaults to `http://127.0.0.1:11334/stat`.
+
+### Alert rules
+
+Two condition types cover the mail stack:
+
+| `condition_type` | Trigger | Suggested severity |
+| --- | --- | --- |
+| `mail_service_down` | A tracked mail service transitions to inactive/failed. Fires per-service; one dedup key per host + service name. | `critical` |
+| `metric_threshold` with `metric: mail_queue_deferred` | Deferred queue depth exceeds the configured threshold (absolute message count). | `warning` |
+| `metric_threshold` with `metric: mail_queue_total` | Total queue depth exceeds threshold. | `warning` |
+
+Example rule body (POST `/v1/notification_rules`):
+
+```json
+{
+  "name": "Mail service down",
+  "condition_type": "mail_service_down",
+  "severity": "critical",
+  "notification_channel_ids": ["<channel-uuid>"]
+}
+```
+
+```json
+{
+  "name": "Postfix deferred queue high",
+  "condition_type": "metric_threshold",
+  "metric": "mail_queue_deferred",
+  "threshold": 50,
+  "comparator": ">",
+  "severity": "warning",
+  "notification_channel_ids": ["<channel-uuid>"]
+}
+```
+
+The suggested alert rules shown in the SPA notification-rules form pre-fill
+`mail_service_down` and a `mail_queue_deferred` threshold of 50. Adjust the
+threshold to match your traffic profile.
+
+---
+
 ## 5. Investigations
 
 Open a `psql` shell first (see §3).

@@ -25,6 +25,7 @@ import (
 	"github.com/MalteKiefer/MonSys/internal/agent/buffer"
 	"github.com/MalteKiefer/MonSys/internal/agent/collector"
 	"github.com/MalteKiefer/MonSys/internal/agent/collector/identity"
+	"github.com/MalteKiefer/MonSys/internal/agent/collector/mail"
 	"github.com/MalteKiefer/MonSys/internal/agent/collector/packages"
 	"github.com/MalteKiefer/MonSys/internal/agent/collector/security"
 	"github.com/MalteKiefer/MonSys/internal/agent/collector/virt"
@@ -166,6 +167,10 @@ func buildCollectors(cfg config.Config) ([]collector.Source, []collector.Invento
 	collectors = append(collectors, id)
 
 	collectors = append(collectors, security.New())
+
+	if cfg.MailEnabled() {
+		collectors = append(collectors, mail.New(cfg))
+	}
 
 	return collectors, inventory
 }

@@ -40,6 +40,7 @@ type IngestRequest struct {
 	Workloads  []WorkloadSample `json:"workloads,omitempty"`
 	Packages   *PackageReport   `json:"packages,omitempty"   doc:"Optional package state"`
 	Security   *SecurityReport  `json:"security,omitempty"   doc:"Firewall, fail2ban, crowdsec snapshot"`
+	Mail       *MailReport      `json:"mail,omitempty"       doc:"Mail stack status (postfix/dovecot/rspamd)"`
 	Logins     []LoginEvent     `json:"logins,omitempty"     doc:"Incremental login/auth events since previous tick"`
 }
 
@@ -129,6 +130,45 @@ type CrowdsecDecision struct {
 	Type       string    `json:"type,omitempty"     maxLength:"64"  doc:"ban, captcha, …"`
 	Reason     string    `json:"reason,omitempty"   maxLength:"500"`
 	Until      time.Time `json:"until,omitempty"`
+}
+
+type MailReport struct {
+	Time     time.Time       `json:"time"`
+	Services []MailService   `json:"services,omitempty"`
+	Queue    *PostfixQueue   `json:"queue,omitempty"`
+	Rspamd   *RspamdStat     `json:"rspamd,omitempty"`
+	Ports    []MailPortCheck `json:"ports,omitempty"`
+}
+
+type MailService struct {
+	Name     string `json:"name"      maxLength:"64"`
+	Active   bool   `json:"active"`
+	SubState string `json:"sub_state,omitempty" maxLength:"32"`
+}
+
+type PostfixQueue struct {
+	Active   int `json:"active"`
+	Deferred int `json:"deferred"`
+	Hold     int `json:"hold"`
+	Incoming int `json:"incoming"`
+	Total    int `json:"total"`
+}
+
+type RspamdStat struct {
+	Reachable  bool  `json:"reachable"`
+	Scanned    int64 `json:"scanned"`
+	Rejected   int64 `json:"rejected"`
+	Greylisted int64 `json:"greylisted"`
+	Learned    int64 `json:"learned"`
+}
+
+type MailPortCheck struct {
+	Port         int        `json:"port"`
+	Proto        string     `json:"proto" maxLength:"16"`
+	Open         bool       `json:"open"`
+	TLS          bool       `json:"tls"`
+	CertNotAfter *time.Time `json:"cert_not_after,omitempty"`
+	CertTrusted  bool       `json:"cert_trusted"`
 }
 
 type DiskInfo struct {
@@ -382,6 +422,11 @@ const (
 	// without a matching package-update pending_reboot resolve.
 	// Params: none.
 	ConditionUnexpectedReboot = "unexpected_reboot"
+
+	// mail_service_down: periodic; a systemd service in the latest host_mail_status
+	// report has active=false. Fires per down service.
+	// Params: none beyond targeting.
+	ConditionMailServiceDown = "mail_service_down"
 )
 
 // MetricKind identifies the numeric series metric_threshold operates on.
@@ -409,6 +454,8 @@ const (
 	MetricCrowdSecActive     = "crowdsec_active_decisions"
 	MetricRepoMetadataAgeSec = "repo_metadata_age_sec"
 	MetricMonitorLatencyMs   = "monitor_last_latency_ms"
+	MetricMailQueueDeferred  = "mail_queue_deferred"
+	MetricMailQueueTotal     = "mail_queue_total"
 )
 
 // The condition_type enum value used in the OpenAPI tags below. Keep this
@@ -417,14 +464,14 @@ const (
 // source of truth that mirrors the const block.
 //
 //nolint:unused // referenced via struct tags
-const conditionTypeEnum = "host_offline,monitor_failed,cert_expiring,login_failed_threshold,security_updates_pending,metric_threshold,agent_outdated,image_update_pending,package_update_available,pending_reboot,repo_metadata_stale,login_anomaly,inventory_drift,firewall_state_change,fail2ban_jail_disappeared,crowdsec_decision_threshold,nic_link_down,nic_bond_degraded,vm_state_change,container_state_change,audit_action,host_flap,unexpected_reboot"
+const conditionTypeEnum = "host_offline,monitor_failed,cert_expiring,login_failed_threshold,security_updates_pending,metric_threshold,agent_outdated,image_update_pending,package_update_available,pending_reboot,repo_metadata_stale,login_anomaly,inventory_drift,firewall_state_change,fail2ban_jail_disappeared,crowdsec_decision_threshold,nic_link_down,nic_bond_degraded,vm_state_change,container_state_change,audit_action,host_flap,unexpected_reboot,mail_service_down"
 
 type NotificationRule struct {
 	ID                string         `json:"id"               format:"uuid" maxLength:"36" readOnly:"true"`
 	Name              string         `json:"name"             maxLength:"100"`
 	GroupID           *uuid.UUID     `json:"group_id,omitempty" doc:"set when this rule is one leg of a rule group"`
 	Enabled           bool           `json:"enabled"`
-	ConditionType     string         `json:"condition_type"   enum:"host_offline,monitor_failed,cert_expiring,login_failed_threshold,security_updates_pending,metric_threshold,agent_outdated,image_update_pending,package_update_available,pending_reboot,repo_metadata_stale,login_anomaly,inventory_drift,firewall_state_change,fail2ban_jail_disappeared,crowdsec_decision_threshold,nic_link_down,nic_bond_degraded,vm_state_change,container_state_change,audit_action,host_flap,unexpected_reboot"`
+	ConditionType     string         `json:"condition_type"   enum:"host_offline,monitor_failed,cert_expiring,login_failed_threshold,security_updates_pending,metric_threshold,agent_outdated,image_update_pending,package_update_available,pending_reboot,repo_metadata_stale,login_anomaly,inventory_drift,firewall_state_change,fail2ban_jail_disappeared,crowdsec_decision_threshold,nic_link_down,nic_bond_degraded,vm_state_change,container_state_change,audit_action,host_flap,unexpected_reboot,mail_service_down"`
 	ConditionParams   map[string]any `json:"condition_params,omitempty"`
 	ChannelIDs        []string       `json:"channel_ids"`
 	Severity          string         `json:"severity"            enum:"info,warning,critical"`
@@ -442,7 +489,7 @@ type NotificationRuleInput struct {
 	Name              string         `json:"name"                minLength:"1" maxLength:"100"`
 	Enabled           bool           `json:"enabled"`
 	GroupID           *uuid.UUID     `json:"group_id,omitempty"`
-	ConditionType     string         `json:"condition_type"      enum:"host_offline,monitor_failed,cert_expiring,login_failed_threshold,security_updates_pending,metric_threshold,agent_outdated,image_update_pending,package_update_available,pending_reboot,repo_metadata_stale,login_anomaly,inventory_drift,firewall_state_change,fail2ban_jail_disappeared,crowdsec_decision_threshold,nic_link_down,nic_bond_degraded,vm_state_change,container_state_change,audit_action,host_flap,unexpected_reboot"`
+	ConditionType     string         `json:"condition_type"      enum:"host_offline,monitor_failed,cert_expiring,login_failed_threshold,security_updates_pending,metric_threshold,agent_outdated,image_update_pending,package_update_available,pending_reboot,repo_metadata_stale,login_anomaly,inventory_drift,firewall_state_change,fail2ban_jail_disappeared,crowdsec_decision_threshold,nic_link_down,nic_bond_degraded,vm_state_change,container_state_change,audit_action,host_flap,unexpected_reboot,mail_service_down"`
 	ConditionParams   map[string]any `json:"condition_params,omitempty"`
 	ChannelIDs        []string       `json:"channel_ids"         minItems:"1"`
 	Severity          string         `json:"severity"            enum:"info,warning,critical"`
@@ -482,7 +529,7 @@ type NotificationRuleGroupInput struct {
 // NotificationRuleCondition is one (condition_type, condition_params) pair
 // inside a rule group.
 type NotificationRuleCondition struct {
-	ConditionType   string         `json:"condition_type"   enum:"host_offline,monitor_failed,cert_expiring,login_failed_threshold,security_updates_pending,metric_threshold,agent_outdated,image_update_pending,package_update_available,pending_reboot,repo_metadata_stale,login_anomaly,inventory_drift,firewall_state_change,fail2ban_jail_disappeared,crowdsec_decision_threshold,nic_link_down,nic_bond_degraded,vm_state_change,container_state_change,audit_action,host_flap,unexpected_reboot"`
+	ConditionType   string         `json:"condition_type"   enum:"host_offline,monitor_failed,cert_expiring,login_failed_threshold,security_updates_pending,metric_threshold,agent_outdated,image_update_pending,package_update_available,pending_reboot,repo_metadata_stale,login_anomaly,inventory_drift,firewall_state_change,fail2ban_jail_disappeared,crowdsec_decision_threshold,nic_link_down,nic_bond_degraded,vm_state_change,container_state_change,audit_action,host_flap,unexpected_reboot,mail_service_down"`
 	ConditionParams map[string]any `json:"condition_params,omitempty"`
 }
 
@@ -509,7 +556,7 @@ type NotificationRuleGroupResponse struct {
 // MetricThresholdParams is the documented shape of condition_params when
 // condition_type=metric_threshold.
 type MetricThresholdParams struct {
-	Metric     string            `json:"metric"     enum:"cpu_usage_pct,cpu_per_core_pct,load_1,load_5,load_15,ram_used_pct,swap_used_pct,swap_used_bytes,disk_used_pct,disk_inode_used_pct,disk_iops_total,disk_io_util_pct,nic_rx_bytes_per_sec,nic_tx_bytes_per_sec,nic_err_per_sec,nic_drop_per_sec,workload_cpu_usage_pct,workload_mem_used_pct,fail2ban_currently_banned,crowdsec_active_decisions,repo_metadata_age_sec,monitor_last_latency_ms"`
+	Metric     string            `json:"metric"     enum:"cpu_usage_pct,cpu_per_core_pct,load_1,load_5,load_15,ram_used_pct,swap_used_pct,swap_used_bytes,disk_used_pct,disk_inode_used_pct,disk_iops_total,disk_io_util_pct,nic_rx_bytes_per_sec,nic_tx_bytes_per_sec,nic_err_per_sec,nic_drop_per_sec,workload_cpu_usage_pct,workload_mem_used_pct,fail2ban_currently_banned,crowdsec_active_decisions,repo_metadata_age_sec,monitor_last_latency_ms,mail_queue_deferred,mail_queue_total"`
 	Comparator string            `json:"comparator" enum:">,>=,<,<="`
 	Value      float64           `json:"value"`
 	WindowSec  int               `json:"window_sec" minimum:"1" maximum:"86400" doc:"observation window in seconds; clamped to [1, 86400]"`

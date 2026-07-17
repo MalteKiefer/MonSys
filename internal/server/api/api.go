@@ -913,6 +913,15 @@ func (s *Server) registerHostMetricsRoutes(protected huma.Middlewares) {
 	}, s.handleHostSecurity)
 
 	huma.Register(s.API, huma.Operation{
+		OperationID: "get-host-mail",
+		Method:      http.MethodGet,
+		Path:        "/v1/hosts/{id}/mail",
+		Summary:     "Latest mail-stack status (postfix/dovecot/rspamd) for a host",
+		Tags:        []string{"mail"},
+		Middlewares: protected,
+	}, s.handleHostMail)
+
+	huma.Register(s.API, huma.Operation{
 		OperationID: "host-logins",
 		Method:      http.MethodGet,
 		Path:        "/v1/hosts/{id}/logins",
@@ -1751,6 +1760,15 @@ func (s *Server) handleIngest(ctx context.Context, in *ingestInput) (*ingestOutp
 		return nil, internalErr(ctx, "ingest persist failed", err)
 	}
 
+	// Best-effort: persist the mail report when the agent included one.
+	// Failures are logged but must not fail the ingest — a transient error
+	// writing to the mail table should not discard the full metric snapshot.
+	if b.Mail != nil {
+		if err := s.Store.SaveMailReport(ctx, hostID, *b.Mail); err != nil {
+			slog.WarnContext(ctx, "save mail report", "host_id", hostID, "err", err)
+		}
+	}
+
 	// Observability: count accepted ingests per host so operators can see
 	// who's pushing what frequency. Recorded after the successful persist
 	// so we don't double-count retried failures.
@@ -2271,6 +2289,35 @@ func (s *Server) handleHostSecurity(ctx context.Context, in *hostIDInput) (*host
 	out.Body.Firewalls = hs.Firewalls
 	out.Body.Fail2ban = hs.Fail2ban
 	out.Body.CrowdSec = hs.CrowdSec
+	return out, nil
+}
+
+// --- Host mail status -------------------------------------------------------
+
+type hostMailOutput struct {
+	Body struct {
+		Detected bool                 `json:"detected"`
+		Report   *apitypes.MailReport `json:"report,omitempty"`
+	}
+}
+
+func (s *Server) handleHostMail(ctx context.Context, in *hostIDInput) (*hostMailOutput, error) {
+	if s.Store == nil {
+		return nil, huma.Error503ServiceUnavailable("server has no store configured")
+	}
+	hostID, err := uuid.Parse(in.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid host id")
+	}
+	report, found, err := s.Store.MailStatus(ctx, hostID)
+	if err != nil {
+		return nil, internalErr(ctx, "query failed", err)
+	}
+	out := &hostMailOutput{}
+	out.Body.Detected = found
+	if found {
+		out.Body.Report = &report
+	}
 	return out, nil
 }
 

@@ -11,7 +11,10 @@ plane without running a hosted SaaS.
 - **Server** — Go 1.26 with chi + huma for an OpenAPI-typed REST surface,
   embeds the React SPA, talks to TimescaleDB via pgx.
 - **Agent** — Go binary, tiny systemd-hardened footprint, ships metrics +
-  inventory + login events + package state + firewall/CrowdSec snapshots.
+  inventory + login events + package state + firewall/CrowdSec snapshots +
+  mail-stack status (postfix/dovecot/rspamd/postgrey service state, Postfix
+  queue depths, Rspamd statistics, and port/TLS reachability) when a mail
+  stack is detected on the host.
 - **Database** — TimescaleDB hypertables with retention policies for every
   metrics table; `audit_log` and `alert_history` are bounded too.
 - **Web UI** — React 19 + Vite + Tailwind 3, dark/light themes, lazy-loaded

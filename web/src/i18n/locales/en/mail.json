@@ -1,0 +1,40 @@
+{
+  "title": "Mail",
+  "services": "Services",
+  "noServices": "No mail services detected.",
+  "queue": "Queue",
+  "queueActive": "Active",
+  "queueDeferred": "Deferred",
+  "queueHold": "Hold",
+  "queueTotal": "Total",
+  "rspamd": "Rspamd",
+  "rspamdScanned": "Scanned",
+  "rspamdGreylisted": "Greylisted",
+  "rspamdRejected": "Rejected",
+  "ports": "Ports",
+  "noPorts": "No port checks available.",
+  "colPort": "Port",
+  "colProto": "Proto",
+  "colOpen": "Open",
+  "colTls": "TLS",
+  "colCertExpiry": "Cert expiry",
+  "open": "open",
+  "closed": "closed",
+  "selfSigned": "self-signed",
+  "certExpiresIn": "in {{days}}d",
+  "certExpired": "expired",
+  "certExpiresToday": "today",
+  "notDetected": "Mail stack not detected on this host.",
+  "suggestedAlerts": {
+    "title": "Suggested alerts",
+    "hint": "Quick links to create notification rules for this mail stack. The rule wizard opens on the Notifications page.",
+    "serviceDown": {
+      "label": "Mail service down",
+      "desc": "Alert when a mail daemon (Postfix, Dovecot, …) stops being active on this host."
+    },
+    "queueDeferred": {
+      "label": "Mail queue deferred > threshold",
+      "desc": "Alert when the Postfix deferred queue depth exceeds a configured count threshold."
+    }
+  }
+}
