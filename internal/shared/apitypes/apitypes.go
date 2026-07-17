@@ -163,12 +163,12 @@ type RspamdStat struct {
 }
 
 type MailPortCheck struct {
-	Port        int        `json:"port"`
-	Proto       string     `json:"proto" maxLength:"16"`
-	Open        bool       `json:"open"`
-	TLS         bool       `json:"tls"`
+	Port         int        `json:"port"`
+	Proto        string     `json:"proto" maxLength:"16"`
+	Open         bool       `json:"open"`
+	TLS          bool       `json:"tls"`
 	CertNotAfter *time.Time `json:"cert_not_after,omitempty"`
-	CertTrusted bool       `json:"cert_trusted"`
+	CertTrusted  bool       `json:"cert_trusted"`
 }
 
 type DiskInfo struct {

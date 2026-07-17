@@ -150,9 +150,7 @@ func TestMetricMailQueueDeferred(t *testing.T) {
 
 	// Insert a notification_rule for metric_threshold mail_queue_deferred > 10.
 	ruleID := uuid.New()
-	params := fmt.Sprintf(
-		`{"metric":"mail_queue_deferred","comparator":">","value":10,"window_sec":120}`,
-	)
+	params := `{"metric":"mail_queue_deferred","comparator":">","value":10,"window_sec":120}`
 	_, err = pool.Exec(ctx, `
 		INSERT INTO notification_rules
 		    (id, name, enabled, condition_type, condition_params, channel_ids,

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -45,7 +46,7 @@ func (s *Store) SaveMailReport(ctx context.Context, hostID uuid.UUID, r apitypes
 
 	var (
 		qActive, qDeferred, qHold, qTotal int
-		rspamdGreylisted, rspamdRejected   int64
+		rspamdGreylisted, rspamdRejected  int64
 	)
 	if r.Queue != nil {
 		qActive = r.Queue.Active
@@ -77,7 +78,7 @@ func (s *Store) MailStatus(ctx context.Context, hostID uuid.UUID) (apitypes.Mail
 		`SELECT report FROM host_mail_status WHERE host_id = $1`, hostID,
 	).Scan(&raw)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return apitypes.MailReport{}, false, nil
 		}
 		return apitypes.MailReport{}, false, err

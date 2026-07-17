@@ -194,7 +194,7 @@ func TestMailIngestAndEndpoint(t *testing.T) {
 	}
 
 	var mailBody struct {
-		Detected bool                `json:"detected"`
+		Detected bool                 `json:"detected"`
 		Report   *apitypes.MailReport `json:"report,omitempty"`
 	}
 	if err := json.NewDecoder(mailRec.Body).Decode(&mailBody); err != nil {
@@ -255,7 +255,7 @@ func TestMailIngestAndEndpoint(t *testing.T) {
 	}
 
 	var noMailBody struct {
-		Detected bool                `json:"detected"`
+		Detected bool                 `json:"detected"`
 		Report   *apitypes.MailReport `json:"report,omitempty"`
 	}
 	if err := json.NewDecoder(noMailRec.Body).Decode(&noMailBody); err != nil {

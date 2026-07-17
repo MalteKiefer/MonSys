@@ -47,25 +47,23 @@ func countRegularFiles(dirPath string) int {
 	count := 0
 
 	// Use filepath.WalkDir for efficient directory traversal without following symlinks.
-	// WalkDir doesn't follow symlinks by default.
-	err := filepath.WalkDir(dirPath, func(path string, d fs.DirEntry, err error) error {
+	// WalkDir doesn't follow symlinks by default. The callback skips unreadable
+	// entries by returning fs.SkipDir (for directories) or nil (for files); the
+	// top-level WalkDir error (e.g. dirPath missing) is intentionally ignored so
+	// a missing queue subdir counts as 0.
+	_ = filepath.WalkDir(dirPath, func(_ string, d fs.DirEntry, err error) error {
 		if err != nil {
-			// If the directory doesn't exist or can't be read, stop gracefully
+			if d != nil && d.IsDir() {
+				return fs.SkipDir
+			}
 			return nil
 		}
-
 		// Count only regular files, not directories
 		if !d.IsDir() {
 			count++
 		}
-
 		return nil
 	})
-
-	// If WalkDir fails entirely (e.g., directory doesn't exist), return 0
-	if err != nil {
-		return 0
-	}
 
 	return count
 }

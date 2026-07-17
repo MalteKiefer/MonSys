@@ -71,7 +71,7 @@ func TestCollect_PostfixPresent(t *testing.T) {
 	c := &Collector{
 		exec:       postfixOnlyExec,
 		spoolRoot:  spoolRoot,
-		httpClient: nil,  // rspamd not present → never called
+		httpClient: nil, // rspamd not present → never called
 		statURL:    "",
 		dialHost:   "127.0.0.1",
 	}

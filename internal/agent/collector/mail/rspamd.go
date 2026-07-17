@@ -13,7 +13,7 @@ import (
 // On any error (dial, non-2xx, decode), returns &apitypes.RspamdStat{Reachable:false}.
 // On success, decodes the response tolerantly and maps to RspamdStat with Reachable:true.
 func rspamdStat(ctx context.Context, client *http.Client, url string) *apitypes.RspamdStat {
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
 	if err != nil {
 		return &apitypes.RspamdStat{Reachable: false}
 	}

@@ -29,38 +29,38 @@ func TestPostfixQueueCounter(t *testing.T) {
 		deferredDir := filepath.Join(tmpDir, "deferred")
 		holdDir := filepath.Join(tmpDir, "hold")
 
-		if err := os.MkdirAll(activeDir, 0755); err != nil {
+		if err := os.MkdirAll(activeDir, 0o755); err != nil {
 			t.Fatalf("failed to create active dir: %v", err)
 		}
-		if err := os.MkdirAll(deferredDir, 0755); err != nil {
+		if err := os.MkdirAll(deferredDir, 0o755); err != nil {
 			t.Fatalf("failed to create deferred dir: %v", err)
 		}
-		if err := os.MkdirAll(holdDir, 0755); err != nil {
+		if err := os.MkdirAll(holdDir, 0o755); err != nil {
 			t.Fatalf("failed to create hold dir: %v", err)
 		}
 
 		// Create 1 file in active
-		if err := os.WriteFile(filepath.Join(activeDir, "file1"), []byte("test"), 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(activeDir, "file1"), []byte("test"), 0o644); err != nil {
 			t.Fatalf("failed to create file in active: %v", err)
 		}
 
 		// Create 2 files in deferred root
-		if err := os.WriteFile(filepath.Join(deferredDir, "file1"), []byte("test"), 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(deferredDir, "file1"), []byte("test"), 0o644); err != nil {
 			t.Fatalf("failed to create file in deferred: %v", err)
 		}
-		if err := os.WriteFile(filepath.Join(deferredDir, "file2"), []byte("test"), 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(deferredDir, "file2"), []byte("test"), 0o644); err != nil {
 			t.Fatalf("failed to create file in deferred: %v", err)
 		}
 
 		// Create nested subdir in deferred with 2 files
 		nestedDir := filepath.Join(deferredDir, "D")
-		if err := os.MkdirAll(nestedDir, 0755); err != nil {
+		if err := os.MkdirAll(nestedDir, 0o755); err != nil {
 			t.Fatalf("failed to create nested deferred dir: %v", err)
 		}
-		if err := os.WriteFile(filepath.Join(nestedDir, "file1"), []byte("test"), 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(nestedDir, "file1"), []byte("test"), 0o644); err != nil {
 			t.Fatalf("failed to create file in nested deferred: %v", err)
 		}
-		if err := os.WriteFile(filepath.Join(nestedDir, "file2"), []byte("test"), 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(nestedDir, "file2"), []byte("test"), 0o644); err != nil {
 			t.Fatalf("failed to create file in nested deferred: %v", err)
 		}
 

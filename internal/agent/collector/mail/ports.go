@@ -20,7 +20,7 @@ func checkPort(ctx context.Context, host string, p portSpec) apitypes.MailPortCh
 	addr := net.JoinHostPort(host, strconv.Itoa(p.Port))
 
 	// Plain TCP dial to verify the port is reachable at all.
-	conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
+	conn, err := (&net.Dialer{Timeout: 2 * time.Second}).DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return apitypes.MailPortCheck{Port: p.Port, Proto: p.Proto, Open: false}
 	}
@@ -33,7 +33,7 @@ func checkPort(ctx context.Context, host string, p portSpec) apitypes.MailPortCh
 	// TLS path: first attempt with full verification.
 	result := apitypes.MailPortCheck{Port: p.Port, Proto: p.Proto, Open: true}
 
-	tlsConn, err := tlsDial(addr, host, false, 2*time.Second)
+	tlsConn, err := tlsDial(ctx, addr, host, false, 2*time.Second)
 	if err == nil {
 		t := tlsConn.ConnectionState().PeerCertificates[0].NotAfter
 		tlsConn.Close()
@@ -44,7 +44,7 @@ func checkPort(ctx context.Context, host string, p portSpec) apitypes.MailPortCh
 	}
 
 	// Verification/handshake failed — retry insecurely solely to read leaf NotAfter.
-	tlsConn, err = tlsDial(addr, host, true, 2*time.Second)
+	tlsConn, err = tlsDial(ctx, addr, host, true, 2*time.Second)
 	if err != nil {
 		// Even insecure dial failed; port is open (TCP connected) but TLS unusable.
 		return result
@@ -60,13 +60,17 @@ func checkPort(ctx context.Context, host string, p portSpec) apitypes.MailPortCh
 // tlsDial opens a TLS connection to addr. When insecure is true the server
 // certificate is not verified — this is used solely to read the leaf certificate
 // expiry date; CertTrusted is surfaced as false to the caller.
-func tlsDial(addr, serverName string, insecure bool, timeout time.Duration) (*tls.Conn, error) {
+func tlsDial(ctx context.Context, addr, serverName string, insecure bool, timeout time.Duration) (*tls.Conn, error) {
 	cfg := &tls.Config{
 		ServerName: serverName,
 	}
 	if insecure {
 		cfg.InsecureSkipVerify = true //nolint:gosec // localhost cert-expiry read, not a trust decision; CertTrusted surfaced
 	}
-	dialer := &net.Dialer{Timeout: timeout}
-	return tls.DialWithDialer(dialer, "tcp", addr, cfg)
+	d := &tls.Dialer{NetDialer: &net.Dialer{Timeout: timeout}, Config: cfg}
+	conn, err := d.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+	return conn.(*tls.Conn), nil
 }

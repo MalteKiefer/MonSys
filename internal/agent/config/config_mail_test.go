@@ -42,7 +42,7 @@ func loadYAML(t *testing.T, yamlContent string) Config {
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
-	if err := os.WriteFile(path, []byte(yamlContent), 0600); err != nil {
+	if err := os.WriteFile(path, []byte(yamlContent), 0o600); err != nil {
 		t.Fatalf("write temp config: %v", err)
 	}
 	cfg, err := Load(path)
