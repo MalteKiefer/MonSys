@@ -3,6 +3,7 @@ package mail
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"net"
 	"strconv"
 	"time"
@@ -72,5 +73,10 @@ func tlsDial(ctx context.Context, addr, serverName string, insecure bool, timeou
 	if err != nil {
 		return nil, err
 	}
-	return conn.(*tls.Conn), nil
+	tlsConn, ok := conn.(*tls.Conn)
+	if !ok {
+		_ = conn.Close()
+		return nil, errors.New("dial did not return a TLS connection")
+	}
+	return tlsConn, nil
 }
