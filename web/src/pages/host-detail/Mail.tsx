@@ -1,4 +1,5 @@
-import { Mail as MailIcon } from "lucide-react";
+import { BellPlus, Mail as MailIcon } from "lucide-react";
+import { Link } from "react-router-dom";
 
 import {
   Panel,
@@ -66,6 +67,7 @@ function MailPanel({
       {report.queue && <QueueSection queue={report.queue} />}
       {report.rspamd && <RspamdSection rspamd={report.rspamd} />}
       <PortsSection ports={report.ports ?? []} />
+      <SuggestedAlertsSection />
     </div>
   );
 }
@@ -199,6 +201,40 @@ function PortsSection({ ports }: { ports: MailPortCheck[] }) {
           </Table>
         </div>
       )}
+    </div>
+  );
+}
+
+function SuggestedAlertsSection() {
+  const { t } = useT(["mail"]);
+
+  const suggestions: { labelKey: string; descKey: string }[] = [
+    { labelKey: "mail:suggestedAlerts.serviceDown.label", descKey: "mail:suggestedAlerts.serviceDown.desc" },
+    { labelKey: "mail:suggestedAlerts.queueDeferred.label", descKey: "mail:suggestedAlerts.queueDeferred.desc" },
+  ];
+
+  return (
+    <div>
+      <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">
+        {t("mail:suggestedAlerts.title")}
+      </h4>
+      <p className="mb-3 text-xs text-fg-subtle">{t("mail:suggestedAlerts.hint")}</p>
+      <ul className="space-y-2">
+        {suggestions.map(({ labelKey, descKey }) => (
+          <li key={labelKey}>
+            <Link
+              to="/notifications"
+              className="flex items-start gap-2 rounded-md border border-border bg-panel-2 px-3 py-2 text-left hover:border-accent/50 hover:bg-panel-2/80 transition-colors duration-150"
+            >
+              <BellPlus className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
+              <span>
+                <span className="block text-xs font-medium text-fg">{t(labelKey)}</span>
+                <span className="block text-[11px] text-fg-subtle">{t(descKey)}</span>
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

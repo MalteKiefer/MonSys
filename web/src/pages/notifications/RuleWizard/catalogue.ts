@@ -57,6 +57,7 @@ export const CONDITION_TYPES: {
   { value: "audit_action", label: "Audit action match", description: "New audit_log row matches actor/target/action filter." },
   { value: "host_flap", label: "Host flap", description: "Host status transitions > N in window." },
   { value: "unexpected_reboot", label: "Unexpected reboot", description: "uptime_sec dropped without pending_reboot resolve." },
+  { value: "mail_service_down", label: "Mail service down", description: "A mail daemon (Postfix, Dovecot, …) is no longer active on the host." },
 ];
 
 // Category groupings used by the Step-1 picker. Each category maps to the set
@@ -71,7 +72,7 @@ export type CategoryKey =
 
 export const CATEGORY_MAP: Record<CategoryKey, NotificationConditionType[]> = {
   metrics: ["metric_threshold"],
-  availability: ["host_offline", "host_flap", "unexpected_reboot", "monitor_failed"],
+  availability: ["host_offline", "host_flap", "unexpected_reboot", "monitor_failed", "mail_service_down"],
   updates: [
     "security_updates_pending",
     "package_update_available",
@@ -145,6 +146,8 @@ export const METRIC_KINDS: {
   { value: "crowdsec_active_decisions", label: "CrowdSec active decisions" },
   { value: "repo_metadata_age_sec", label: "Repo metadata age (s)" },
   { value: "monitor_last_latency_ms", label: "Monitor latency (ms)", scopeHint: ["monitor_id"] },
+  { value: "mail_queue_deferred", label: "Mail queue deferred (count)" },
+  { value: "mail_queue_total", label: "Mail queue total (count)" },
 ];
 
 // condition_types that take no parameters beyond targeting. The pane renders
@@ -156,6 +159,7 @@ export const NO_PARAM_CONDITIONS = new Set<NotificationConditionType>([
   "fail2ban_jail_disappeared",
   "nic_bond_degraded",
   "unexpected_reboot",
+  "mail_service_down",
 ]);
 
 // Per-condition-type icon for the condition list card in Step 1 and for the
@@ -201,6 +205,8 @@ export function conditionIcon(ct: NotificationConditionType) {
       return ScrollText;
     case "inventory_drift":
       return ClipboardList;
+    case "mail_service_down":
+      return Mail;
     default:
       return AlertTriangle;
   }
@@ -312,6 +318,8 @@ export function conditionSummary(
       const actions = asStringArray(params.actions);
       return `Audit action matches: ${actions.length > 0 ? actions.join(", ") : "—"}`;
     }
+    case "mail_service_down":
+      return "A mail service is no longer active";
     default:
       return ct;
   }

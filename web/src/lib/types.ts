@@ -392,7 +392,8 @@ export type NotificationConditionType =
   | "container_state_change"
   | "audit_action"
   | "host_flap"
-  | "unexpected_reboot";
+  | "unexpected_reboot"
+  | "mail_service_down";
 
 export interface NotificationRule {
   id: string;
