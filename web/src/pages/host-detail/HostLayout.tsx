@@ -5,6 +5,7 @@ import {
   Container,
   HardDrive,
   LayoutGrid,
+  Mail as MailIcon,
   Network as NetworkIcon,
   Package,
   ShieldCheck,
@@ -17,7 +18,10 @@ import { NavLink, Outlet, useNavigate, useParams } from "react-router-dom";
 import { Skeleton } from "../../components/ui";
 import { useT } from "../../i18n/useT";
 import { api } from "../../lib/api";
+import type { components } from "../../lib/api-types.generated";
 import type { HostDetail as HostDetailT, HostSecurity } from "../../lib/types";
+
+type HostMailResponse = components["schemas"]["HostMailOutputBody"];
 
 import { HostHeader } from "./HostHeader";
 
@@ -29,6 +33,8 @@ interface HostDetailContextValue {
   detail: HostDetailT;
   security: HostSecurity | undefined;
   securityLoading: boolean;
+  mail: HostMailResponse | undefined;
+  mailLoading: boolean;
   hostId: string;
 }
 
@@ -68,6 +74,15 @@ export function HostLayout() {
     refetchInterval: 60_000,
   });
 
+  // Mail detection fetch — the SubTabs component uses `detected` to gate
+  // the Mail nav entry; the Mail tab itself reads the full report from context.
+  const mail = useQuery({
+    queryKey: ["host-mail", id],
+    queryFn: () => api<HostMailResponse>(`/v1/hosts/${id}/mail`),
+    enabled: !!id && UUID_RE.test(id),
+    refetchInterval: 60_000,
+  });
+
   if (id && !UUID_RE.test(id)) {
     // Synchronous redirect would re-trigger render cycles — defer one frame.
     queueMicrotask(() => { void navigate("/hosts", { replace: true }); });
@@ -92,6 +107,8 @@ export function HostLayout() {
     detail: d,
     security: security.data,
     securityLoading: security.isLoading,
+    mail: mail.data,
+    mailLoading: mail.isLoading,
     hostId: id,
   };
 
@@ -121,10 +138,12 @@ interface SubTab {
 function SubTabs({ detail }: { detail: HostDetailT }) {
   const id = detail.host.id;
   const { t } = useT(["hostDetail", "common"]);
+  const { mail } = useHostDetail();
+  const mailDetected = mail?.detected ?? false;
   const items: SubTab[] = useMemo(() => {
     const workloadCount = detail.workloads.length;
     const vmCount = detail.vms.length;
-    return [
+    const base: SubTab[] = [
       { to: `/hosts/${id}`, end: true, label: t("hostDetail:nav.overview"), icon: LayoutGrid },
       { to: `/hosts/${id}/storage`, label: t("hostDetail:nav.storage"), icon: HardDrive, count: detail.disks.length, dim: detail.disks.length === 0 },
       { to: `/hosts/${id}/network`, label: t("hostDetail:nav.network"), icon: NetworkIcon, count: detail.nics.length, dim: detail.nics.length === 0 },
@@ -132,10 +151,16 @@ function SubTabs({ detail }: { detail: HostDetailT }) {
       { to: `/hosts/${id}/vms`, label: t("hostDetail:nav.vms"), icon: Boxes, count: vmCount, dim: vmCount === 0 },
       { to: `/hosts/${id}/users`, label: t("hostDetail:nav.users"), icon: UsersIcon, count: detail.users.length, dim: detail.users.length === 0 },
       { to: `/hosts/${id}/security`, label: t("hostDetail:nav.security"), icon: ShieldCheck },
+    ];
+    if (mailDetected) {
+      base.push({ to: `/hosts/${id}/mail`, label: t("hostDetail:nav.mail"), icon: MailIcon });
+    }
+    base.push(
       { to: `/hosts/${id}/packages`, label: t("hostDetail:nav.packages"), icon: Package, count: detail.packages_summary?.installed_count },
       { to: `/hosts/${id}/charts`, label: t("hostDetail:nav.charts"), icon: BarChart3 },
-    ];
-  }, [detail, id, t]);
+    );
+    return base;
+  }, [detail, id, t, mailDetected]);
 
   return (
     <div

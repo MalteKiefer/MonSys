@@ -9,5 +9,6 @@ export { Workloads } from "./Workloads";
 export { VMs } from "./VMs";
 export { Users } from "./Users";
 export { Security } from "./Security";
+export { Mail } from "./Mail";
 export { Packages } from "./Packages";
 export { Charts } from "./Charts";

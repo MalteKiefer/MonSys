@@ -59,6 +59,9 @@ const HostPackages = lazy(() =>
 const HostSecurity = lazy(() =>
   import("./pages/host-detail").then((m) => ({ default: m.Security })),
 );
+const HostMail = lazy(() =>
+  import("./pages/host-detail").then((m) => ({ default: m.Mail })),
+);
 const Storage = lazy(() =>
   import("./pages/host-detail").then((m) => ({ default: m.Storage })),
 );
@@ -192,6 +195,7 @@ export function App() {
           <Route path="vms" element={<VMs />} />
           <Route path="users" element={<HostUsers />} />
           <Route path="security" element={<HostSecurity />} />
+          <Route path="mail" element={<HostMail />} />
           <Route path="packages" element={<HostPackages />} />
           <Route path="charts" element={<Charts />} />
         </Route>

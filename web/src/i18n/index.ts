@@ -33,6 +33,7 @@ export const ALL_NAMESPACES = [
   "admin",
   "notifications",
   "hostDetail",
+  "mail",
 ] as const;
 export type Namespace = (typeof ALL_NAMESPACES)[number];
 
@@ -133,6 +134,10 @@ export function loadNamespace(ns: Namespace): Promise<void> {
       case "hostDetail":
         en = (await import("./locales/en/hostDetail.json")).default;
         de = (await import("./locales/de/hostDetail.json")).default;
+        break;
+      case "mail":
+        en = (await import("./locales/en/mail.json")).default;
+        de = (await import("./locales/de/mail.json")).default;
         break;
       default:
         // Critical namespaces or unknown — nothing to do.

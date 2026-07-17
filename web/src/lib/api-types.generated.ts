@@ -958,6 +958,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/hosts/{id}/mail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Latest mail-stack status (postfix/dovecot/rspamd) for a host */
+        get: operations["get-host-mail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/hosts/{id}/metrics/disk": {
         parameters: {
             query?: never;
@@ -2078,6 +2095,16 @@ export interface components {
             /** Format: date-time */
             since: string;
         };
+        HostMailOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://mon.kiefer-networks.de/schemas/HostMailOutputBody.json
+             */
+            readonly $schema?: string;
+            detected: boolean;
+            report?: components["schemas"]["MailReport"];
+        };
         HostPackageUpdatesOutputBody: {
             /**
              * Format: uri
@@ -2136,6 +2163,8 @@ export interface components {
             inventory?: components["schemas"]["InventorySnap"];
             /** @description Incremental login/auth events since previous tick */
             logins?: components["schemas"]["LoginEvent"][] | null;
+            /** @description Mail stack status (postfix/dovecot/rspamd) */
+            mail?: components["schemas"]["MailReport"];
             nics?: components["schemas"]["NetSample"][] | null;
             /** @description Optional package state */
             packages?: components["schemas"]["PackageReport"];
@@ -2359,6 +2388,29 @@ export interface components {
              */
             readonly $schema?: string;
             ok: boolean;
+        };
+        MailPortCheck: {
+            /** Format: date-time */
+            cert_not_after?: string;
+            cert_trusted: boolean;
+            open: boolean;
+            /** Format: int64 */
+            port: number;
+            proto: string;
+            tls: boolean;
+        };
+        MailReport: {
+            ports?: components["schemas"]["MailPortCheck"][] | null;
+            queue?: components["schemas"]["PostfixQueue"];
+            rspamd?: components["schemas"]["RspamdStat"];
+            services?: components["schemas"]["MailService"][] | null;
+            /** Format: date-time */
+            time: string;
+        };
+        MailService: {
+            active: boolean;
+            name: string;
+            sub_state?: string;
         };
         Manifest: {
             /**
@@ -2853,6 +2905,18 @@ export interface components {
             name: string;
             source_repo?: string;
         };
+        PostfixQueue: {
+            /** Format: int64 */
+            active: number;
+            /** Format: int64 */
+            deferred: number;
+            /** Format: int64 */
+            hold: number;
+            /** Format: int64 */
+            incoming: number;
+            /** Format: int64 */
+            total: number;
+        };
         RenamePasskeyRequest: {
             /**
              * Format: uri
@@ -2890,6 +2954,17 @@ export interface components {
             readonly $schema?: string;
             /** Format: int64 */
             revoked: number;
+        };
+        RspamdStat: {
+            /** Format: int64 */
+            greylisted: number;
+            /** Format: int64 */
+            learned: number;
+            reachable: boolean;
+            /** Format: int64 */
+            rejected: number;
+            /** Format: int64 */
+            scanned: number;
         };
         SearchPackagesOutputBody: {
             /**
@@ -5430,6 +5505,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HostLoginsOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-host-mail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description host UUID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HostMailOutputBody"];
                 };
             };
             /** @description Error */
