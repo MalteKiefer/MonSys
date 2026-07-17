@@ -81,7 +81,7 @@ func TestCheckPort_PlainOpen(t *testing.T) {
 	host, port := splitHostPort(t, ln.Addr().String())
 	spec := portSpec{Port: port, Proto: "tcp", TLS: false}
 
-	result := checkPort(context.Background(), host, spec)
+	result := checkPort(context.Background(), host, host, spec)
 
 	if !result.Open {
 		t.Error("expected Open=true for a listening port")
@@ -102,7 +102,7 @@ func TestCheckPort_Closed(t *testing.T) {
 	host, port := splitHostPort(t, addr)
 	spec := portSpec{Port: port, Proto: "tcp", TLS: false}
 
-	result := checkPort(context.Background(), host, spec)
+	result := checkPort(context.Background(), host, host, spec)
 
 	if result.Open {
 		t.Error("expected Open=false for a closed port")
@@ -136,7 +136,7 @@ func TestCheckPort_TLSSelfSigned(t *testing.T) {
 	host, port := splitHostPort(t, ln.Addr().String())
 	spec := portSpec{Port: port, Proto: "smtp", TLS: true}
 
-	result := checkPort(context.Background(), host, spec)
+	result := checkPort(context.Background(), host, host, spec)
 
 	if !result.Open {
 		t.Error("expected Open=true")

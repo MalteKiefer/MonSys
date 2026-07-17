@@ -176,7 +176,7 @@ function PortsSection({ ports }: { ports: MailPortCheck[] }) {
                   <TD className="font-mono text-xs">{p.port}</TD>
                   <TD className="font-mono text-xs text-fg-muted">{p.proto}</TD>
                   <TD>
-                    <StatusPill status={p.open ? "ok" : "fail"}>
+                    <StatusPill status={p.open ? "ok" : "unknown"}>
                       {p.open ? t("mail:open") : t("mail:closed")}
                     </StatusPill>
                   </TD>

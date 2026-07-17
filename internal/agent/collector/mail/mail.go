@@ -30,16 +30,21 @@ var units = []string{
 	"postgrey.service",
 }
 
-// postfixPorts lists the TCP ports that the collector checks when postfix is present.
+// postfixPorts lists the TCP ports that the collector checks when postfix is
+// present. 465 (implicit-TLS submissions) is included alongside 25/587 because
+// many deployments use implicit TLS instead of STARTTLS on 587.
 var postfixPorts = []portSpec{
 	{Port: 25, Proto: "smtp", TLS: false},
+	{Port: 465, Proto: "submissions", TLS: true},
 	{Port: 587, Proto: "submission", TLS: false},
 }
 
-// dovecotPorts lists the TCP ports that the collector checks when dovecot is present.
+// dovecotPorts lists the TCP ports that the collector checks when dovecot is
+// present, covering both IMAP and POP3 in plain + implicit-TLS variants.
 var dovecotPorts = []portSpec{
 	{Port: 143, Proto: "imap", TLS: false},
 	{Port: 993, Proto: "imaps", TLS: true},
+	{Port: 995, Proto: "pop3s", TLS: true},
 }
 
 // Collector implements collector.Source for the mail stack. Its fields are all
@@ -50,6 +55,9 @@ type Collector struct {
 	httpClient *http.Client
 	statURL    string
 	dialHost   string
+	// serverName is the FQDN used for TLS SNI + cert verification on the
+	// probed ports (certs are issued for the public hostname, not 127.0.0.1).
+	serverName string
 }
 
 // Name returns the collector identifier used in logs and the inventory sources list.
@@ -119,12 +127,12 @@ func (c *Collector) Collect(ctx context.Context, batch *apitypes.IngestRequest) 
 	var ports []apitypes.MailPortCheck
 	if states["postfix.service"].present {
 		for _, spec := range postfixPorts {
-			ports = append(ports, checkPort(ctx, c.dialHost, spec))
+			ports = append(ports, checkPort(ctx, c.dialHost, c.serverName, spec))
 		}
 	}
 	if states["dovecot.service"].present {
 		for _, spec := range dovecotPorts {
-			ports = append(ports, checkPort(ctx, c.dialHost, spec))
+			ports = append(ports, checkPort(ctx, c.dialHost, c.serverName, spec))
 		}
 	}
 	report.Ports = ports

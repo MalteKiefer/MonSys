@@ -17,8 +17,13 @@ type portSpec struct {
 	TLS   bool
 }
 
-func checkPort(ctx context.Context, host string, p portSpec) apitypes.MailPortCheck {
-	addr := net.JoinHostPort(host, strconv.Itoa(p.Port))
+// checkPort dials dialHost:port (loopback) to test reachability. For TLS ports
+// the certificate is verified against serverName — the host's FQDN, NOT the dial
+// address — because mail certs (e.g. Let's Encrypt) are issued for the public
+// hostname; verifying against 127.0.0.1 would spuriously fail and mislabel a
+// valid cert as untrusted (self-signed).
+func checkPort(ctx context.Context, dialHost, serverName string, p portSpec) apitypes.MailPortCheck {
+	addr := net.JoinHostPort(dialHost, strconv.Itoa(p.Port))
 
 	// Plain TCP dial to verify the port is reachable at all.
 	conn, err := (&net.Dialer{Timeout: 2 * time.Second}).DialContext(ctx, "tcp", addr)
@@ -31,31 +36,45 @@ func checkPort(ctx context.Context, host string, p portSpec) apitypes.MailPortCh
 		return apitypes.MailPortCheck{Port: p.Port, Proto: p.Proto, Open: true}
 	}
 
-	// TLS path: first attempt with full verification.
+	// TLS path: first attempt with full verification against the FQDN.
 	result := apitypes.MailPortCheck{Port: p.Port, Proto: p.Proto, Open: true}
 
-	tlsConn, err := tlsDial(ctx, addr, host, false, 2*time.Second)
-	if err == nil {
-		t := tlsConn.ConnectionState().PeerCertificates[0].NotAfter
+	if tlsConn, derr := tlsDial(ctx, addr, serverName, false, 2*time.Second); derr == nil {
+		if exp, ok := leafNotAfter(tlsConn); ok {
+			result.TLS = true
+			result.CertTrusted = true
+			result.CertNotAfter = &exp
+		}
 		tlsConn.Close()
-		result.TLS = true
-		result.CertTrusted = true
-		result.CertNotAfter = &t
-		return result
+		if result.TLS {
+			return result
+		}
 	}
 
 	// Verification/handshake failed — retry insecurely solely to read leaf NotAfter.
-	tlsConn, err = tlsDial(ctx, addr, host, true, 2*time.Second)
+	tlsConn, err := tlsDial(ctx, addr, serverName, true, 2*time.Second)
 	if err != nil {
 		// Even insecure dial failed; port is open (TCP connected) but TLS unusable.
 		return result
 	}
-	t := tlsConn.ConnectionState().PeerCertificates[0].NotAfter
+	if exp, ok := leafNotAfter(tlsConn); ok {
+		result.TLS = true
+		result.CertTrusted = false
+		result.CertNotAfter = &exp
+	}
 	tlsConn.Close()
-	result.TLS = true
-	result.CertTrusted = false
-	result.CertNotAfter = &t
 	return result
+}
+
+// leafNotAfter returns the leaf certificate's expiry, guarding against an empty
+// peer-cert slice (never expected after a successful handshake, but a panic in a
+// collector would abort the whole ingest tick).
+func leafNotAfter(c *tls.Conn) (time.Time, bool) {
+	certs := c.ConnectionState().PeerCertificates
+	if len(certs) == 0 {
+		return time.Time{}, false
+	}
+	return certs[0].NotAfter, true
 }
 
 // tlsDial opens a TLS connection to addr. When insecure is true the server
