@@ -27,7 +27,7 @@
   "notDetected": "Kein Mail-Stack auf diesem Host erkannt.",
   "suggestedAlerts": {
     "title": "Empfohlene Alarme",
-    "hint": "Schnelllinks zum Erstellen von Benachrichtigungsregeln für diesen Mail-Stack. Der Regel-Assistent öffnet sich auf der Seite Benachrichtigungen.",
+    "hint": "Ein Klick erstellt direkt eine Benachrichtigungsregel für diesen Mail-Stack, gebunden an alle vorhandenen Kanäle und auf diesen Host beschränkt.",
     "serviceDown": {
       "label": "Mail-Dienst ausgefallen",
       "desc": "Alarm, wenn ein Mail-Daemon (Postfix, Dovecot, …) auf diesem Host nicht mehr aktiv ist."
@@ -35,6 +35,8 @@
     "queueDeferred": {
       "label": "Mail-Warteschlange zurückgestellt > Schwellwert",
       "desc": "Alarm, wenn die Postfix-Warteschlange für zurückgestellte Mails einen konfigurierten Schwellwert überschreitet."
-    }
+    },
+    "noChannel": "Kein Benachrichtigungskanal konfiguriert — lege erst unter Benachrichtigungen einen an.",
+    "createError": "Regel konnte nicht erstellt werden."
   }
 }

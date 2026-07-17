@@ -27,7 +27,7 @@
   "notDetected": "Mail stack not detected on this host.",
   "suggestedAlerts": {
     "title": "Suggested alerts",
-    "hint": "Quick links to create notification rules for this mail stack. The rule wizard opens on the Notifications page.",
+    "hint": "Click to create a notification rule for this mail stack, attached to all your existing channels and scoped to this host.",
     "serviceDown": {
       "label": "Mail service down",
       "desc": "Alert when a mail daemon (Postfix, Dovecot, …) stops being active on this host."
@@ -35,6 +35,8 @@
     "queueDeferred": {
       "label": "Mail queue deferred > threshold",
       "desc": "Alert when the Postfix deferred queue depth exceeds a configured count threshold."
-    }
+    },
+    "noChannel": "No notification channel configured — create one first under Notifications.",
+    "createError": "Could not create the rule."
   }
 }

@@ -1,5 +1,7 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BellPlus, Mail as MailIcon } from "lucide-react";
-import { Link } from "react-router-dom";
+import { useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 
 import {
   Panel,
@@ -14,7 +16,9 @@ import {
   Table,
 } from "../../components/ui";
 import { useT } from "../../i18n/useT";
+import { api } from "../../lib/api";
 import type { components } from "../../lib/api-types.generated";
+import type { NotificationChannel, NotificationRuleInput } from "../../lib/types";
 
 import { useHostDetail } from "./HostLayout";
 
@@ -205,12 +209,70 @@ function PortsSection({ ports }: { ports: MailPortCheck[] }) {
   );
 }
 
+type SuggestionKind = "serviceDown" | "queueDeferred";
+
 function SuggestedAlertsSection() {
   const { t } = useT(["mail"]);
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
 
-  const suggestions: { labelKey: string; descKey: string }[] = [
-    { labelKey: "mail:suggestedAlerts.serviceDown.label", descKey: "mail:suggestedAlerts.serviceDown.desc" },
-    { labelKey: "mail:suggestedAlerts.queueDeferred.label", descKey: "mail:suggestedAlerts.queueDeferred.desc" },
+  // Existing channels — a rule requires ≥1 channel; we attach all of them.
+  const channelsQ = useQuery({
+    queryKey: ["channels"],
+    queryFn: () => api<{ channels: NotificationChannel[] }>("/v1/notifications/channels"),
+  });
+  const channelIds = (channelsQ.data?.channels ?? []).map((c) => c.id);
+
+  const create = useMutation({
+    mutationFn: (body: NotificationRuleInput) =>
+      api("/v1/notifications/rules", { method: "POST", body: JSON.stringify(body) }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["rules"] });
+      void navigate("/notifications");
+    },
+    onError: (e: unknown) => setError(e instanceof Error ? e.message : t("mail:suggestedAlerts.createError")),
+  });
+
+  function buildRule(kind: SuggestionKind): NotificationRuleInput {
+    const base = {
+      enabled: true,
+      channel_ids: channelIds,
+      severity: "warning" as const,
+      throttle_sec: 300,
+      repeat_interval_sec: 0,
+      notify_on_resolve: true,
+      target_host_ids: id ? [id] : [],
+    };
+    if (kind === "serviceDown") {
+      return {
+        ...base,
+        name: t("mail:suggestedAlerts.serviceDown.label"),
+        condition_type: "mail_service_down",
+        condition_params: {},
+      };
+    }
+    return {
+      ...base,
+      name: t("mail:suggestedAlerts.queueDeferred.label"),
+      condition_type: "metric_threshold",
+      condition_params: { metric: "mail_queue_deferred", comparator: ">", value: 20, window_sec: 60 },
+    };
+  }
+
+  function onCreate(kind: SuggestionKind) {
+    setError(null);
+    if (channelIds.length === 0) {
+      setError(t("mail:suggestedAlerts.noChannel"));
+      return;
+    }
+    create.mutate(buildRule(kind));
+  }
+
+  const suggestions: { kind: SuggestionKind; labelKey: string; descKey: string }[] = [
+    { kind: "serviceDown", labelKey: "mail:suggestedAlerts.serviceDown.label", descKey: "mail:suggestedAlerts.serviceDown.desc" },
+    { kind: "queueDeferred", labelKey: "mail:suggestedAlerts.queueDeferred.label", descKey: "mail:suggestedAlerts.queueDeferred.desc" },
   ];
 
   return (
@@ -219,19 +281,22 @@ function SuggestedAlertsSection() {
         {t("mail:suggestedAlerts.title")}
       </h4>
       <p className="mb-3 text-xs text-fg-subtle">{t("mail:suggestedAlerts.hint")}</p>
+      {error && <p className="mb-2 text-[11px] text-fail">{error}</p>}
       <ul className="space-y-2">
-        {suggestions.map(({ labelKey, descKey }) => (
-          <li key={labelKey}>
-            <Link
-              to="/notifications"
-              className="flex items-start gap-2 rounded-md border border-border bg-panel-2 px-3 py-2 text-left hover:border-accent/50 hover:bg-panel-2/80 transition-colors duration-150"
+        {suggestions.map(({ kind, labelKey, descKey }) => (
+          <li key={kind}>
+            <button
+              type="button"
+              disabled={create.isPending}
+              onClick={() => onCreate(kind)}
+              className="flex w-full items-start gap-2 rounded-md border border-border bg-panel-2 px-3 py-2 text-left transition-colors duration-150 hover:border-accent/50 hover:bg-panel-2/80 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <BellPlus className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
               <span>
                 <span className="block text-xs font-medium text-fg">{t(labelKey)}</span>
                 <span className="block text-[11px] text-fg-subtle">{t(descKey)}</span>
               </span>
-            </Link>
+            </button>
           </li>
         ))}
       </ul>
