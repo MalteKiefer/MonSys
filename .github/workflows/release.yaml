@@ -238,7 +238,7 @@ jobs:
           done
           shred -u "$KEYFILE" 2>/dev/null || rm -f "$KEYFILE"
 
-      - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: bin-linux-${{ matrix.goarch }}
           path: out/
@@ -259,7 +259,7 @@ jobs:
           path: .
           upload-artifact: false
           upload-release-assets: false
-      - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: sbom-source
           path: SBOM-source.cdx.json
@@ -377,7 +377,7 @@ jobs:
           } > container-digest.txt
           cat container-digest.txt
 
-      - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: container-digest
           path: container-digest.txt
